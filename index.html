@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Doodle Wheels — disegna la tua ruota, sfida i tuoi amici</title>
+<meta name="description" content="Un gioco di corse online per 5 giocatori: disegna la forma della tua ruota e sfida i tuoi amici in tempo reale.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="page">
+
+  <!-- MENU -->
+  <section id="screen-menu" class="screen screen--active">
+    <div class="card card--hero">
+      <h1 class="title">Doodle Wheels</h1>
+      <p class="subtitle">Disegna la forma della tua ruota. Più è tonda, più corre liscia.<br>Sfida fino a 4 amici in tempo reale.</p>
+
+      <label class="field">
+        <span>Il tuo nome</span>
+        <input id="input-name" type="text" maxlength="14" placeholder="Es. Stefano" autocomplete="off">
+      </label>
+
+      <div class="menu-actions">
+        <button id="btn-host" class="btn btn--primary">Crea una gara</button>
+        <div class="join-row">
+          <input id="input-code" type="text" maxlength="4" placeholder="CODICE" autocomplete="off" class="code-input">
+          <button id="btn-join" class="btn btn--secondary">Unisciti</button>
+        </div>
+      </div>
+      <p id="menu-error" class="error-text"></p>
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="screen-lobby" class="screen">
+    <div class="card">
+      <p class="eyebrow-free">Codice della gara</p>
+      <div class="room-code" id="room-code">----</div>
+      <p class="hint">Dallo ai tuoi amici: lo inseriscono nel campo "Unisciti a una gara".</p>
+
+      <ul id="player-list" class="player-list"></ul>
+
+      <button id="btn-start-race" class="btn btn--primary" disabled>In attesa di giocatori…</button>
+      <p class="hint" id="lobby-hint"></p>
+    </div>
+  </section>
+
+  <!-- DRAW -->
+  <section id="screen-draw" class="screen">
+    <div class="card card--wide">
+      <div class="draw-header">
+        <h2 class="section-title">Disegna la tua ruota</h2>
+        <div class="timer-pill" id="draw-timer">30</div>
+      </div>
+      <p class="hint">Traccia una forma chiusa dentro al cerchio tratteggiato. Una forma rotonda scorre veloce, una spigolosa fa saltare la ruota.</p>
+
+      <canvas id="draw-canvas" width="480" height="480" class="draw-canvas"></canvas>
+
+      <div class="draw-actions">
+        <button id="btn-clear" class="btn btn--ghost">Cancella</button>
+        <button id="btn-submit-wheel" class="btn btn--primary" disabled>Fatto, è la mia ruota!</button>
+      </div>
+      <p class="hint" id="draw-wait"></p>
+    </div>
+  </section>
+
+  <!-- RACE (+ countdown overlay) -->
+  <section id="screen-race" class="screen">
+    <div class="race-wrap">
+      <canvas id="race-canvas"></canvas>
+      <div id="countdown-overlay" class="countdown-overlay"></div>
+      <div class="hud">
+        <div class="hud-progress">
+          <div class="hud-progress-fill" id="hud-progress-fill"></div>
+        </div>
+        <canvas id="minimap-canvas" width="260" height="44" class="minimap"></canvas>
+        <ol id="hud-leaderboard" class="hud-leaderboard"></ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="screen-results" class="screen">
+    <div class="card">
+      <h2 class="section-title">Classifica finale</h2>
+      <ol id="results-list" class="results-list"></ol>
+      <div class="draw-actions">
+        <button id="btn-rematch" class="btn btn--primary">Rigioca (stessa gara)</button>
+        <button id="btn-back-menu" class="btn btn--ghost">Torna al menu</button>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
+<script src="js/peer.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
