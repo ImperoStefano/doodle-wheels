@@ -5,13 +5,14 @@
  */
 const Sim = (() => {
   const GROUND_Y = 520;
-  const FINISH_X = Terrain.FINISH_X;
-  const MOTOR_SPEED = 6.0; // Motore più lento per far lavorare meglio la fisica sulle asperità
-  const RACE_TIMEOUT_MS = 120000; // Corsa più lunga, diamo più tempo
+  // Fallback di sicurezza in caso terrain.js non sia stato aggiornato correttamente
+  const FINISH_X = typeof Terrain !== 'undefined' && Terrain.FINISH_X ? Terrain.FINISH_X : 14000;
+  const MOTOR_SPEED = 6.0; 
+  const RACE_TIMEOUT_MS = 120000; 
 
   let engine, world;
   let groundBodies = [];
-  let racers = {}; // id -> {chassis, fw, rw, color, name, finished, finishTime}
+  let racers = {}; 
   let running = false;
   let startedAt = 0;
 
@@ -21,7 +22,7 @@ const Sim = (() => {
     }
     engine = Matter.Engine.create();
     world = engine.world;
-    engine.gravity.y = 1.2; // Leggermente aumentata per far "mordere" meglio il fango e le rampe
+    engine.gravity.y = 1.2; 
     groundBodies = buildGround();
     Matter.World.add(world, groundBodies);
     racers = {};
@@ -41,8 +42,9 @@ const Sim = (() => {
       
       const seg = Matter.Bodies.rectangle(midX, midY + 10, len + 2, 28, {
         isStatic: true, 
-        friction: Terrain.frictionAt(midX),
-        restitution: Terrain.restitutionAt(midX)
+        // Aggiunti i fallback per evitare crash grafici se terrain.js è obsoleto
+        friction: typeof Terrain.frictionAt === 'function' ? Terrain.frictionAt(midX) : 0.9,
+        restitution: typeof Terrain.restitutionAt === 'function' ? Terrain.restitutionAt(midX) : 0.05
       });
       Matter.Body.setAngle(seg, angle);
       bodies.push(seg);
@@ -51,27 +53,38 @@ const Sim = (() => {
   }
 
   function addRacer(id, vertices, color, name, startIndex) {
-    const startX = 50 + startIndex * 180; // Distanziati in griglia di partenza
-    const wOpt = { friction: 0.85, frictionStatic: 1, restitution: 0.05, density: 0.003 };
+    const startX = 50 + startIndex * 180; 
+    
+    // Generiamo il gruppo di collisione *prima* di creare le ruote
+    const group = Matter.Body.nextGroup(true);
+
+    // FIX: inseriamo il collisionFilter direttamente all'interno delle opzioni.
+    // In questo modo, se fromVertices genera un corpo concavo multi-parti, 
+    // Matter.js propaga il filtro anticolllisione nativamente a tutti i frammenti.
+    const wOpt = { 
+      friction: 0.85, 
+      frictionStatic: 1, 
+      restitution: 0.05, 
+      density: 0.003,
+      collisionFilter: { group: group } 
+    };
 
     let fw, rw;
     try {
-      // Offset di 90px dal centro per accomodare un raggio ruota di 80px (180px di interasse)
       fw = Matter.Bodies.fromVertices(startX + 90, GROUND_Y - 120, [vertices], wOpt, true);
       rw = Matter.Bodies.fromVertices(startX - 90, GROUND_Y - 120, [vertices], wOpt, true);
-    } catch (e) {}
+    } catch (e) {
+      console.warn("Complex shape failed, falling back to circles", e);
+    }
+    
     if (!fw || !rw) {
       fw = Matter.Bodies.circle(startX + 90, GROUND_Y - 120, 80, wOpt);
       rw = Matter.Bodies.circle(startX - 90, GROUND_Y - 120, 80, wOpt);
     }
 
-    // Assicura che le ruote e il telaio dello stesso veicolo non collidano tra loro
-    const group = Matter.Body.nextGroup(true);
-    fw.collisionFilter.group = group;
-    rw.collisionFilter.group = group;
-
     const chassis = Matter.Bodies.rectangle(startX, GROUND_Y - 120, 180, 15, {
-      density: 0.001, collisionFilter: { group: group }
+      density: 0.001, 
+      collisionFilter: { group: group }
     });
 
     const axF = Matter.Constraint.create({ bodyA: chassis, pointA: { x: 90, y: 0 }, bodyB: fw, stiffness: 1, length: 0 });
@@ -93,11 +106,10 @@ const Sim = (() => {
   function tick(dtMs) {
     if (!running) return;
     const elapsed = performance.now() - startedAt;
-    const ramp = Math.min(1, elapsed / 1000); // Accelerazione iniziale dolce
+    const ramp = Math.min(1, elapsed / 1000); 
     
     Object.values(racers).forEach(r => {
       if (!r.finished) {
-        // AWD: forza applicata a entrambe le ruote. Se il terreno è ghiaccio e la ruota tonda, slitterà
         Matter.Body.setAngularVelocity(r.fw, MOTOR_SPEED * ramp);
         Matter.Body.setAngularVelocity(r.rw, MOTOR_SPEED * ramp);
         
