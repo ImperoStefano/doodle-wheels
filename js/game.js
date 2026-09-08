@@ -43,7 +43,7 @@
   let myVertices = null;
   let wheels = {};          // id -> vertices (host collects everyone's)
   let drawTimerHandle = null;
-  let latestRacers = {};    // id -> {x,y,angle} for rendering
+  let latestRacers = {};    // id -> {x,y,angle, fwX...} for rendering
   let raceMeta = {};        // id -> {color, name, vertices}
   let raceLoopHandle = null;
   let snapshotLoopHandle = null;
@@ -283,8 +283,7 @@
 
     const groundY = h - 160;
 
-    // terrain silhouette — sampled from the same Terrain.height() the
-    // host's physics uses, so what you see always matches where you land
+    // terrain silhouette
     ctx2d.beginPath();
     ctx2d.moveTo(0, h);
     const sampleStep = 16;
@@ -298,7 +297,7 @@
     ctx2d.fillStyle = '#c9a06a';
     ctx2d.fill();
 
-    // colored ribbon on top showing the terrain type (grass/gravel/ramp…)
+    // colored ribbon on top
     ctx2d.lineWidth = 6;
     ctx2d.beginPath();
     let started = false;
@@ -319,22 +318,64 @@
       drawFinishFlag(finishScreenX, groundY - Terrain.height(Sim.FINISH_X));
     }
 
-    // racers
+    // racers (modificato per telaio a due ruote AWD)
     const worldToScreenY = (y) => y - Sim.GROUND_Y + groundY;
     Object.entries(latestRacers).forEach(([id, r]) => {
       const meta = raceMeta[id];
       if (!meta) return;
-      const sx = r.x - camX;
-      const sy = worldToScreenY(r.y);
-      if (sx < -150 || sx > w + 150) return;
-      drawWheel(sx, sy, r.angle, meta.vertices, meta.color, id === Net.myId);
-      drawRider(sx, sy, meta.color, meta.name, id === Net.myId);
+      
+      // Coordinate di telaio e ruote inviate da Sim.snapshot()
+      const csx = r.x - camX, csy = worldToScreenY(r.y);
+      const fwsx = r.fwX - camX, fwsy = worldToScreenY(r.fwY);
+      const rwsx = r.rwX - camX, rwsy = worldToScreenY(r.rwY);
+      const isMe = (id === Net.myId);
+
+      if (csx < -250 || csx > w + 250) return; // culling fuori schermo
+
+      drawBike(csx, csy, r.angle, meta.color);
+      drawWheel(rwsx, rwsy, r.rwAngle, meta.vertices, meta.color, isMe);
+      drawWheel(fwsx, fwsy, r.fwAngle, meta.vertices, meta.color, isMe);
+      drawRider(csx, csy, r.angle, meta.color, meta.name, isMe);
     });
 
     updateHud();
     drawMinimap();
 
     raceLoopHandle = requestAnimationFrame(renderRace);
+  }
+
+  function drawBike(x, y, angle, color) {
+    ctx2d.save();
+    ctx2d.translate(x, y);
+    ctx2d.rotate(angle);
+    ctx2d.lineWidth = 6;
+    ctx2d.lineCap = 'round';
+    ctx2d.lineJoin = 'round';
+    ctx2d.strokeStyle = color;
+    
+    // Telaio tubolare
+    ctx2d.beginPath();
+    ctx2d.moveTo(-90, 0);          // forcellone posteriore
+    ctx2d.lineTo(0, 0);            // movimento centrale
+    ctx2d.lineTo(45, -45);         // tubo obliquo
+    ctx2d.lineTo(90, 0);           // forcella anteriore
+    ctx2d.moveTo(0, 0);            
+    ctx2d.lineTo(-30, -60);        // tubo sella
+    ctx2d.stroke();
+
+    // Sella
+    ctx2d.fillStyle = '#1a1a1a';
+    ctx2d.fillRect(-45, -65, 25, 8); 
+    
+    // Manubrio
+    ctx2d.lineWidth = 4;
+    ctx2d.beginPath();
+    ctx2d.moveTo(45, -45);
+    ctx2d.lineTo(40, -60);
+    ctx2d.lineTo(55, -70);
+    ctx2d.stroke();
+    
+    ctx2d.restore();
   }
 
   function drawFinishFlag(x, groundY) {
@@ -375,9 +416,13 @@
     ctx2d.restore();
   }
 
-  function drawRider(x, y, color, name, isMe) {
+  function drawRider(x, y, angle, color, name, isMe) {
     ctx2d.save();
-    ctx2d.translate(x, y - 46);
+    ctx2d.translate(x, y);
+    ctx2d.rotate(angle);
+    // Casco posizionato in alto e leggermente arretrato rispetto al centro del telaio
+    ctx2d.translate(-5, -100); 
+
     ctx2d.beginPath();
     ctx2d.arc(0, 0, 16, 0, Math.PI * 2);
     ctx2d.fillStyle = '#fff';
@@ -389,13 +434,16 @@
     ctx2d.font = 'bold 11px "Space Grotesk", sans-serif';
     ctx2d.textAlign = 'center';
     ctx2d.fillText(initials(name), 0, 4);
-    ctx2d.restore();
+    
     if (isMe) {
+      // Contro-rotazione per mantenere il badge "tu" dritto
+      ctx2d.rotate(-angle);
       ctx2d.fillStyle = '#1a1a1a';
       ctx2d.font = 'bold 12px "Kalam", cursive';
       ctx2d.textAlign = 'center';
-      ctx2d.fillText('tu', x, y - 70);
+      ctx2d.fillText('tu', 0, -28);
     }
+    ctx2d.restore();
   }
 
   function initials(name) {
