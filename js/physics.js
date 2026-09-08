@@ -1,31 +1,27 @@
 /*
- * Sim — the physics world. Only the HOST ever runs this. Every wheel
- * gets a constant motor (angular velocity), so a perfectly round wheel
- * converts that straight into forward speed, while a bumpy one loses
- * energy bouncing on every "corner" that hits the ground. That's the
- * whole game, emergent from real physics rather than a hand-tuned score.
+ * Sim — the physics world. Only the HOST ever runs this.
+ * Trasformato per gestire un telaio completo a due ruote (chassis + anteriore + posteriore).
+ * Integra attrito e rimbalzo specifici per ogni zona calcolata da terrain.js.
  */
 const Sim = (() => {
   const GROUND_Y = 520;
-  const FINISH_X = 6000;
-  const MOTOR_SPEED = 9; // rad/s once at full pedal
-  const RACE_TIMEOUT_MS = 60000;
+  const FINISH_X = Terrain.FINISH_X;
+  const MOTOR_SPEED = 6.0; // Motore più lento per far lavorare meglio la fisica sulle asperità
+  const RACE_TIMEOUT_MS = 120000; // Corsa più lunga, diamo più tempo
 
   let engine, world;
   let groundBodies = [];
-  let racers = {}; // id -> {body, color, name, finished, finishTime}
+  let racers = {}; // id -> {chassis, fw, rw, color, name, finished, finishTime}
   let running = false;
   let startedAt = 0;
 
   function init() {
-    // poly-decomp lets Matter.js split a concave freehand doodle into
-    // convex parts — without it, sharp inward dents get "filled in".
     if (typeof decomp !== 'undefined' && Matter.Common.setDecomp) {
       Matter.Common.setDecomp(decomp);
     }
     engine = Matter.Engine.create();
     world = engine.world;
-    engine.gravity.y = 1;
+    engine.gravity.y = 1.2; // Leggermente aumentata per far "mordere" meglio il fango e le rampe
     groundBodies = buildGround();
     Matter.World.add(world, groundBodies);
     racers = {};
@@ -42,8 +38,11 @@ const Sim = (() => {
       const midX = (x + x2) / 2, midY = (y1 + y2) / 2;
       const len = Math.hypot(x2 - x, y2 - y1);
       const angle = Math.atan2(y2 - y1, x2 - x);
+      
       const seg = Matter.Bodies.rectangle(midX, midY + 10, len + 2, 28, {
-        isStatic: true, friction: Terrain.frictionAt(midX),
+        isStatic: true, 
+        friction: Terrain.frictionAt(midX),
+        restitution: Terrain.restitutionAt(midX)
       });
       Matter.Body.setAngle(seg, angle);
       bodies.push(seg);
@@ -52,22 +51,38 @@ const Sim = (() => {
   }
 
   function addRacer(id, vertices, color, name, startIndex) {
-    const startX = 80 + startIndex * 45;
-    let body;
+    const startX = 50 + startIndex * 180; // Distanziati in griglia di partenza
+    const wOpt = { friction: 0.85, frictionStatic: 1, restitution: 0.05, density: 0.003 };
+
+    let fw, rw;
     try {
-      body = Matter.Bodies.fromVertices(
-        startX, GROUND_Y - 110, [vertices],
-        { friction: 0.85, frictionStatic: 1, restitution: 0.04, density: 0.0035 },
-        true
-      );
-    } catch (e) {
-      body = Matter.Bodies.circle(startX, GROUND_Y - 110, 80, { friction: 0.85, density: 0.0035 });
+      // Offset di 90px dal centro per accomodare un raggio ruota di 80px (180px di interasse)
+      fw = Matter.Bodies.fromVertices(startX + 90, GROUND_Y - 120, [vertices], wOpt, true);
+      rw = Matter.Bodies.fromVertices(startX - 90, GROUND_Y - 120, [vertices], wOpt, true);
+    } catch (e) {}
+    if (!fw || !rw) {
+      fw = Matter.Bodies.circle(startX + 90, GROUND_Y - 120, 80, wOpt);
+      rw = Matter.Bodies.circle(startX - 90, GROUND_Y - 120, 80, wOpt);
     }
-    if (!body) {
-      body = Matter.Bodies.circle(startX, GROUND_Y - 110, 80, { friction: 0.85, density: 0.0035 });
-    }
-    Matter.World.add(world, body);
-    racers[id] = { body, color, name, finished: false, finishTime: null };
+
+    // Assicura che le ruote e il telaio dello stesso veicolo non collidano tra loro
+    const group = Matter.Body.nextGroup(true);
+    fw.collisionFilter.group = group;
+    rw.collisionFilter.group = group;
+
+    const chassis = Matter.Bodies.rectangle(startX, GROUND_Y - 120, 180, 15, {
+      density: 0.001, collisionFilter: { group: group }
+    });
+
+    const axF = Matter.Constraint.create({ bodyA: chassis, pointA: { x: 90, y: 0 }, bodyB: fw, stiffness: 1, length: 0 });
+    const axR = Matter.Constraint.create({ bodyA: chassis, pointA: { x: -90, y: 0 }, bodyB: rw, stiffness: 1, length: 0 });
+
+    const composite = Matter.Composite.create({
+      bodies: [chassis, fw, rw],
+      constraints: [axF, axR]
+    });
+    Matter.World.add(world, composite);
+    racers[id] = { chassis, fw, rw, color, name, finished: false, finishTime: null };
   }
 
   function start() {
@@ -78,12 +93,15 @@ const Sim = (() => {
   function tick(dtMs) {
     if (!running) return;
     const elapsed = performance.now() - startedAt;
-    // quick ramp-up so the start isn't a jarring snap to full torque
-    const ramp = Math.min(1, elapsed / 600);
+    const ramp = Math.min(1, elapsed / 1000); // Accelerazione iniziale dolce
+    
     Object.values(racers).forEach(r => {
       if (!r.finished) {
-        Matter.Body.setAngularVelocity(r.body, MOTOR_SPEED * ramp);
-        if (r.body.position.x >= FINISH_X) {
+        // AWD: forza applicata a entrambe le ruote. Se il terreno è ghiaccio e la ruota tonda, slitterà
+        Matter.Body.setAngularVelocity(r.fw, MOTOR_SPEED * ramp);
+        Matter.Body.setAngularVelocity(r.rw, MOTOR_SPEED * ramp);
+        
+        if (r.chassis.position.x >= FINISH_X) {
           r.finished = true;
           r.finishTime = elapsed;
         }
@@ -95,11 +113,10 @@ const Sim = (() => {
   function snapshot() {
     return Object.entries(racers).map(([id, r]) => ({
       id,
-      x: r.body.position.x,
-      y: r.body.position.y,
-      angle: r.body.angle,
-      finished: r.finished,
-      finishTime: r.finishTime,
+      x: r.chassis.position.x, y: r.chassis.position.y, angle: r.chassis.angle,
+      fwX: r.fw.position.x, fwY: r.fw.position.y, fwAngle: r.fw.angle,
+      rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
+      finished: r.finished, finishTime: r.finishTime,
     }));
   }
 
@@ -117,7 +134,7 @@ const Sim = (() => {
       .map(([id, r]) => ({
         id, name: r.name, color: r.color,
         finished: r.finished, finishTime: r.finishTime,
-        distance: r.body.position.x,
+        distance: r.chassis.position.x,
       }))
       .sort((a, b) => {
         if (a.finished && b.finished) return a.finishTime - b.finishTime;
@@ -127,8 +144,5 @@ const Sim = (() => {
       });
   }
 
-  return {
-    init, addRacer, start, tick, snapshot, allFinished, isTimedOut, standings,
-    FINISH_X, GROUND_Y,
-  };
+  return { init, addRacer, start, tick, snapshot, allFinished, isTimedOut, standings, FINISH_X, GROUND_Y };
 })();
