@@ -8,7 +8,6 @@ const Sim = (() => {
     world = engine.world; 
     engine.gravity.y = 1.3; 
     
-    // Massima precisione del motore fisico per un contatto fluido
     engine.positionIterations = 30; 
     engine.velocityIterations = 20;
 
@@ -37,12 +36,13 @@ const Sim = (() => {
   function createWheelBody(x, y, vertices, wOpt) {
     let wheel = null;
     try {
-      // TRCCO DI PRECISIONE: Chamfer arrotonda i vertici vivi impedendo alle forme spigolose di piantarsi
-      wheel = Matter.Bodies.fromVertices(x, y, [vertices], { ...wOpt, chamfer: { radius: 6 } }, true);
+      // FORMA PURA: Nessun chamfer o arrotondamento, usa esattamente i vertici disegnati dall'utente
+      wheel = Matter.Bodies.fromVertices(x, y, [vertices], wOpt, true);
     } catch (e) {
       wheel = null;
     }
-    if (!wheel || (wheel.parts && wheel.parts.length > 8)) {
+    // Fallback di sicurezza solo se la scomposizione fallisce
+    if (!wheel || (wheel.parts && wheel.parts.length > 10)) {
       wheel = Matter.Bodies.circle(x, y, 75, wOpt);
     }
     return wheel;
@@ -51,10 +51,11 @@ const Sim = (() => {
   function addRacer(id, vertices, color, name, startIndex) {
     const startX = 60 + startIndex * 200, group = Matter.Body.nextGroup(true);
     
+    // Attrito statico a 0 per impedire agli angoli vivi di fare presa e bloccare la ruota
     const wOpt = { 
-      friction: 0.85, 
-      frictionStatic: 0.9, 
-      restitution: 0.2, // Leggera elasticità per un contatto organico e realistico
+      friction: 0.7, 
+      frictionStatic: 0.0, 
+      restitution: 0.2, 
       density: 0.002, 
       collisionFilter: { group: group } 
     };
@@ -67,20 +68,19 @@ const Sim = (() => {
       collisionFilter: { group: group } 
     });
 
-    // Sospensioni calibrate per assorbire ogni asperità del terreno
     const axF = Matter.Constraint.create({ bodyA: chassis, pointA: { x: 80, y: 0 }, bodyB: fw, stiffness: 0.6, damping: 0.12, length: 0 });
     const axR = Matter.Constraint.create({ bodyA: chassis, pointA: { x: -80, y: 0 }, bodyB: rw, stiffness: 0.6, damping: 0.12, length: 0 });
     
     Matter.World.add(world, [chassis, fw, rw, axF, axR]);
-    racers[id] = { chassis, fw, rw, axF, axR, color, name, finished: false, finishTime: null };
+    racers[id] = { chassis, fw, rw, axF, axR, color, name, finished: false, finishTime: null, stuckTimer: 0 };
   }
 
   function updateRacerWheel(id, vertices) {
     const r = racers[id]; if (!r || r.finished) return;
     const group = r.chassis.collisionFilter.group;
     const wOpt = { 
-      friction: 0.85, 
-      frictionStatic: 0.9, 
+      friction: 0.7, 
+      frictionStatic: 0.0, 
       restitution: 0.2, 
       density: 0.002, 
       collisionFilter: { group: group } 
@@ -118,13 +118,23 @@ const Sim = (() => {
     
     Object.values(racers).forEach(r => {
       if (!r.finished) {
-        // Coppia motrice progressiva per un rotolamento naturale e continuo
-        const DRIVE_TORQUE = 0.07 * ramp;
+        const DRIVE_TORQUE = 0.08 * ramp;
         r.fw.torque += DRIVE_TORQUE;
         r.rw.torque += DRIVE_TORQUE;
 
         if (r.chassis.velocity.x < 15) {
-          Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.0008 * ramp, y: 0 });
+          Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.001 * ramp, y: 0 });
+        }
+
+        // Sistema anti-stuck per disincastrare la bici se si ferma in una cunetta profonda
+        if (Math.abs(r.chassis.velocity.x) < 0.2 && elapsed > 2000) {
+          r.stuckTimer = (r.stuckTimer || 0) + dtMs;
+          if (r.stuckTimer > 400) {
+            Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.015, y: -0.02 });
+            r.stuckTimer = 0;
+          }
+        } else {
+          r.stuckTimer = 0;
         }
 
         if (r.chassis.velocity.x < -0.1) {
