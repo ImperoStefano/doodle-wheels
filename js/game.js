@@ -139,12 +139,30 @@
     ctx2d.fillStyle = grad; ctx2d.fillRect(0, 0, w, h);
     const groundY = h - 160;
 
-    // Montagne Parallasse
-    ctx2d.fillStyle = '#93c5fd'; ctx2d.beginPath();
-    for (let sx = -w; sx <= w + 400; sx += 400) {
-      const mX = sx - ((sx + smoothCamX * 0.15) % 400);
-      ctx2d.moveTo(mX, groundY); ctx2d.lineTo(mX + 200, groundY - 240 - Math.sin(mX) * 50); ctx2d.lineTo(mX + 400, groundY);
+    // NUVOLE IN MOVIMENTO (PARALLASSE LENTA)
+    ctx2d.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    [150, 650, 1200, 1800, 2400].forEach((cloudX, idx) => {
+      let cx = (cloudX - smoothCamX * 0.12) % (w + 600);
+      if (cx < -300) cx += w + 900;
+      let cy = 70 + (idx % 3) * 45;
+      ctx2d.beginPath();
+      ctx2d.arc(cx, cy, 32, 0, Math.PI * 2);
+      ctx2d.arc(cx + 25, cy - 12, 42, 0, Math.PI * 2);
+      ctx2d.arc(cx + 55, cy, 28, 0, Math.PI * 2);
+      ctx2d.fill();
+    });
+
+    // COLLINE DI SFONDO MORBIDE (Niente più triangoli appuntiti)
+    ctx2d.fillStyle = '#93c5fd'; 
+    ctx2d.beginPath();
+    ctx2d.moveTo(0, groundY);
+    for (let sx = 0; sx <= w; sx += 10) {
+      const worldX = sx + smoothCamX * 0.2;
+      const hillY = groundY - 120 - (Math.sin(worldX / 300) * 80 + Math.cos(worldX / 150) * 40);
+      ctx2d.lineTo(sx, hillY);
     }
+    ctx2d.lineTo(w, groundY);
+    ctx2d.closePath();
     ctx2d.fill();
 
     // Particelle
@@ -167,7 +185,7 @@
       const y = groundY - Terrain.height(sx + smoothCamX); if (!started) { ctx2d.moveTo(sx, y); started = true; } else ctx2d.lineTo(sx, y);
     }
     ctx2d.strokeStyle = Terrain.colorAt(smoothCamX + w / 2); ctx2d.stroke();
-    ctx2d.strokeStyle = '#1e293b'; ctx2d.lineWidth = 2; ctx2d.stroke(); // Bordino nero
+    ctx2d.strokeStyle = '#1e293b'; ctx2d.lineWidth = 2; ctx2d.stroke();
 
     const fX = Terrain.FINISH_X - smoothCamX; if (fX > -50 && fX < w + 50) drawFinishFlag(fX, groundY - Terrain.height(Terrain.FINISH_X));
 
@@ -195,24 +213,34 @@
   function drawBike(x, y, a, c) {
     ctx2d.save(); ctx2d.translate(x, y); ctx2d.rotate(a); ctx2d.lineCap = 'round'; ctx2d.lineJoin = 'round';
     ctx2d.shadowColor = 'rgba(0,0,0,0.4)'; ctx2d.shadowBlur = 10; ctx2d.shadowOffsetY = 8;
-    ctx2d.lineWidth = 7; ctx2d.strokeStyle = c; ctx2d.beginPath(); // Telaio principale
+    ctx2d.lineWidth = 7; ctx2d.strokeStyle = c; ctx2d.beginPath();
     ctx2d.moveTo(-90, 0); ctx2d.lineTo(0, 0); ctx2d.lineTo(-20, -55); ctx2d.lineTo(-90, 0);
     ctx2d.moveTo(0, 0); ctx2d.lineTo(55, -45); ctx2d.lineTo(-20, -55); ctx2d.stroke();
     ctx2d.shadowColor = 'transparent';
-    ctx2d.strokeStyle = '#94a3b8'; ctx2d.lineWidth = 6; ctx2d.beginPath(); ctx2d.moveTo(90, 0); ctx2d.lineTo(55, -45); ctx2d.stroke(); // Forcella
-    ctx2d.strokeStyle = '#1e293b'; ctx2d.lineWidth = 5; ctx2d.beginPath(); ctx2d.moveTo(55, -45); ctx2d.lineTo(45, -70); ctx2d.lineTo(60, -80); ctx2d.stroke(); // Manubrio
-    ctx2d.fillStyle = c; ctx2d.beginPath(); ctx2d.arc(60, -80, 7, 0, Math.PI * 2); ctx2d.fill(); // Manopola
-    ctx2d.strokeStyle = '#1e293b'; ctx2d.beginPath(); ctx2d.moveTo(-20, -55); ctx2d.lineTo(-25, -75); ctx2d.stroke(); // Tubo sella
-    ctx2d.fillStyle = '#1e293b'; ctx2d.beginPath(); ctx2d.ellipse(-30, -78, 16, 5, Math.PI/12, 0, 2*Math.PI); ctx2d.fill(); // Sella
-    ctx2d.fillStyle = '#475569'; ctx2d.beginPath(); ctx2d.arc(0, 0, 10, 0, Math.PI * 2); ctx2d.fill(); // Movimento centrale
+    ctx2d.strokeStyle = '#94a3b8'; ctx2d.lineWidth = 6; ctx2d.beginPath(); ctx2d.moveTo(90, 0); ctx2d.lineTo(55, -45); ctx2d.stroke();
+    ctx2d.strokeStyle = '#1e293b'; ctx2d.lineWidth = 5; ctx2d.beginPath(); ctx2d.moveTo(55, -45); ctx2d.lineTo(45, -70); ctx2d.lineTo(60, -80); ctx2d.stroke();
+    ctx2d.fillStyle = c; ctx2d.beginPath(); ctx2d.arc(60, -80, 7, 0, Math.PI * 2); ctx2d.fill();
+    ctx2d.strokeStyle = '#1e293b'; ctx2d.lineWidth = 5; ctx2d.beginPath(); ctx2d.moveTo(-20, -55); ctx2d.lineTo(-25, -75); ctx2d.stroke();
+    ctx2d.fillStyle = '#1e293b'; ctx2d.beginPath(); ctx2d.ellipse(-30, -78, 16, 5, Math.PI/12, 0, 2*Math.PI); ctx2d.fill();
+    ctx2d.fillStyle = '#475569'; ctx2d.beginPath(); ctx2d.arc(0, 0, 10, 0, Math.PI * 2); ctx2d.fill();
     ctx2d.restore();
   }
 
   function drawWheel(x, y, a, v, c, isMe) {
     ctx2d.save(); ctx2d.translate(x, y); ctx2d.rotate(a);
-    ctx2d.lineWidth = 2; ctx2d.strokeStyle = 'rgba(15,23,42,0.15)'; // Raggi
-    for(let i=0; i<6; i++) { ctx2d.beginPath(); ctx2d.moveTo(0,0); ctx2d.lineTo(Math.cos(i*Math.PI/3)*70, Math.sin(i*Math.PI/3)*70); ctx2d.stroke(); }
-    ctx2d.beginPath(); v.forEach((p, i) => i===0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y)); ctx2d.closePath();
+    
+    // Raggi adattabili dinamicamente alla forma tracciata
+    if (v && v.length > 0) {
+      ctx2d.lineWidth = 2; 
+      ctx2d.strokeStyle = 'rgba(15,23,42,0.2)';
+      const step = Math.max(1, Math.floor(v.length / 6));
+      for (let i = 0; i < v.length; i += step) {
+        let p = v[i];
+        ctx2d.beginPath(); ctx2d.moveTo(0, 0); ctx2d.lineTo(p.x, p.y); ctx2d.stroke();
+      }
+    }
+
+    ctx2d.beginPath(); v.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y)); ctx2d.closePath();
     ctx2d.fillStyle = c; ctx2d.globalAlpha = 0.85; ctx2d.fill();
     ctx2d.globalAlpha = 1; ctx2d.lineWidth = isMe ? 4 : 2.5; ctx2d.strokeStyle = '#0f172a'; ctx2d.stroke();
     ctx2d.beginPath(); ctx2d.arc(0, 0, 8, 0, Math.PI * 2); ctx2d.fillStyle = '#0f172a'; ctx2d.fill(); ctx2d.restore();
