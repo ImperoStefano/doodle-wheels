@@ -6,9 +6,8 @@ const Sim = (() => {
     if (typeof decomp !== 'undefined' && Matter.Common.setDecomp) Matter.Common.setDecomp(decomp);
     engine = Matter.Engine.create(); 
     world = engine.world; 
-    engine.gravity.y = 1.0; // Gravità bilanciata per una discesa fluida
+    engine.gravity.y = 1.2; 
     
-    // Iterazioni stabili per azzerare qualsiasi micro-scatter o compenetrazione
     engine.positionIterations = 20; 
     engine.velocityIterations = 15;
 
@@ -41,23 +40,24 @@ const Sim = (() => {
     } catch (e) {
       wheel = null;
     }
-    // Fallback di sicurezza assoluta: se la scomposizione geometrica fallisce o crea troppe parti, usa un cerchio perfetto
-    if (!wheel || (wheel.parts && wheel.parts.length > 6)) {
+    // Fallback sicuro se la forma è troppo complessa
+    if (!wheel || (wheel.parts && wheel.parts.length > 8)) {
       wheel = Matter.Bodies.circle(x, y, 70, wOpt);
     }
-    // Assegna un'inerzia fissa per evitare il blocco della rotazione
-    Matter.Body.setInertia(wheel, 1500);
+    // Inerzia leggera per facilitare la rotazione anche con forme spigolose
+    Matter.Body.setInertia(wheel, 800);
     return wheel;
   }
 
   function addRacer(id, vertices, color, name, startIndex) {
     const startX = 60 + startIndex * 200, group = Matter.Body.nextGroup(true);
     
+    // ATTRITO RIDOTTO AL MINIMO: Evita che le forme spigolose si puntino e blocchino la ruota
     const wOpt = { 
-      friction: 0.4, 
-      frictionStatic: 0.3, 
-      restitution: 0.05, 
-      density: 0.0015, 
+      friction: 0.05, 
+      frictionStatic: 0.05, 
+      restitution: 0.1, 
+      density: 0.0012, 
       collisionFilter: { group: group } 
     };
     
@@ -69,9 +69,8 @@ const Sim = (() => {
       collisionFilter: { group: group } 
     });
 
-    // Sospensioni elastiche ma stabili per assorbire i dislivelli senza rimbalzi violenti
-    const axF = Matter.Constraint.create({ bodyA: chassis, pointA: { x: 80, y: 0 }, bodyB: fw, stiffness: 0.5, damping: 0.2, length: 0 });
-    const axR = Matter.Constraint.create({ bodyA: chassis, pointA: { x: -80, y: 0 }, bodyB: rw, stiffness: 0.5, damping: 0.2, length: 0 });
+    const axF = Matter.Constraint.create({ bodyA: chassis, pointA: { x: 80, y: 0 }, bodyB: fw, stiffness: 0.6, damping: 0.1, length: 0 });
+    const axR = Matter.Constraint.create({ bodyA: chassis, pointA: { x: -80, y: 0 }, bodyB: rw, stiffness: 0.6, damping: 0.1, length: 0 });
     
     Matter.World.add(world, [chassis, fw, rw, axF, axR]);
     racers[id] = { chassis, fw, rw, axF, axR, color, name, finished: false, finishTime: null };
@@ -81,10 +80,10 @@ const Sim = (() => {
     const r = racers[id]; if (!r || r.finished) return;
     const group = r.chassis.collisionFilter.group;
     const wOpt = { 
-      friction: 0.4, 
-      frictionStatic: 0.3, 
-      restitution: 0.05, 
-      density: 0.0015, 
+      friction: 0.05, 
+      frictionStatic: 0.05, 
+      restitution: 0.1, 
+      density: 0.0012, 
       collisionFilter: { group: group } 
     };
     const fwPos = { ...r.fw.position }, rwPos = { ...r.rw.position };
@@ -101,8 +100,8 @@ const Sim = (() => {
     Matter.Body.setAngularVelocity(fw, fwAng); 
     Matter.Body.setAngularVelocity(rw, rwAng);
 
-    const axF = Matter.Constraint.create({ bodyA: r.chassis, pointA: { x: 80, y: 0 }, bodyB: fw, stiffness: 0.5, damping: 0.2, length: 0 });
-    const axR = Matter.Constraint.create({ bodyA: r.chassis, pointA: { x: -80, y: 0 }, bodyB: rw, stiffness: 0.5, damping: 0.2, length: 0 });
+    const axF = Matter.Constraint.create({ bodyA: r.chassis, pointA: { x: 80, y: 0 }, bodyB: fw, stiffness: 0.6, damping: 0.1, length: 0 });
+    const axR = Matter.Constraint.create({ bodyA: r.chassis, pointA: { x: -80, y: 0 }, bodyB: rw, stiffness: 0.6, damping: 0.1, length: 0 });
     
     Matter.World.add(world, [fw, rw, axF, axR]);
     r.fw = fw; r.rw = rw; r.axF = axF; r.axR = axR;
@@ -116,27 +115,27 @@ const Sim = (() => {
   function tick(dtMs) {
     if (!running) return;
     const elapsed = performance.now() - startedAt; 
-    const ramp = Math.min(1, elapsed / 2500); // Accelerazione graduale nei primi 2.5 secondi
+    const ramp = Math.min(1, elapsed / 1500); // Accelerazione rapida e reattiva
     
     Object.values(racers).forEach(r => {
       if (!r.finished) {
-        // TRASMISSIONE A COPPIA STABILE: Spinge le ruote in avanti in modo organico e senza scatti
-        const DRIVE_TORQUE = 0.035 * ramp;
+        // COPPIA POTENTE E FORZATA: Fa ruotare anche le forme più spigolose e irregolari senza pietà
+        const DRIVE_TORQUE = 0.16 * ramp;
         
         r.fw.torque += DRIVE_TORQUE;
         r.rw.torque += DRIVE_TORQUE;
 
-        // Piccola forza propulsiva di supporto sul telaio per superare le pendenze senza impuntarsi
-        if (r.chassis.velocity.x < 12) {
-          Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.0004 * ramp, y: 0 });
+        // Spinta propulsiva costante sul telaio per garantire movimento fluido in avanti
+        if (r.chassis.velocity.x < 18) {
+          Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.0015 * ramp, y: 0 });
         }
 
-        // Impedisce alla bici di scivolare all'indietro se si ferma in salita
+        // Impedisce di scivolare all'indietro in salita
         if (r.chassis.velocity.x < -0.1) {
           Matter.Body.setVelocity(r.chassis, { x: 0, y: r.chassis.velocity.y });
         }
 
-        // Attrito dell'acqua (rallentamento calibrato)
+        // Attrito dell'acqua
         if (Terrain.colorAt(r.chassis.position.x) === '#3b82f6') {
           Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x * 0.94, y: r.chassis.velocity.y * 0.94 });
         }
