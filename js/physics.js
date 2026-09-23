@@ -36,12 +36,11 @@ const Sim = (() => {
   function createWheelBody(x, y, vertices, wOpt) {
     let wheel = null;
     try {
-      // FORMA PURA: Nessun chamfer o arrotondamento, usa esattamente i vertici disegnati dall'utente
+      // Mantiene intatta la forma esatta disegnata dall'utente senza alterarla
       wheel = Matter.Bodies.fromVertices(x, y, [vertices], wOpt, true);
     } catch (e) {
       wheel = null;
     }
-    // Fallback di sicurezza solo se la scomposizione fallisce
     if (!wheel || (wheel.parts && wheel.parts.length > 10)) {
       wheel = Matter.Bodies.circle(x, y, 75, wOpt);
     }
@@ -51,12 +50,12 @@ const Sim = (() => {
   function addRacer(id, vertices, color, name, startIndex) {
     const startX = 60 + startIndex * 200, group = Matter.Body.nextGroup(true);
     
-    // Attrito statico a 0 per impedire agli angoli vivi di fare presa e bloccare la ruota
+    // Ruote più leggere e agili per favorire la rotazione delle forme complesse
     const wOpt = { 
-      friction: 0.7, 
+      friction: 0.6, 
       frictionStatic: 0.0, 
       restitution: 0.2, 
-      density: 0.002, 
+      density: 0.0008, 
       collisionFilter: { group: group } 
     };
     
@@ -64,7 +63,7 @@ const Sim = (() => {
     const rw = createWheelBody(startX - 90, GROUND_Y - 140, vertices, wOpt);
     
     const chassis = Matter.Bodies.rectangle(startX, GROUND_Y - 140, 160, 16, { 
-      density: 0.0012, 
+      density: 0.001, 
       collisionFilter: { group: group } 
     });
 
@@ -79,10 +78,10 @@ const Sim = (() => {
     const r = racers[id]; if (!r || r.finished) return;
     const group = r.chassis.collisionFilter.group;
     const wOpt = { 
-      friction: 0.7, 
+      friction: 0.6, 
       frictionStatic: 0.0, 
       restitution: 0.2, 
-      density: 0.002, 
+      density: 0.0008, 
       collisionFilter: { group: group } 
     };
     const fwPos = { ...r.fw.position }, rwPos = { ...r.rw.position };
@@ -114,23 +113,24 @@ const Sim = (() => {
   function tick(dtMs) {
     if (!running) return;
     const elapsed = performance.now() - startedAt; 
-    const ramp = Math.min(1, elapsed / 2000); 
+    const ramp = Math.min(1, elapsed / 1500); 
     
     Object.values(racers).forEach(r => {
       if (!r.finished) {
-        const DRIVE_TORQUE = 0.08 * ramp;
+        // POTENZIAMENTO MASSIMO: Coppia motrice molto forte per far girare ogni tipo di spigolo
+        const DRIVE_TORQUE = 0.3 * ramp;
         r.fw.torque += DRIVE_TORQUE;
         r.rw.torque += DRIVE_TORQUE;
 
-        if (r.chassis.velocity.x < 15) {
-          Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.001 * ramp, y: 0 });
+        if (r.chassis.velocity.x < 22) {
+          Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.004 * ramp, y: 0 });
         }
 
-        // Sistema anti-stuck per disincastrare la bici se si ferma in una cunetta profonda
-        if (Math.abs(r.chassis.velocity.x) < 0.2 && elapsed > 2000) {
+        // Sistema anti-stuck reattivo per spingere fuori la bici in caso di blocco
+        if (Math.abs(r.chassis.velocity.x) < 0.3 && elapsed > 1500) {
           r.stuckTimer = (r.stuckTimer || 0) + dtMs;
-          if (r.stuckTimer > 400) {
-            Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.015, y: -0.02 });
+          if (r.stuckTimer > 300) {
+            Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.025, y: -0.035 });
             r.stuckTimer = 0;
           }
         } else {
