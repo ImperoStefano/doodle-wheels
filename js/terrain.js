@@ -1,66 +1,64 @@
 const Terrain = (() => {
-  let TRACK_START = -300, TRACK_END = 9000, FINISH_X = 8500, ZONES = [];
-  const ZONE_TYPES = ['hills1', 'ice', 'gravel', 'water', 'ramps', 'hills2'];
+  let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500, ZONES = [];
   
+  const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps'];
   const ZONE_COLORS = {
-    flatStart: '#10b981', hills1: '#059669', ice: '#7dd3fc',
-    gravel: '#94a3b8', water: '#3b82f6', ramps: '#f59e0b',
-    hills2: '#059669', flatFinish: '#10b981'
+    start: '#10b981', hills: '#059669', ice: '#7dd3fc',
+    gravel: '#94a3b8', water: '#3b82f6', ramps: '#f59e0b', finish: '#10b981'
   };
-
-  const FRICTION = {
-    flatStart: 0.95, hills1: 0.95, ice: 0.015, gravel: 0.6,
-    water: 0.95, ramps: 1.1, hills2: 0.95, flatFinish: 0.95
-  };
+  const FRICTION = { start: 0.9, hills: 0.9, ice: 0.02, gravel: 0.6, water: 0.95, ramps: 1.1, finish: 0.9 };
 
   function generateRandomLayout() {
-    const layout = []; for (let i = 0; i < 6; i++) layout.push(ZONE_TYPES[Math.floor(Math.random() * ZONE_TYPES.length)]); return layout;
+    const layout = []; for (let i = 0; i < 7; i++) layout.push(ZONE_TYPES[Math.floor(Math.random() * ZONE_TYPES.length)]); return layout;
   }
 
   function applyLayout(layoutKeys) {
     ZONES = []; let currentX = -300;
-    ZONES.push({ key: 'flatStart', start: currentX, end: currentX + 1500, color: ZONE_COLORS.flatStart }); currentX += 1500;
-    layoutKeys.forEach(key => { ZONES.push({ key, start: currentX, end: currentX + 1300, color: ZONE_COLORS[key] }); currentX += 1300; });
-    ZONES.push({ key: 'flatFinish', start: currentX, end: currentX + 1500, color: ZONE_COLORS.flatFinish });
-    TRACK_END = currentX + 1500; FINISH_X = currentX + 400; 
-  }
-
-  function smoothstep(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
-  function zoneWeight(x, z, feather = 250) {
-    if (x <= z.start - feather || x >= z.end + feather) return 0;
-    if (x >= z.start + feather && x <= z.end - feather) return 1;
-    if (x < z.start + feather) return smoothstep((x - (z.start - feather)) / (2 * feather));
-    return smoothstep(((z.end + feather) - x) / (2 * feather));
-  }
-  function rampWave(x, period, amp) {
-    const t = ((x % period) + period) % period, frac = t / period;
-    return frac < 0.7 ? (frac / 0.7) * amp : amp * (1 - (frac - 0.7) / 0.3) * 0.4;
+    ZONES.push({ key: 'start', start: currentX, end: currentX + 1200, color: ZONE_COLORS.start }); currentX += 1200;
+    layoutKeys.forEach(key => { ZONES.push({ key, start: currentX, end: currentX + 1400, color: ZONE_COLORS[key] }); currentX += 1400; });
+    ZONES.push({ key: 'finish', start: currentX, end: currentX + 1200, color: ZONE_COLORS.finish });
+    TRACK_END = currentX + 1200; FINISH_X = currentX + 300; 
   }
 
   function height(x) {
+    if (x < 500 || x > TRACK_END - 500) return 0;
+    
     let h = 0;
-    for (const z of ZONES) {
-      const w = zoneWeight(x, z); if (w <= 0) continue;
-      if (z.key === 'hills1') h += w * (Math.sin(x / 140) * 80 + Math.sin(x / 35) * 15);
-      else if (z.key === 'ice') h += w * -25;
-      else if (z.key === 'gravel') h += w * (Math.sin(x / 40) * 20 + Math.cos(x / 18) * 15 + Math.sin(x / 7) * 8);
-      else if (z.key === 'water') h += w * -90;
-      else if (z.key === 'ramps') h += w * rampWave(x, 280, 140);
-      else if (z.key === 'hills2') h += w * (Math.sin(x / 250) * 70 + Math.cos(x / 80) * 25);
+    
+    if (x >= 1200 && x < 3200) {
+      h = 50 + Math.sin(x / 120) * 8; 
+    } 
+    else if (x >= 3200 && x < 5200) {
+      let progress = (x - 3200) / 2000;
+      h = 40 - Math.sin(progress * Math.PI) * 90; 
+    } 
+    else if (x >= 5200 && x < 8000) {
+      let progress = (x - 5200) / 2800;
+      h = progress * 130 + Math.sin(progress * Math.PI * 4) * 20; 
+    } 
+    else {
+      h = Math.sin(x / 250) * 50; 
     }
+    
+    let z = dominantZone(x);
+    if (z.key === 'ice') h -= 15;
+    if (z.key === 'water') h -= 60; 
+    if (z.key === 'ramps') h += Math.abs(Math.sin(x / 90)) * 45; 
+
     return h;
   }
 
   function dominantZone(x) {
-    let best = ZONES[0], bestW = -1;
-    for (const z of ZONES) { const w = zoneWeight(x, z, 50); if (w > bestW) { bestW = w; best = z; } }
-    return best || ZONES[0];
+    for (const z of ZONES) { if (x >= z.start && x <= z.end) return z; }
+    return ZONES[0] || { key: 'hills' };
   }
 
-  applyLayout(generateRandomLayout()); // Pre-genera una mappa sicura al caricamento
+  applyLayout(generateRandomLayout());
 
   return { 
-    generateRandomLayout, applyLayout, height, frictionAt: (x) => FRICTION[dominantZone(x).key], colorAt: (x) => dominantZone(x).color, 
+    generateRandomLayout, applyLayout, height, 
+    frictionAt: (x) => FRICTION[dominantZone(x).key] || 0.9, 
+    colorAt: (x) => dominantZone(x).color || '#059669', 
     get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; }, get TRACK_START() { return TRACK_START; } 
   };
 })();
