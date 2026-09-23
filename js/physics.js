@@ -6,10 +6,11 @@ const Sim = (() => {
     if (typeof decomp !== 'undefined' && Matter.Common.setDecomp) Matter.Common.setDecomp(decomp);
     engine = Matter.Engine.create(); 
     world = engine.world; 
-    engine.gravity.y = 1.2; 
+    engine.gravity.y = 1.3; 
     
-    engine.positionIterations = 20; 
-    engine.velocityIterations = 15;
+    // Massima precisione del motore fisico per un contatto fluido
+    engine.positionIterations = 30; 
+    engine.velocityIterations = 20;
 
     Matter.World.add(world, buildGround()); 
     racers = {}; 
@@ -25,7 +26,7 @@ const Sim = (() => {
       const seg = Matter.Bodies.rectangle(midX, midY + 100, len + 2, 200, {
         isStatic: true, 
         friction: Terrain.frictionAt(midX), 
-        restitution: 0.1 
+        restitution: 0.15 
       });
       Matter.Body.setAngle(seg, angle); 
       bodies.push(seg);
@@ -36,28 +37,25 @@ const Sim = (() => {
   function createWheelBody(x, y, vertices, wOpt) {
     let wheel = null;
     try {
-      wheel = Matter.Bodies.fromVertices(x, y, [vertices], wOpt, true);
+      // TRCCO DI PRECISIONE: Chamfer arrotonda i vertici vivi impedendo alle forme spigolose di piantarsi
+      wheel = Matter.Bodies.fromVertices(x, y, [vertices], { ...wOpt, chamfer: { radius: 6 } }, true);
     } catch (e) {
       wheel = null;
     }
-    // Fallback sicuro se la forma è troppo complessa
     if (!wheel || (wheel.parts && wheel.parts.length > 8)) {
-      wheel = Matter.Bodies.circle(x, y, 70, wOpt);
+      wheel = Matter.Bodies.circle(x, y, 75, wOpt);
     }
-    // Inerzia leggera per facilitare la rotazione anche con forme spigolose
-    Matter.Body.setInertia(wheel, 800);
     return wheel;
   }
 
   function addRacer(id, vertices, color, name, startIndex) {
     const startX = 60 + startIndex * 200, group = Matter.Body.nextGroup(true);
     
-    // ATTRITO RIDOTTO AL MINIMO: Evita che le forme spigolose si puntino e blocchino la ruota
     const wOpt = { 
-      friction: 0.05, 
-      frictionStatic: 0.05, 
-      restitution: 0.1, 
-      density: 0.0012, 
+      friction: 0.85, 
+      frictionStatic: 0.9, 
+      restitution: 0.2, // Leggera elasticità per un contatto organico e realistico
+      density: 0.002, 
       collisionFilter: { group: group } 
     };
     
@@ -65,12 +63,13 @@ const Sim = (() => {
     const rw = createWheelBody(startX - 90, GROUND_Y - 140, vertices, wOpt);
     
     const chassis = Matter.Bodies.rectangle(startX, GROUND_Y - 140, 160, 16, { 
-      density: 0.001, 
+      density: 0.0012, 
       collisionFilter: { group: group } 
     });
 
-    const axF = Matter.Constraint.create({ bodyA: chassis, pointA: { x: 80, y: 0 }, bodyB: fw, stiffness: 0.6, damping: 0.1, length: 0 });
-    const axR = Matter.Constraint.create({ bodyA: chassis, pointA: { x: -80, y: 0 }, bodyB: rw, stiffness: 0.6, damping: 0.1, length: 0 });
+    // Sospensioni calibrate per assorbire ogni asperità del terreno
+    const axF = Matter.Constraint.create({ bodyA: chassis, pointA: { x: 80, y: 0 }, bodyB: fw, stiffness: 0.6, damping: 0.12, length: 0 });
+    const axR = Matter.Constraint.create({ bodyA: chassis, pointA: { x: -80, y: 0 }, bodyB: rw, stiffness: 0.6, damping: 0.12, length: 0 });
     
     Matter.World.add(world, [chassis, fw, rw, axF, axR]);
     racers[id] = { chassis, fw, rw, axF, axR, color, name, finished: false, finishTime: null };
@@ -80,10 +79,10 @@ const Sim = (() => {
     const r = racers[id]; if (!r || r.finished) return;
     const group = r.chassis.collisionFilter.group;
     const wOpt = { 
-      friction: 0.05, 
-      frictionStatic: 0.05, 
-      restitution: 0.1, 
-      density: 0.0012, 
+      friction: 0.85, 
+      frictionStatic: 0.9, 
+      restitution: 0.2, 
+      density: 0.002, 
       collisionFilter: { group: group } 
     };
     const fwPos = { ...r.fw.position }, rwPos = { ...r.rw.position };
@@ -100,8 +99,8 @@ const Sim = (() => {
     Matter.Body.setAngularVelocity(fw, fwAng); 
     Matter.Body.setAngularVelocity(rw, rwAng);
 
-    const axF = Matter.Constraint.create({ bodyA: r.chassis, pointA: { x: 80, y: 0 }, bodyB: fw, stiffness: 0.6, damping: 0.1, length: 0 });
-    const axR = Matter.Constraint.create({ bodyA: r.chassis, pointA: { x: -80, y: 0 }, bodyB: rw, stiffness: 0.6, damping: 0.1, length: 0 });
+    const axF = Matter.Constraint.create({ bodyA: r.chassis, pointA: { x: 80, y: 0 }, bodyB: fw, stiffness: 0.6, damping: 0.12, length: 0 });
+    const axR = Matter.Constraint.create({ bodyA: r.chassis, pointA: { x: -80, y: 0 }, bodyB: rw, stiffness: 0.6, damping: 0.12, length: 0 });
     
     Matter.World.add(world, [fw, rw, axF, axR]);
     r.fw = fw; r.rw = rw; r.axF = axF; r.axR = axR;
@@ -115,27 +114,23 @@ const Sim = (() => {
   function tick(dtMs) {
     if (!running) return;
     const elapsed = performance.now() - startedAt; 
-    const ramp = Math.min(1, elapsed / 1500); // Accelerazione rapida e reattiva
+    const ramp = Math.min(1, elapsed / 2000); 
     
     Object.values(racers).forEach(r => {
       if (!r.finished) {
-        // COPPIA POTENTE E FORZATA: Fa ruotare anche le forme più spigolose e irregolari senza pietà
-        const DRIVE_TORQUE = 0.16 * ramp;
-        
+        // Coppia motrice progressiva per un rotolamento naturale e continuo
+        const DRIVE_TORQUE = 0.07 * ramp;
         r.fw.torque += DRIVE_TORQUE;
         r.rw.torque += DRIVE_TORQUE;
 
-        // Spinta propulsiva costante sul telaio per garantire movimento fluido in avanti
-        if (r.chassis.velocity.x < 18) {
-          Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.0015 * ramp, y: 0 });
+        if (r.chassis.velocity.x < 15) {
+          Matter.Body.applyForce(r.chassis, r.chassis.position, { x: 0.0008 * ramp, y: 0 });
         }
 
-        // Impedisce di scivolare all'indietro in salita
         if (r.chassis.velocity.x < -0.1) {
           Matter.Body.setVelocity(r.chassis, { x: 0, y: r.chassis.velocity.y });
         }
 
-        // Attrito dell'acqua
         if (Terrain.colorAt(r.chassis.position.x) === '#3b82f6') {
           Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x * 0.94, y: r.chassis.velocity.y * 0.94 });
         }
