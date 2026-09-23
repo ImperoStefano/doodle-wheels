@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Doodle Wheels — disegna la tua ruota, sfida i tuoi amici</title>
-<meta name="description" content="Un gioco di corse online per 5 giocatori: disegna la forma della tua ruota e sfida i tuoi amici in tempo reale.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
@@ -13,18 +12,15 @@
 <body>
 
 <div class="page">
-
   <!-- MENU -->
   <section id="screen-menu" class="screen screen--active">
     <div class="card card--hero">
       <h1 class="title">Doodle Wheels</h1>
       <p class="subtitle">Disegna la forma della tua ruota. Più è tonda, più corre liscia.<br>Sfida fino a 4 amici in tempo reale.</p>
-
       <label class="field">
         <span>Il tuo nome</span>
         <input id="input-name" type="text" maxlength="14" placeholder="Es. Stefano" autocomplete="off">
       </label>
-
       <div class="menu-actions">
         <button id="btn-host" class="btn btn--primary">Crea una gara</button>
         <div class="join-row">
@@ -42,9 +38,7 @@
       <p class="eyebrow-free">Codice della gara</p>
       <div class="room-code" id="room-code">----</div>
       <p class="hint">Dallo ai tuoi amici: lo inseriscono nel campo "Unisciti a una gara".</p>
-
       <ul id="player-list" class="player-list"></ul>
-
       <button id="btn-start-race" class="btn btn--primary" disabled>In attesa di giocatori…</button>
       <p class="hint" id="lobby-hint"></p>
     </div>
@@ -57,10 +51,8 @@
         <h2 class="section-title">Disegna la tua ruota</h2>
         <div class="timer-pill" id="draw-timer">30</div>
       </div>
-      <p class="hint">Traccia una forma chiusa dentro al cerchio tratteggiato. Una forma rotonda scorre veloce, una spigolosa fa saltare la ruota.</p>
-
+      <p class="hint">Traccia una forma chiusa. Una forma rotonda scorre veloce, una spigolosa fa saltare la ruota.</p>
       <canvas id="draw-canvas" width="480" height="480" class="draw-canvas"></canvas>
-
       <div class="draw-actions">
         <button id="btn-clear" class="btn btn--ghost">Cancella</button>
         <button id="btn-submit-wheel" class="btn btn--primary" disabled>Fatto, è la mia ruota!</button>
@@ -73,13 +65,36 @@
   <section id="screen-race" class="screen">
     <div class="race-wrap">
       <canvas id="race-canvas"></canvas>
+      
+      <!-- Avviso per ruotare il telefono -->
+      <div id="orientation-warning">
+        <span>🔄</span><br>Ruota il telefono in orizzontale per correre!
+      </div>
+
       <div id="countdown-overlay" class="countdown-overlay"></div>
+      
       <div class="hud">
-        <div class="hud-progress">
-          <div class="hud-progress-fill" id="hud-progress-fill"></div>
-        </div>
-        <canvas id="minimap-canvas" width="260" height="44" class="minimap"></canvas>
+        <div class="hud-progress"><div class="hud-progress-fill" id="hud-progress-fill"></div></div>
+        <canvas id="minimap-canvas" width="180" height="32" class="minimap"></canvas>
         <ol id="hud-leaderboard" class="hud-leaderboard"></ol>
+      </div>
+
+      <!-- BOTTONE PIT-STOP -->
+      <div id="redraw-ui" class="redraw-ui" style="display:none;">
+        <button id="btn-redraw-trigger" class="btn btn--secondary">Cambia Forma (2)</button>
+      </div>
+
+      <!-- MODALE PIT-STOP IN GARA -->
+      <div id="redraw-modal" class="modal-overlay" style="display:none;">
+        <div class="card">
+          <h3 class="section-title">Ridisegna in corsa!</h3>
+          <p class="hint">Attento, la gara prosegue mentre disegni!</p>
+          <canvas id="redraw-canvas" width="300" height="300" class="draw-canvas"></canvas>
+          <div class="draw-actions">
+            <button id="btn-cancel-redraw" class="btn btn--ghost">Annulla</button>
+            <button id="btn-submit-redraw" class="btn btn--primary" disabled>Applica</button>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -95,7 +110,6 @@
       </div>
     </div>
   </section>
-
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
