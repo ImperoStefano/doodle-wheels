@@ -3,26 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Doodle Wheels — disegna la tua ruota, sfida i tuoi amici</title>
+<title>Doodle Wheels — corsa online</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <div class="page">
   <!-- MENU -->
   <section id="screen-menu" class="screen screen--active">
     <div class="card card--hero">
       <h1 class="title">Doodle Wheels</h1>
-      <p class="subtitle">Disegna la forma della tua ruota. Più è tonda, più corre liscia.<br>Sfida fino a 4 amici in tempo reale.</p>
+      <p class="subtitle">Disegna la tua ruota e affronta ostacoli dinamici.<br>Sfida fino a 4 amici in tempo reale.</p>
       <label class="field">
         <span>Il tuo nome</span>
-        <input id="input-name" type="text" maxlength="14" placeholder="Es. Stefano" autocomplete="off">
+        <input id="input-name" type="text" maxlength="14" placeholder="Inserisci il nome..." autocomplete="off">
       </label>
       <div class="menu-actions">
-        <button id="btn-host" class="btn btn--primary">Crea una gara</button>
+        <button id="btn-host" class="btn btn--primary">Crea Nuova Gara</button>
         <div class="join-row">
           <input id="input-code" type="text" maxlength="4" placeholder="CODICE" autocomplete="off" class="code-input">
           <button id="btn-join" class="btn btn--secondary">Unisciti</button>
@@ -37,45 +36,43 @@
     <div class="card">
       <p class="eyebrow-free">Codice della gara</p>
       <div class="room-code" id="room-code">----</div>
-      <p class="hint">Dallo ai tuoi amici: lo inseriscono nel campo "Unisciti a una gara".</p>
+      <p class="hint">Condividi questo codice per far entrare altri giocatori.</p>
       <ul id="player-list" class="player-list"></ul>
       <button id="btn-start-race" class="btn btn--primary" disabled>In attesa di giocatori…</button>
       <p class="hint" id="lobby-hint"></p>
     </div>
   </section>
 
-  <!-- DRAW -->
+  <!-- DRAW PRE-GARA -->
   <section id="screen-draw" class="screen">
     <div class="card card--wide">
       <div class="draw-header">
-        <h2 class="section-title">Disegna la tua ruota</h2>
+        <h2 class="section-title">Disegna il tuo assetto</h2>
         <div class="timer-pill" id="draw-timer">30</div>
       </div>
-      <p class="hint">Traccia una forma chiusa. Una forma rotonda scorre veloce, una spigolosa fa saltare la ruota.</p>
+      <p class="hint">Traccia una linea chiusa. Tonda per la velocità, irregolare per far presa su ostacoli difficili.</p>
       <canvas id="draw-canvas" width="480" height="480" class="draw-canvas"></canvas>
       <div class="draw-actions">
-        <button id="btn-clear" class="btn btn--ghost">Cancella</button>
-        <button id="btn-submit-wheel" class="btn btn--primary" disabled>Fatto, è la mia ruota!</button>
+        <button id="btn-clear" class="btn btn--ghost">Pulisci</button>
+        <button id="btn-submit-wheel" class="btn btn--primary" disabled>Invia Forma</button>
       </div>
       <p class="hint" id="draw-wait"></p>
     </div>
   </section>
 
-  <!-- RACE (+ countdown overlay) -->
+  <!-- GARA -->
   <section id="screen-race" class="screen">
     <div class="race-wrap">
       <canvas id="race-canvas"></canvas>
-      
-      <!-- Avviso per ruotare il telefono -->
       <div id="orientation-warning">
-        <span>🔄</span><br>Ruota il telefono in orizzontale per correre!
+        <span>🔄</span><br>Ruota il dispositivo in orizzontale
       </div>
-
       <div id="countdown-overlay" class="countdown-overlay"></div>
       
+      <!-- HUD Ottimizzato -->
       <div class="hud">
         <div class="hud-progress"><div class="hud-progress-fill" id="hud-progress-fill"></div></div>
-        <canvas id="minimap-canvas" width="180" height="32" class="minimap"></canvas>
+        <canvas id="minimap-canvas" width="220" height="32" class="minimap"></canvas>
         <ol id="hud-leaderboard" class="hud-leaderboard"></ol>
       </div>
 
@@ -84,29 +81,29 @@
         <button id="btn-redraw-trigger" class="btn btn--secondary">Cambia Forma (2)</button>
       </div>
 
-      <!-- MODALE PIT-STOP IN GARA -->
+      <!-- MODALE PIT-STOP -->
       <div id="redraw-modal" class="modal-overlay" style="display:none;">
         <div class="card">
-          <h3 class="section-title">Ridisegna in corsa!</h3>
-          <p class="hint">Attento, la gara prosegue mentre disegni!</p>
+          <h3 class="section-title">Pit Stop!</h3>
+          <p class="hint">Disegna in fretta, la gara non si ferma.</p>
           <canvas id="redraw-canvas" width="300" height="300" class="draw-canvas"></canvas>
           <div class="draw-actions">
             <button id="btn-cancel-redraw" class="btn btn--ghost">Annulla</button>
-            <button id="btn-submit-redraw" class="btn btn--primary" disabled>Applica</button>
+            <button id="btn-submit-redraw" class="btn btn--primary" disabled>Applica Ora</button>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- RESULTS -->
+  <!-- RISULTATI -->
   <section id="screen-results" class="screen">
     <div class="card">
-      <h2 class="section-title">Classifica finale</h2>
+      <h2 class="section-title">Traguardo</h2>
       <ol id="results-list" class="results-list"></ol>
       <div class="draw-actions">
-        <button id="btn-rematch" class="btn btn--primary">Rigioca (stessa gara)</button>
-        <button id="btn-back-menu" class="btn btn--ghost">Torna al menu</button>
+        <button id="btn-rematch" class="btn btn--primary">Rigioca Stessa Pista</button>
+        <button id="btn-back-menu" class="btn btn--ghost">Nuova Pista</button>
       </div>
     </div>
   </section>
