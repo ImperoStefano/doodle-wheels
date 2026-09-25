@@ -1,5 +1,5 @@
 const Terrain = (() => {
-  let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500, ZONES = [];
+  let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500, ZONES = [], FLOWERS = [];
   
   const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps'];
   const ZONE_COLORS = {
@@ -17,7 +17,8 @@ const Terrain = (() => {
     ZONES.push({ key: 'start', start: currentX, end: currentX + 1200, color: ZONE_COLORS.start }); currentX += 1200;
     layoutKeys.forEach(key => { ZONES.push({ key, start: currentX, end: currentX + 1400, color: ZONE_COLORS[key] }); currentX += 1400; });
     ZONES.push({ key: 'finish', start: currentX, end: currentX + 1200, color: ZONE_COLORS.finish });
-    TRACK_END = currentX + 1200; FINISH_X = currentX + 300; 
+    TRACK_END = currentX + 1200; FINISH_X = currentX + 300;
+    FLOWERS = generateFlowers();
   }
 
   // The profile is made of sections (by x) plus a per-zone modifier (ice/water/ramps).
@@ -59,6 +60,37 @@ const Terrain = (() => {
     return 0;
   }
 
+  // Fiorellini decorativi lungo il percorso: un piccolo dosso morbido, non un vero ostacolo.
+  // Devono essere IDENTICI su host e client (la fisica gira solo sull'host, i client disegnano
+  // soltanto), quindi niente Math.random() qui: solo funzioni deterministiche di x, così
+  // applyLayout(stessiLayoutKeys) produce sempre lo stesso elenco ovunque sia chiamata.
+  function pseudo(x) { const v = Math.sin(x * 12.9898) * 43758.5453; return v - Math.floor(v); } // 0..1
+
+  function generateFlowers() {
+    const flowers = [];
+    let x = TRACK_START + 1500; // niente fiori appena dopo la partenza
+    const STOP_X = TRACK_END - 900; // niente fiori appena prima del traguardo
+    while (x < STOP_X) {
+      const zone = dominantZoneOf(x, ZONES).key;
+      if (zone !== 'start' && zone !== 'finish' && zone !== 'water') {
+        flowers.push({
+          x: Math.round(x),
+          r: 9 + pseudo(x) * 6,            // 9–15px: piccolo rispetto alla ruota (r=80)
+          hue: Math.floor(pseudo(x * 3.1) * 5), // indice colore petali, 0-4
+        });
+      }
+      x += 340 + pseudo(x * 1.7) * 260; // passo variabile ma deterministico, 340–600px
+    }
+    return flowers;
+  }
+
+  // stessa logica di dominantZone, ma prende ZONES come parametro: generateFlowers() viene
+  // chiamata mentre applyLayout sta ancora scrivendo ZONES, quindi non può usare la closure.
+  function dominantZoneOf(x, zones) {
+    for (const z of zones) { if (x >= z.start && x <= z.end) return z; }
+    return zones[0] || { key: 'hills' };
+  }
+
   function height(x) {
     const zoneList = ZONES.map(z => ({ from: z.start, f: xx => zoneModifier(z.key, xx) }));
     return blendAt(sections(), x) + blendAt(zoneList, x);
@@ -75,6 +107,6 @@ const Terrain = (() => {
     generateRandomLayout, applyLayout, height, 
     frictionAt: (x) => FRICTION[dominantZone(x).key] || 0.9, 
     colorAt: (x) => dominantZone(x).color || '#059669', 
-    get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; }, get TRACK_START() { return TRACK_START; } 
+    get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; }, get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; } 
   };
 })(); // terrain 
