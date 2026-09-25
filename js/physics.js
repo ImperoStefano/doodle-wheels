@@ -45,6 +45,7 @@ const Sim = (() => {
     racerGroup = Matter.Body.nextGroup(true);
     Matter.World.add(world, buildGround());
     Matter.World.add(world, buildWalls());
+    Matter.World.add(world, buildFlowers());
     racers = {};
     running = false;
     timedOut = false;
@@ -91,6 +92,25 @@ const Sim = (() => {
       Matter.Bodies.rectangle(Terrain.TRACK_START - 50, GROUND_Y - 500, 100, 2400, opts),
       Matter.Bodies.rectangle(Terrain.TRACK_END + 50, GROUND_Y - 500, 100, 2400, opts),
     ];
+  }
+
+  // Fiorellini: piccoli dossi rotondi, non spigoli. Affondati per metà nel terreno così sporge
+  // solo una piccola calotta arrotondata: niente angoli vivi su cui una ruota possa incastrarsi
+  // (lo stesso problema che avevano i vecchi segmenti a gradino del terreno).
+  const FLOWER_POKE = 0.55; // frazione del raggio che sporge sopra il terreno
+
+  function buildFlowers() {
+    return (Terrain.FLOWERS || []).map(f => {
+      const groundY = GROUND_Y - Terrain.height(f.x);
+      const body = Matter.Bodies.circle(f.x, groundY - f.r * FLOWER_POKE, f.r, {
+        isStatic: true,
+        friction: Terrain.frictionAt ? Terrain.frictionAt(f.x) : 0.8,
+        restitution: 0.15,
+        slop: 0.02,
+        label: 'flower'
+      });
+      return body;
+    });
   }
 
   function wheelOptions(group) {
