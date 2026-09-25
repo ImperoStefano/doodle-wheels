@@ -202,6 +202,12 @@
 
     const fX = Terrain.FINISH_X - smoothCamX; if (fX > -50 && fX < w + 50) drawFinishFlag(fX, groundY - Terrain.height(Terrain.FINISH_X));
 
+    // Fiorellini lungo il percorso, disegnati prima delle bici così restano sullo sfondo.
+    Terrain.FLOWERS.forEach(f => {
+      const fx = f.x - smoothCamX;
+      if (fx > -30 && fx < w + 30) drawFlower(fx, groundY - Terrain.height(f.x), f.r, f.hue);
+    });
+
     Object.entries(latestRacers).forEach(([id, r]) => {
       const meta = raceMeta[id]; if (!meta) return;
       const cy = (y) => y - Sim.GROUND_Y + groundY, cx = r.x - smoothCamX;
@@ -338,6 +344,44 @@
     ctx2d.beginPath(); ctx2d.arc(r * 0.28, -r * 0.1, r * 0.09, 0, Math.PI * 2); ctx2d.fill();
     ctx2d.strokeStyle = '#92400e'; ctx2d.lineWidth = Math.max(3, r * 0.07); ctx2d.lineCap = 'round';
     ctx2d.beginPath(); ctx2d.arc(0, -r * 0.02, r * 0.34, 0.15 * Math.PI, 0.85 * Math.PI); ctx2d.stroke();
+
+    ctx2d.restore();
+  }
+
+  // Un fiorellino "da bambino": stelo verde, petali colorati intorno a un centro giallo.
+  // Sta appoggiato sulla linea del terreno; l'altezza è proporzionata al raggio (piccolo,
+  // 9-15px), così resta un dettaglio del paesaggio e non un vero muro da evitare.
+  const FLOWER_PALETTE = ['#f472b6', '#f87171', '#c084fc', '#fb923c', '#60a5fa'];
+
+  function drawFlower(x, groundYScreen, r, hue) {
+    const color = FLOWER_PALETTE[hue % FLOWER_PALETTE.length];
+    const stemH = r * 1.7, topY = groundYScreen - stemH;
+    ctx2d.save();
+
+    // Stelo
+    ctx2d.strokeStyle = '#16a34a'; ctx2d.lineWidth = Math.max(2, r * 0.22); ctx2d.lineCap = 'round';
+    ctx2d.beginPath(); ctx2d.moveTo(x, groundYScreen + 2); ctx2d.lineTo(x, topY); ctx2d.stroke();
+
+    // Fogliolina
+    ctx2d.fillStyle = '#22c55e';
+    ctx2d.beginPath();
+    ctx2d.ellipse(x + r * 0.5, groundYScreen - stemH * 0.4, r * 0.5, r * 0.22, -0.5, 0, Math.PI * 2);
+    ctx2d.fill();
+
+    // Petali intorno al centro
+    const petalR = r * 0.55, orbit = r * 0.6, petals = 6;
+    ctx2d.fillStyle = color;
+    for (let i = 0; i < petals; i++) {
+      const a = (i / petals) * Math.PI * 2;
+      ctx2d.beginPath();
+      ctx2d.arc(x + Math.cos(a) * orbit, topY + Math.sin(a) * orbit, petalR, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+
+    // Centro
+    ctx2d.beginPath(); ctx2d.arc(x, topY, r * 0.55, 0, Math.PI * 2);
+    ctx2d.fillStyle = '#fde047'; ctx2d.fill();
+    ctx2d.lineWidth = Math.max(1.5, r * 0.1); ctx2d.strokeStyle = '#ca8a04'; ctx2d.stroke();
 
     ctx2d.restore();
   }
