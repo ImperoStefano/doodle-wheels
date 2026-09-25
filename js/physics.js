@@ -2,7 +2,34 @@ const Sim = (() => {
   const GROUND_Y = 520, RACE_TIMEOUT_MS = 180000;
   const FIXED_DT = 1000 / 60; // 60 Hz physics
 
-  let engine, world, racers = {}, running = false, startedAt = 0, accumulator = 0;
+  // --- Motor -----------------------------------------------------------------
+  // Matter.js angular velocity is in rad per 60Hz step. The motor pulls each wheel
+  // toward MOTOR_SPEED but can add at most MOTOR_ACCEL per step (= its "torque limit").
+  // (The old `body.torque += 0.0025 * mass` was ~1e-6 rad/step^2 for a wheel of this size:
+  // nothing ever moved. Torque has to scale with inertia ~ m*r^2, not with mass.)
+  const MOTOR_SPEED = 0.16;   // ≈ 9.6 rad/s
+  const MOTOR_ACCEL = 0.02;   // rad/step^2 — strong enough to tip a triangle over its corner
+  const WHEEL_FRICTION = 2.0; // Matter uses min(wheel, ground) -> the ground value decides
+  const GROUND_DEPTH = 300;   // thick ground: a fast wheel can never tunnel through it
+  const WHEEL_STATIC = 0.5;    // static friction (Matter takes the max of the two bodies)
+  const GROUND_STATIC = 0.5;
+  const AXLE_STIFFNESS = 1;
+  const AXLE_DAMPING = 0.1;
+  // Anti-stall: a racer that gains < STALL_MIN_PROGRESS px in STALL_MS (snagged on a hook, wedged
+  // in a dip, driving backwards...) is lifted and moved a little forward so nobody can hold the
+  // whole race hostage until the timeout.
+  const STALL_MS = 2500;
+  const STALL_MIN_PROGRESS = 60;   // px per STALL_MS (24 px/s): legit slow bikes on ice still do far more
+  const HOP_X = 90, HOP_MAX_X = 450, HOP_Y = 140; // hop distance grows while the racer keeps failing to move
+  const SPAWN_H = 140;        // px above the ground line where wheels/chassis spawn (drop height)
+  const MAX_SINK = 2;         // px a wheel corner may dip below the ground line before it's lifted out
+  const SUBSTEPS = 2;         // physics sub-steps per 60Hz step: softer landings, less corner digging
+
+  let engine, world, racers = {}, running = false, timedOut = false, startedAt = 0, accumulator = 0;
+  // ONE shared negative group for every racer: bikes pass through each other (ghost racing) but all
+  // collide with the ground (group 0). With a group per racer the grid spacing (200px) is smaller
+  // than a bike + its wheels, so neighbouring wheels spawned overlapping and were violently ejected.
+  let racerGroup = 0;
 
   function init() {
     if (typeof decomp !== 'undefined' && Matter.Common.setDecomp) {
@@ -15,12 +42,18 @@ const Sim = (() => {
     engine.positionIterations = 30;
     engine.velocityIterations = 20;
 
+    racerGroup = Matter.Body.nextGroup(true);
     Matter.World.add(world, buildGround());
+    Matter.World.add(world, buildWalls());
     racers = {};
     running = false;
+    timedOut = false;
     accumulator = 0;
   }
 
+  // Ground = one convex quad per 40px column whose TOP EDGE is exactly the terrain line.
+  // (Rotated rectangles offset vertically leave small steps at the joints between segments
+  // with different slopes; a triangle's corner catches on those steps and digs in.)
   function buildGround() {
     const segW = 40;
     const bodies = [];
@@ -28,99 +61,153 @@ const Sim = (() => {
       const x2 = x + segW;
       const y1 = GROUND_Y - Terrain.height(x);
       const y2 = GROUND_Y - Terrain.height(x2);
-      const midX = (x + x2) / 2;
-      const midY = (y1 + y2) / 2;
-      const len = Math.hypot(x2 - x, y2 - y1);
-      const angle = Math.atan2(y2 - y1, x2 - x);
-
-      const seg = Matter.Bodies.rectangle(midX, midY + 100, len + 4, 200, {
+      const quad = [
+        { x: x,  y: y1 }, { x: x2, y: y2 },
+        { x: x2, y: Math.max(y1, y2) + GROUND_DEPTH }, { x: x, y: Math.max(y1, y2) + GROUND_DEPTH },
+      ];
+      const segFriction = Terrain.frictionAt ? Terrain.frictionAt((x + x2) / 2) : 0.8;
+      const c = Matter.Vertices.centre(quad);
+      const seg = Matter.Bodies.fromVertices(c.x, c.y, [quad], {
         isStatic: true,
-        friction: Terrain.frictionAt ? Terrain.frictionAt(midX) : 0.8,
-        restitution: 0.1,
+        friction: segFriction,
+        frictionStatic: GROUND_STATIC,
+        restitution: 0.05,
+        slop: 0.02,
         label: 'ground'
       });
-      Matter.Body.setAngle(seg, angle);
+      // Matter's Body.setStatic() silently forces friction = 1 and restitution = 0 on static
+      // bodies, so the per-zone friction (ice, gravel...) was never applied. Set it afterwards.
+      seg.friction = segFriction;
+      seg.restitution = 0.05;
       bodies.push(seg);
     }
     return bodies;
   }
 
-  // ---------------------------------------------------------------------------
-  // Wheel creation: keep the user's exact drawn polygon shape when possible.
-  // ---------------------------------------------------------------------------
+  // Invisible walls at both ends so a bike can never leave the track (backwards or forwards).
+  function buildWalls() {
+    const opts = { isStatic: true, friction: 0, label: 'wall' };
+    return [
+      Matter.Bodies.rectangle(Terrain.TRACK_START - 50, GROUND_Y - 500, 100, 2400, opts),
+      Matter.Bodies.rectangle(Terrain.TRACK_END + 50, GROUND_Y - 500, 100, 2400, opts),
+    ];
+  }
+
+  function wheelOptions(group) {
+    return {
+      friction: WHEEL_FRICTION,
+      frictionStatic: WHEEL_STATIC,
+      restitution: 0.02,
+      density: 0.001,
+      slop: 0.02,
+      collisionFilter: { group: group },
+      label: 'wheel'
+    };
+  }
+
+  // --- helpers for the wheel outline ------------------------------------------------
+  function polygonArea(pts) {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length];
+      a += p.x * q.y - q.x * p.y;
+    }
+    return Math.abs(a / 2);
+  }
+
+  function segmentsCross(a, b, c, d) {
+    const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+    return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+  }
+
+  function isSimplePolygon(pts) {
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 2; j < n; j++) {
+        if (i === 0 && j === n - 1) continue;
+        if (segmentsCross(pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n])) return false;
+      }
+    }
+    return true;
+  }
+
   function createWheelBody(x, y, vertices, wOpt) {
     if (!vertices || vertices.length < 3) {
       return Matter.Bodies.circle(x, y, 40, wOpt);
     }
 
-    // Compute centroid so the body doesn't "jump" when Matter recenters it.
+    // Shift the vertices so the centroid is at the origin; Matter recentres on the centre of mass.
     let cx = 0, cy = 0;
     for (const v of vertices) { cx += v.x; cy += v.y; }
     cx /= vertices.length; cy /= vertices.length;
-
-    // Shift vertices so the centroid is at the origin; this makes the body's
-    // centre-of-mass line up with (x, y) after Matter recenters.
     const centered = vertices.map(v => ({ x: v.x - cx, y: v.y - cy }));
+    const drawnArea = polygonArea(centered);
 
     let wheel = null;
-    try {
-      wheel = Matter.Bodies.fromVertices(x, y, [centered], wOpt, true);
-    } catch (e) {
-      wheel = null;
-    }
 
-    // Only fall back if fromVertices truly failed.
-    if (!wheel || !wheel.parts || wheel.parts.length === 0) {
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      for (const v of centered) {
-        if (v.x < minX) minX = v.x;
-        if (v.x > maxX) maxX = v.x;
-        if (v.y < minY) minY = v.y;
-        if (v.y > maxY) maxY = v.y;
+    // 1) exact drawn shape (concave OK) — only if the outline doesn't cross itself
+    if (isSimplePolygon(centered)) {
+      try {
+        wheel = Matter.Bodies.fromVertices(x, y, [centered], wOpt, true);
+      } catch (e) {
+        wheel = null;
       }
-      const r = Math.max(maxX - minX, maxY - minY) / 2 || 40;
-      wheel = Matter.Bodies.circle(x, y, r, wOpt);
+      // poly-decomp can silently drop pieces of a shape it can't split: reject a body whose
+      // area no longer matches the drawing
+      if (wheel && !(isFinite(wheel.area) && Math.abs(wheel.area - drawnArea) <= 0.25 * drawnArea)) {
+        wheel = null;
+      }
     }
 
+    // 2) self-crossing / undecomposable outline: use its convex hull
+    if (!wheel) {
+      try {
+        const hull = Matter.Vertices.hull(centered.map(v => ({ x: v.x, y: v.y })));
+        if (hull.length >= 3) wheel = Matter.Bodies.fromVertices(x, y, [hull], wOpt);
+      } catch (e) {
+        wheel = null;
+      }
+    }
+
+    // 3) last resort: a circle
+    if (!wheel || !wheel.parts || wheel.parts.length === 0) {
+      let maxR = 0;
+      for (const v of centered) maxR = Math.max(maxR, Math.hypot(v.x, v.y));
+      wheel = Matter.Bodies.circle(x, y, maxR || 40, wOpt);
+    }
     return wheel;
+  }
+
+  function makeAxle(chassis, dx, wheel) {
+    return Matter.Constraint.create({
+      bodyA: chassis, pointA: { x: dx, y: 0 },
+      bodyB: wheel, stiffness: AXLE_STIFFNESS, damping: AXLE_DAMPING, length: 0
+    });
   }
 
   function addRacer(id, vertices, color, name, startIndex) {
     const startX = 60 + startIndex * 200;
-    const group = Matter.Body.nextGroup(true);
+    const group = racerGroup;
+    const wOpt = wheelOptions(group);
 
-    const wOpt = {
-      friction: 0.9,
-      frictionStatic: 1.0,
-      restitution: 0.05,
-      density: 0.001,
-      collisionFilter: { group: group },
-      label: 'wheel'
-    };
+    const fw = createWheelBody(startX + 90, GROUND_Y - SPAWN_H, vertices, wOpt);
+    const rw = createWheelBody(startX - 90, GROUND_Y - SPAWN_H, vertices, wOpt);
 
-    const fw = createWheelBody(startX + 90, GROUND_Y - 140, vertices, wOpt);
-    const rw = createWheelBody(startX - 90, GROUND_Y - 140, vertices, wOpt);
-
-    const chassis = Matter.Bodies.rectangle(startX, GROUND_Y - 140, 160, 16, {
+    const chassis = Matter.Bodies.rectangle(startX, GROUND_Y - SPAWN_H, 160, 16, {
       density: 0.001,
       friction: 0.4,
       collisionFilter: { group: group },
       label: 'chassis'
     });
 
-    const axF = Matter.Constraint.create({
-      bodyA: chassis, pointA: { x: 80, y: 0 },
-      bodyB: fw, stiffness: 0.9, damping: 0.2, length: 0
-    });
-    const axR = Matter.Constraint.create({
-      bodyA: chassis, pointA: { x: -80, y: 0 },
-      bodyB: rw, stiffness: 0.9, damping: 0.2, length: 0
-    });
+    const axF = makeAxle(chassis, 80, fw);
+    const axR = makeAxle(chassis, -80, rw);
 
     Matter.World.add(world, [chassis, fw, rw, axF, axR]);
     racers[id] = {
       chassis, fw, rw, axF, axR, color, name,
-      finished: false, finishTime: null, stuckTimer: 0, stuckCount: 0
+      finished: false, finishTime: null,
+      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0
     };
   }
 
@@ -129,23 +216,14 @@ const Sim = (() => {
     if (!r || r.finished) return;
 
     const group = r.chassis.collisionFilter.group;
-    const wOpt = {
-      friction: 0.9,
-      frictionStatic: 1.0,
-      restitution: 0.05,
-      density: 0.001,
-      collisionFilter: { group: group },
-      label: 'wheel'
-    };
+    const wOpt = wheelOptions(group);
 
     const fwPos = { x: r.fw.position.x, y: r.fw.position.y };
     const rwPos = { x: r.rw.position.x, y: r.rw.position.y };
-    const fwVel = { x: r.fw.velocity.x, y: r.fw.velocity.y };
-    const rwVel = { x: r.rw.velocity.x, y: r.rw.velocity.y };
-    const fwAng = r.fw.angularVelocity;
-    const rwAng = r.rw.angularVelocity;
-    const fwTorque = r.fw.torque || 0;
-    const rwTorque = r.rw.torque || 0;
+    const fwVel = Matter.Body.getVelocity(r.fw);
+    const rwVel = Matter.Body.getVelocity(r.rw);
+    const fwAng = Matter.Body.getAngularVelocity(r.fw);
+    const rwAng = Matter.Body.getAngularVelocity(r.rw);
 
     Matter.World.remove(world, [r.fw, r.rw, r.axF, r.axR]);
 
@@ -156,17 +234,9 @@ const Sim = (() => {
     Matter.Body.setVelocity(rw, rwVel);
     Matter.Body.setAngularVelocity(fw, fwAng);
     Matter.Body.setAngularVelocity(rw, rwAng);
-    fw.torque = fwTorque;
-    rw.torque = rwTorque;
 
-    const axF = Matter.Constraint.create({
-      bodyA: r.chassis, pointA: { x: 80, y: 0 },
-      bodyB: fw, stiffness: 0.9, damping: 0.2, length: 0
-    });
-    const axR = Matter.Constraint.create({
-      bodyA: r.chassis, pointA: { x: -80, y: 0 },
-      bodyB: rw, stiffness: 0.9, damping: 0.2, length: 0
-    });
+    const axF = makeAxle(r.chassis, 80, fw);
+    const axR = makeAxle(r.chassis, -80, rw);
 
     Matter.World.add(world, [fw, rw, axF, axR]);
     r.fw = fw; r.rw = rw; r.axF = axF; r.axR = axR;
@@ -187,52 +257,67 @@ const Sim = (() => {
     return false;
   }
 
-  // ---------------------------------------------------------------------------
-  // Internal per-racer drive / anti-stuck logic (runs at fixed dt).
-  // ---------------------------------------------------------------------------
+  function driveWheel(wheel, target) {
+    // getAngularVelocity is normalised to a 60Hz step, so it stays correct with SUBSTEPS > 1
+    const w = Matter.Body.getAngularVelocity(wheel);
+    const dw = Math.max(-MOTOR_ACCEL, Math.min(MOTOR_ACCEL, target - w));
+    Matter.Body.setAngularVelocity(wheel, w + dw);
+  }
+
+  // Safety net: the terrain profile is known exactly, so if a wheel corner ever ends up more
+  // than MAX_SINK px below the ground line (hard landing on a ramp edge), lift the wheel back to
+  // the surface instead of letting it dig in and stall.
+  function antiSink(wheel) {
+    const parts = wheel.parts.length > 1 ? wheel.parts.slice(1) : [wheel];
+    let worst = 0;
+    for (const p of parts) {
+      for (const v of p.vertices) {
+        if (v.x < Terrain.TRACK_START || v.x > Terrain.TRACK_END) continue; // no ground out there
+        const sink = v.y - (GROUND_Y - Terrain.height(v.x));
+        if (sink > worst) worst = sink;
+      }
+    }
+    if (worst > MAX_SINK) {
+      Matter.Body.translate(wheel, { x: 0, y: -(worst - MAX_SINK) });
+      if (wheel.velocity.y > 0) Matter.Body.setVelocity(wheel, { x: wheel.velocity.x, y: 0 });
+    }
+  }
+
+  function unstick(r) {
+    const dist = Math.min(HOP_MAX_X, HOP_X * (1 + r.stallStreak));
+    const cx = r.chassis.position.x + dist, cy = r.chassis.position.y - HOP_Y;
+    Matter.Body.setPosition(r.chassis, { x: cx, y: cy });
+    Matter.Body.setAngle(r.chassis, 0);            // also rights a flipped bike
+    Matter.Body.setPosition(r.fw, { x: cx + 80, y: cy });
+    Matter.Body.setPosition(r.rw, { x: cx - 80, y: cy });
+    for (const b of [r.chassis, r.fw, r.rw]) {
+      Matter.Body.setVelocity(b, { x: 0, y: 0 });
+      Matter.Body.setAngularVelocity(b, 0);
+    }
+    r.hops++;
+    r.stallStreak++;
+    r.bestX = cx;   // new baseline: only real driving from here counts as progress
+    r.hopBaseX = cx;
+  }
+
+  // Per-racer logic, runs at the fixed 60Hz step.
   function stepRacer(r, elapsed) {
     if (r.finished) return;
 
-    // Ramp-in over 1.5s so racers don't rocket off the line.
     const ramp = Math.min(1, elapsed / 1500);
+    driveWheel(r.fw, MOTOR_SPEED * ramp);
+    driveWheel(r.rw, MOTOR_SPEED * ramp);
 
-    // Torque applied to both wheels. Matter needs units comparable to inertia,
-    // which scales with mass * radius^2. Scaling by wheel mass keeps it
-    // consistent across drawn shapes of different sizes.
-    const baseTorque = 0.0025 * ramp;
-    const fwScale = r.fw.mass || 1;
-    const rwScale = r.rw.mass || 1;
-    r.fw.torque += baseTorque * fwScale;
-    r.rw.torque += baseTorque * rwScale;
-
-    // Small forward assist so the chassis starts moving before the wheels bite.
-    const vx = r.chassis.velocity.x;
-    if (vx < 22) {
-      const push = 0.00006 * ramp * (r.chassis.mass || 1);
-      Matter.Body.applyForce(r.chassis, r.chassis.position, { x: push, y: 0 });
+    // progress = furthest x reached; if it hasn't improved enough for STALL_MS, hop
+    if (r.chassis.position.x > r.bestX + STALL_MIN_PROGRESS) {
+      r.bestX = r.chassis.position.x;
+      r.progressAt = elapsed;
+      if (r.chassis.position.x > r.hopBaseX + 250) r.stallStreak = 0; // reset only after real driving
+    } else if (elapsed - r.progressAt > STALL_MS) {
+      unstick(r);
+      r.progressAt = elapsed;
     }
 
-    // Anti-stuck: only kick while actually stalled, cap attempts.
-    if (Math.abs(vx) < 0.3 && elapsed > 1500) {
-      r.stuckTimer += FIXED_DT;
-      if (r.stuckTimer > 300 && r.stuckCount < 10) {
-        const kick = 0.0004 * (r.chassis.mass || 1);
-        Matter.Body.applyForce(r.chassis, r.chassis.position, { x: kick, y: -kick * 1.4 });
-        r.stuckTimer = 0;
-        r.stuckCount++;
-      }
-    } else {
-      r.stuckTimer = 0;
-    }
-
-    // Prevent rolling backward: clamp chassis AND wheels together.
-    if (r.chassis.velocity.x < -0.1) {
-      Matter.Body.setVelocity(r.chassis, { x: 0, y: r.chassis.velocity.y });
-      Matter.Body.setVelocity(r.fw,      { x: 0, y: r.fw.velocity.y });
-      Matter.Body.setVelocity(r.rw,      { x: 0, y: r.rw.velocity.y });
-    }
-
-    // Water drag.
     if (isWater(r.chassis.position.x)) {
       Matter.Body.setVelocity(r.chassis, {
         x: r.chassis.velocity.x * 0.94,
@@ -240,34 +325,32 @@ const Sim = (() => {
       });
     }
 
-    // Finish line.
-    if (typeof Terrain.FINISH_X === 'number' && r.chassis.position.x >= Terrain.FINISH_X) {
+    if (r.chassis.position.x >= Terrain.FINISH_X) {
       r.finished = true;
       r.finishTime = elapsed;
     }
   }
 
-  // Called every animation frame with real elapsed ms.
-  // Physics is sub-stepped at a fixed 60 Hz so behaviour is frame-rate independent.
+  // Called with real elapsed ms; physics is sub-stepped at a fixed 60Hz.
   function tick(dtMs) {
     if (!running) return;
 
-    // Clamp huge gaps (tab switch, breakpoints) so nothing explodes.
     accumulator += Math.min(dtMs, 100);
-
     const elapsed = performance.now() - startedAt;
 
     while (accumulator >= FIXED_DT) {
       for (const r of Object.values(racers)) {
         stepRacer(r, elapsed);
       }
-      Matter.Engine.update(engine, FIXED_DT);
+      for (let i = 0; i < SUBSTEPS; i++) {
+        Matter.Engine.update(engine, FIXED_DT / SUBSTEPS);
+        // right after the solver: correct any corner that just hit hard, before it's ever rendered
+        for (const r of Object.values(racers)) { antiSink(r.fw); antiSink(r.rw); }
+      }
       accumulator -= FIXED_DT;
 
-      if (allFinished() || isTimedOut()) {
-        running = false;
-        return;
-      }
+      if (allFinished()) { running = false; return; }
+      if (isTimedOut()) { timedOut = true; running = false; return; }
     }
   }
 
@@ -288,7 +371,8 @@ const Sim = (() => {
   }
 
   function isTimedOut() {
-    return running && (performance.now() - startedAt) > RACE_TIMEOUT_MS;
+    // stays true after tick() stops the sim, otherwise game.js never sees the timeout
+    return timedOut || (running && (performance.now() - startedAt) > RACE_TIMEOUT_MS);
   }
 
   function standings() {
@@ -306,6 +390,7 @@ const Sim = (() => {
 
   return {
     init, addRacer, updateRacerWheel, start, tick,
-    snapshot, allFinished, isTimedOut, standings, GROUND_Y
+    snapshot, allFinished, isTimedOut, standings, GROUND_Y,
+    get FINISH_X() { return Terrain.FINISH_X; }
   };
 })();
