@@ -37,7 +37,14 @@
   Net.on('error', err => showMenuError(err.message || 'Errore di rete.'));
   Net.on('hostLeft', () => { alert('L\'host ha chiuso.'); location.reload(); });
   Net.on('roomReady', ({ code }) => { els.roomCode.textContent = code; renderPlayerList(); showScreen('lobby'); });
-  Net.on('playersChanged', () => { renderPlayerList(); if (!els.lobby.classList.contains('screen--active') && !Net.isHost) { showScreen('lobby'); els.roomCode.textContent = els.code.value.trim().toUpperCase(); }});
+  Net.on('playersChanged', () => {
+    renderPlayerList();
+    // Only a client still on the menu is moved to the lobby. (Before, ANY update — e.g. someone
+    // disconnecting mid-race — threw every client back to the lobby.)
+    if (!Net.isHost && els.menu.classList.contains('screen--active')) { showScreen('lobby'); els.roomCode.textContent = els.code.value.trim().toUpperCase(); }
+    // host: a player leaving while everyone else already submitted must start the race
+    if (Net.isHost && els.draw.classList.contains('screen--active')) checkAllWheelsIn();
+  });
 
   function renderPlayerList() {
     els.playerList.innerHTML = '';
@@ -77,12 +84,12 @@
     if (data.type === 'snap') applySnapshot(data.racers);
     if (data.type === 'results') showResults(data.standings);
     if (data.type === 'restartToDraw') enterDrawPhase();
-    if (data.type === 'wheelUpdate' && Net.isHost) { Sim.updateRacerWheel(from, data.vertices); raceMeta[from].vertices = data.vertices; Net.broadcast({ type: 'wheelUpdated', id: from, vertices: data.vertices }); }
+    if (data.type === 'wheelUpdate' && Net.isHost && raceMeta[from]) { Sim.updateRacerWheel(from, data.vertices); raceMeta[from].vertices = data.vertices; Net.broadcast({ type: 'wheelUpdated', id: from, vertices: data.vertices }); }
     if (data.type === 'wheelUpdated') { if (raceMeta[data.id]) raceMeta[data.id].vertices = data.vertices; }
   });
 
   function enterDrawPhase() {
-    stopRaceLoops(); preRaceDrawer.clear(); myVertices = null; els.btnSubmitWheel.disabled = true; els.drawWait.textContent = ''; showScreen('draw');
+    stopRaceLoops(); raceStarting = false; preRaceDrawer.clear(); myVertices = null; els.btnSubmitWheel.disabled = true; els.drawWait.textContent = ''; showScreen('draw');
     let t = 30; els.drawTimer.textContent = t; clearInterval(drawTimerHandle);
     drawTimerHandle = setInterval(() => { t--; els.drawTimer.textContent = Math.max(t, 0); if (t <= 0) { clearInterval(drawTimerHandle); if (!myVertices) submitWheel(true); } }, 1000);
   }
@@ -94,11 +101,20 @@
     if (Net.isHost) receiveWheel(Net.myId, myVertices); else Net.send({ type: 'wheel', vertices: myVertices });
   }
 
-  function receiveWheel(id, vertices) {
-    wheels[id] = vertices;
-    if (Object.keys(wheels).length >= Object.keys(Net.players).length) { 
+  let raceStarting = false; // host: never start the countdown twice
+
+  function receiveWheel(id, vertices) { wheels[id] = vertices; checkAllWheelsIn(); }
+
+  // Counts only players still connected: a player who leaves while drawing can't hang the host
+  // forever waiting for a wheel that will never arrive.
+  function checkAllWheelsIn() {
+    if (raceStarting) return;
+    const ids = Object.keys(Net.players), got = ids.filter(id => wheels[id]).length;
+    els.drawWait.textContent = `Ruote pronte: ${got}/${ids.length}`;
+    if (ids.length > 0 && got >= ids.length) {
+      raceStarting = true;
       const start = Date.now() + 3500, track = Terrain.generateRandomLayout();
-      Terrain.applyLayout(track); Net.broadcast({ type: 'allReady', wheels, startTime: start, trackLayout: track }); startCountdown(start); 
+      Terrain.applyLayout(track); Net.broadcast({ type: 'allReady', wheels, startTime: start, trackLayout: track }); startCountdown(start);
     }
   }
 
@@ -118,7 +134,7 @@
     Sim.init(); let i = 0; Object.entries(raceMeta).forEach(([id, m]) => Sim.addRacer(id, m.vertices, m.color, m.name, i++));
     Sim.start(); let last = performance.now();
     snapshotLoopHandle = setInterval(() => {
-      const now = performance.now(), dt = Math.min(now - last, 50); last = now;
+      const now = performance.now(), dt = Math.min(now - last, 100); last = now;
       Sim.tick(dt); const snap = Sim.snapshot(); applySnapshot(snap); Net.broadcast({ type: 'snap', racers: snap });
       if (Sim.allFinished() || Sim.isTimedOut()) { clearInterval(snapshotLoopHandle); const s = Sim.standings(); Net.broadcast({ type: 'results', standings: s }); showResults(s); }
     }, 50);
@@ -139,17 +155,14 @@
     ctx2d.fillStyle = grad; ctx2d.fillRect(0, 0, w, h);
     const groundY = h - 160;
 
-    // NUVOLE IN MOVIMENTO (PARALLASSE LENTA)
-    ctx2d.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    [150, 650, 1200, 1800, 2400].forEach((cloudX, idx) => {
-      let cx = (cloudX - smoothCamX * 0.12) % (w + 600);
-      if (cx < -300) cx += w + 900;
-      let cy = 70 + (idx % 3) * 45;
-      ctx2d.beginPath();
-      ctx2d.arc(cx, cy, 32, 0, Math.PI * 2);
-      ctx2d.arc(cx + 25, cy - 12, 42, 0, Math.PI * 2);
-      ctx2d.arc(cx + 55, cy, 28, 0, Math.PI * 2);
-      ctx2d.fill();
+    // SOLE (in stile disegno di un bambino: cerchio con faccina + raggi dritti)
+    drawChildSun(w);
+
+    // NUVOLE IN MOVIMENTO (PARALLASSE SU PIÙ LIVELLI, forme più morbide e "gonfie")
+    CLOUD_DEFS.forEach(c => {
+      let cx = (c.x - smoothCamX * c.speed) % (w + 700);
+      if (cx < -350) cx += w + 1050;
+      drawCloud(cx, c.y, c.scale, c.alpha);
     });
 
     // COLLINE DI SFONDO MORBIDE (Niente più triangoli appuntiti)
@@ -252,6 +265,80 @@
     ctx2d.lineWidth = 4; ctx2d.strokeStyle = c; ctx2d.stroke();
     ctx2d.fillStyle = '#0f172a'; ctx2d.font = 'bold 12px "Space Grotesk"'; ctx2d.textAlign = 'center'; ctx2d.fillText((n||'?').trim().slice(0,2).toUpperCase(), 0, 5);
     if (isMe) { ctx2d.rotate(-a); ctx2d.fillStyle = '#0f172a'; ctx2d.font = 'bold 14px "Kalam"'; ctx2d.fillText('tu', 0, -32); }
+    ctx2d.restore();
+  }
+
+  // Definizione delle nuvole: livelli di profondità diversi (speed) per una parallasse più viva,
+  // dimensioni/trasparenze diverse così non sembrano tutte stampate dallo stesso timbro.
+  const CLOUD_DEFS = [
+    { x: 120,  y: 75,  scale: 1.1, speed: 0.10, alpha: 0.55 },
+    { x: 520,  y: 150, scale: 0.6, speed: 0.16, alpha: 0.85 },
+    { x: 980,  y: 55,  scale: 0.85,speed: 0.07, alpha: 0.45 },
+    { x: 1420, y: 190, scale: 1.3, speed: 0.18, alpha: 0.9  },
+    { x: 1900, y: 100, scale: 0.5, speed: 0.13, alpha: 0.6  },
+    { x: 2380, y: 60,  scale: 1.0, speed: 0.09, alpha: 0.5  },
+    { x: 2850, y: 170, scale: 0.7, speed: 0.20, alpha: 0.95 },
+  ];
+
+  // Una nuvola "gonfia": più lobi di raggio diverso, contorno morbido, leggera trasparenza
+  // in base alla profondità così quelle lontane sembrano più tenui.
+  function drawCloud(x, y, scale, alpha) {
+    const lobes = [
+      { dx: 0,   dy: 6,   r: 22 }, { dx: 20,  dy: -8,  r: 30 },
+      { dx: 48,  dy: 2,   r: 26 }, { dx: 70,  dy: 12,  r: 18 },
+      { dx: 38,  dy: 16,  r: 22 }, { dx: 12,  dy: 18,  r: 16 },
+    ];
+    ctx2d.save();
+    ctx2d.globalAlpha = alpha;
+    // Un'ombra morbida sull'intera sagoma (un solo fill, non lobo per lobo) dà un bordo
+    // sfumato senza mostrare le linee di giunzione fra i cerchi che compongono la nuvola.
+    ctx2d.shadowColor = 'rgba(100,130,160,0.35)';
+    ctx2d.shadowBlur = 16 * scale;
+    ctx2d.shadowOffsetY = 5 * scale;
+    ctx2d.fillStyle = '#ffffff';
+    ctx2d.beginPath();
+    lobes.forEach(l => ctx2d.arc(x + l.dx * scale, y + l.dy * scale, l.r * scale, 0, Math.PI * 2));
+    ctx2d.fill();
+    ctx2d.restore();
+  }
+
+  // Il sole come lo disegnerebbe un bambino: cerchio giallo con contorno spesso, faccina
+  // semplice e raggi dritti che alternano lunghi/corti. Resta ancorato in alto a destra dello
+  // schermo (con un lieve respiro) invece di scorrere con il mondo, come nei disegni sul foglio.
+  function drawChildSun(w) {
+    const r = Math.max(34, Math.min(64, w * 0.09));
+    const cx = w - r - 46, cy = r + 46;
+    const breathe = 1 + Math.sin(performance.now() / 900) * 0.03;
+
+    ctx2d.save();
+    ctx2d.translate(cx, cy);
+
+    // Raggi: linee dritte alternate lunghe/corte, come tratti di pennarello
+    ctx2d.strokeStyle = '#f59e0b';
+    ctx2d.lineWidth = Math.max(4, r * 0.09);
+    ctx2d.lineCap = 'round';
+    const rayCount = 10;
+    for (let i = 0; i < rayCount; i++) {
+      const a = (i / rayCount) * Math.PI * 2;
+      const len = (i % 2 === 0 ? r * 0.85 : r * 0.5) * breathe;
+      ctx2d.beginPath();
+      ctx2d.moveTo(Math.cos(a) * (r + 5), Math.sin(a) * (r + 5));
+      ctx2d.lineTo(Math.cos(a) * (r + 5 + len), Math.sin(a) * (r + 5 + len));
+      ctx2d.stroke();
+    }
+
+    // Corpo del sole
+    ctx2d.beginPath(); ctx2d.arc(0, 0, r, 0, Math.PI * 2);
+    ctx2d.fillStyle = '#fde047'; ctx2d.fill();
+    ctx2d.lineWidth = Math.max(4, r * 0.08); ctx2d.strokeStyle = '#f59e0b'; ctx2d.stroke();
+
+    // Faccina: due occhi a pallino + sorriso ad arco, come nei disegni dei bambini
+    ctx2d.fillStyle = '#92400e';
+    ctx2d.beginPath(); ctx2d.arc(-r * 0.28, -r * 0.1, r * 0.09, 0, Math.PI * 2); ctx2d.fill();
+    ctx2d.beginPath(); ctx2d.arc(r * 0.28, -r * 0.1, r * 0.09, 0, Math.PI * 2); ctx2d.fill();
+    ctx2d.strokeStyle = '#92400e'; ctx2d.lineWidth = Math.max(3, r * 0.07); ctx2d.lineCap = 'round';
+    ctx2d.beginPath(); ctx2d.arc(0, -r * 0.02, r * 0.34, 0.15 * Math.PI, 0.85 * Math.PI); ctx2d.stroke();
+
     ctx2d.restore();
   }
 
