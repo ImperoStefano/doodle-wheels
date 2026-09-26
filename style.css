@@ -80,10 +80,27 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
   background: var(--red); color: white; border: 2px solid var(--ink); border-radius: 50%;
   width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;
 }
+
 .draw-canvas {
-  width: 100%; aspect-ratio: 1 / 1; background: #ffffff;
-  border: 2px dashed #9fb3c8; border-radius: 16px; margin: 20px 0; cursor: crosshair;
+  width: 100%;
+  max-width: 400px;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  background: #ffffff;
+  border: 2px dashed #9fb3c8;
+  border-radius: 16px;
+  margin: 20px auto;
+  display: block;
+  cursor: crosshair;
+  touch-action: none !important;
 }
+
+#redraw-canvas {
+  max-width: 100%;
+  aspect-ratio: 1 / 1;
+  height: auto;
+}
+
 .draw-actions { display: flex; gap: 12px; }
 .draw-actions .btn { flex: 1; }
 
@@ -124,7 +141,7 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
   position: absolute; inset: 0; background: rgba(16, 42, 67, 0.8); backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center; z-index: 2000;
 }
-.modal-overlay .card { margin: 16px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+.modal-overlay .card { max-width: 90vw; margin: 16px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
 
 #orientation-warning {
   display: none; position: absolute; inset: 0; background: var(--ink); color: #fff;
@@ -142,5 +159,5 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
   .redraw-ui { bottom: 20px !important; right: 20px !important; }
   .redraw-ui .btn { padding: 14px 20px; font-size: 1rem; }
   .modal-overlay .card { max-width: 90vw; padding: 16px; margin: 10px; }
-  .draw-canvas { margin: 10px 0; }
+  .draw-canvas { margin: 10px auto; }
 }
