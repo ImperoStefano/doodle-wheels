@@ -1,190 +1,123 @@
-/*
- * Net — thin wrapper around PeerJS.
- * The HOST is authoritative: it runs the physics simulation and relays
- * state to everyone else. Clients only ever talk to the host (star
- * topology), never to each other directly. This keeps a 5-player race
- * simple and avoids peer-to-peer mesh headaches.
- */
-const PLAYER_COLORS = ['#e8462a', '#2b5fde', '#ffd23f', '#39a845', '#8e44c7'];
-const MAX_PLAYERS = 5;
-const ROOM_PREFIX = 'doodlewheels-';
+const Terrain = (() => {
+  let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500, ZONES = [], FLOWERS = [];
+  
+  const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps'];
+  const ZONE_COLORS = {
+    start: '#10b981', hills: '#059669', ice: '#7dd3fc',
+    gravel: '#94a3b8', water: '#3b82f6', ramps: '#f59e0b', finish: '#10b981'
+  };
+  const FRICTION = { start: 0.9, hills: 0.9, ice: 0.1, gravel: 0.6, water: 0.95, ramps: 1.1, finish: 0.9 };
 
-// Config ICE esplicita: senza questa, PeerJS usa comunque un suo TURN gratuito di default,
-// ma è condiviso da chiunque usi la libreria nel mondo ed è spesso lento o non disponibile.
-// Averlo qui esplicito + un secondo TURN indipendente come riserva rende affidabile la
-// connessione tra reti diverse (es. un giocatore in WiFi e uno in 4G/5G), dove il solo STUN
-// spesso non basta a superare il NAT delle reti cellulari.
-const ICE_CONFIG = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
-    // Secondo TURN pubblico indipendente (Open Relay Project), come ulteriore tentativo se il
-    // primo è occupato o irraggiungibile. Non posso verificare da qui se sia ancora attivo in
-    // questo momento (in passato ha richiesto una chiave gratuita su metered.ca) — non costa
-    // nulla tenerlo: ICE lo scarta da solo se non risponde e usa gli altri.
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-    // Per una riserva sicuramente funzionante e tua, registrati gratis (20GB/mese) su
-    // https://www.metered.ca/tools/openrelay/ e aggiungi qui le tue credenziali dinamiche.
-  ],
-};
-
-const SIGNAL_TIMEOUT_MS = 12000;  // connessione al server di segnalazione di PeerJS
-const JOIN_TIMEOUT_MS = 18000;    // trattativa P2P (ICE/TURN) verso l'host
-
-const Net = (() => {
-  let peer = null;
-  let hostConn = null;          // client -> host connection
-  let connections = {};         // host only: peerId -> connection
-  let isHost = false;
-  let myId = null;
-  let myName = '';
-  let players = {};             // id -> {id, name, color, isHost}
-  const listeners = {};
-
-  function on(type, cb) { (listeners[type] ||= []).push(cb); }
-  function emit(type, data) { (listeners[type] || []).forEach(cb => cb(data)); }
-
-  function makeCode() {
-    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-    let c = '';
-    for (let i = 0; i < 4; i++) c += letters[Math.floor(Math.random() * letters.length)];
-    return c;
+  function generateRandomLayout() {
+    const layout = []; for (let i = 0; i < 7; i++) layout.push(ZONE_TYPES[Math.floor(Math.random() * ZONE_TYPES.length)]); return layout;
   }
 
-  function nextColor() {
-    const used = Object.values(players).map(p => p.color);
-    return PLAYER_COLORS.find(c => !used.includes(c)) || PLAYER_COLORS[0];
+  function applyLayout(layoutKeys) {
+    ZONES = []; let currentX = -300;
+    ZONES.push({ key: 'start', start: currentX, end: currentX + 1200, color: ZONE_COLORS.start }); currentX += 1200;
+    layoutKeys.forEach(key => { ZONES.push({ key, start: currentX, end: currentX + 1400, color: ZONE_COLORS[key] }); currentX += 1400; });
+    ZONES.push({ key: 'finish', start: currentX, end: currentX + 1200, color: ZONE_COLORS.finish });
+    TRACK_END = currentX + 1200; FINISH_X = currentX + 300;
+    FLOWERS = generateFlowers();
   }
 
-  function hostGame(name, attempt = 0) {
-    isHost = true;
-    myName = name;
-    const code = makeCode();
-    peer = new Peer(ROOM_PREFIX + code, { debug: 1, config: ICE_CONFIG });
+  // The profile is made of sections (by x) plus a per-zone modifier (ice/water/ramps).
+  // Both used to switch abruptly, leaving near-vertical cliffs (+95px at x=1180, -96px at x=7980...)
+  // that no wheel can climb. Now every switch is cross-faded with a smoothstep over BLEND px.
+  const BLEND = 240;
+  const smooth = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); };
 
-    // Se il server di segnalazione non risponde entro il timeout, l'utente vedrebbe altrimenti
-    // la schermata restare ferma senza alcun messaggio: meglio un errore esplicito e riprovabile.
-    const signalTimer = setTimeout(() => {
-      emit('error', { message: 'Impossibile contattare il server di gioco. Controlla la connessione e riprova.' });
-      peer.destroy();
-    }, SIGNAL_TIMEOUT_MS);
-
-    peer.on('open', id => {
-      clearTimeout(signalTimer);
-      myId = id;
-      players = {};
-      players[id] = { id, name: myName, color: nextColor(), isHost: true };
-      emit('roomReady', { code, players: { ...players } });
-    });
-
-    peer.on('connection', conn => {
-      conn.on('open', () => {
-        if (Object.keys(players).length >= MAX_PLAYERS) {
-          conn.send({ type: 'full' });
-          setTimeout(() => conn.close(), 200);
-          return;
-        }
-        connections[conn.peer] = conn;
-        conn.on('data', data => handleData(conn.peer, data));
-        conn.on('close', () => {
-          delete connections[conn.peer];
-          delete players[conn.peer];
-          emit('playersChanged', { ...players });
-          broadcast({ type: 'players', players });
-        });
-      });
-    });
-
-    peer.on('error', err => {
-      clearTimeout(signalTimer);
-      if (err.type === 'unavailable-id' && attempt < 5) {
-        hostGame(name, attempt + 1);
-      } else {
-        emit('error', err);
-      }
-    });
-
-    // Se il server di segnalazione si scollega dopo l'avvio (es. passaggio WiFi -> 4G a metà
-    // partita), riprova da solo invece di lasciare l'host irraggiungibile per tutti.
-    peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
+  function sections() {
+    return [
+      { from: -Infinity, f: () => 0 },
+      { from: 500,  f: x => Math.sin(x / 250) * 50 },
+      { from: 1200, f: x => 50 + Math.sin(x / 120) * 8 },
+      { from: 3200, f: x => 40 - Math.sin(((x - 3200) / 2000) * Math.PI) * 90 },
+      { from: 5200, f: x => { const p = (x - 5200) / 2800; return p * 130 + Math.sin(p * Math.PI * 4) * 20; } },
+      { from: 8000, f: x => Math.sin(x / 250) * 50 },
+      { from: TRACK_END - 500, f: () => 0 },
+    ];
   }
 
-  function joinGame(code, name) {
-    isHost = false;
-    myName = name;
-    peer = new Peer(undefined, { debug: 1, config: ICE_CONFIG });
-
-    const signalTimer = setTimeout(() => {
-      emit('error', { message: 'Impossibile contattare il server di gioco. Controlla la connessione e riprova.' });
-      peer.destroy();
-    }, SIGNAL_TIMEOUT_MS);
-
-    peer.on('open', id => {
-      clearTimeout(signalTimer);
-      myId = id;
-      hostConn = peer.connect(ROOM_PREFIX + code.trim().toUpperCase(), { reliable: true });
-
-      // Qui è dove un problema di rete tra i due dispositivi si vede davvero: se ICE/TURN non
-      // riescono a stabilire il canale, PeerJS non emette alcun evento — senza questo timeout
-      // il giocatore resterebbe sulla schermata di attesa all'infinito, senza sapere perché.
-      let everOpened = false;
-      const joinTimer = setTimeout(() => {
-        emit('error', { message: 'Impossibile raggiungere l\'host. Controlla che entrambi siate connessi a internet e riprova (reti molto diverse, es. WiFi e 4G, a volte richiedono qualche secondo in più).' });
-        hostConn.close();
-      }, JOIN_TIMEOUT_MS);
-
-      hostConn.on('open', () => {
-        everOpened = true;
-        clearTimeout(joinTimer);
-        hostConn.send({ type: 'join', name });
-      });
-      hostConn.on('data', data => handleData('host', data));
-      // Se il canale non si era mai aperto, la chiusura l'ha già spiegata il timeout qui sopra:
-      // evitiamo un secondo messaggio ("l'host ha chiuso") fuorviante sopra a quello giusto.
-      hostConn.on('close', () => { clearTimeout(joinTimer); if (everOpened) emit('hostLeft'); });
-    });
-
-    peer.on('error', err => { clearTimeout(signalTimer); emit('error', err); });
-    peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
-  }
-
-  function handleData(fromId, data) {
-    if (isHost) {
-      if (data.type === 'join') {
-        players[fromId] = { id: fromId, name: (data.name || '???').slice(0, 14), color: nextColor(), isHost: false };
-        emit('playersChanged', { ...players });
-        broadcast({ type: 'players', players });
-      } else {
-        emit('data', { from: fromId, data });
-      }
-    } else {
-      if (data.type === 'full') {
-        emit('error', { message: 'La gara è già piena (5 giocatori).' });
-      } else if (data.type === 'players') {
-        players = data.players;
-        emit('playersChanged', { ...players });
-      } else {
-        emit('data', { from: 'host', data });
+  // cross-fade between neighbouring items of a list [{from, f}] around each boundary
+  function blendAt(list, x) {
+    for (let i = 1; i < list.length; i++) {
+      const b = list[i].from;
+      if (Math.abs(x - b) < BLEND / 2) {
+        const t = smooth((x - (b - BLEND / 2)) / BLEND);
+        return list[i - 1].f(x) * (1 - t) + list[i].f(x) * t;
       }
     }
+    let cur = list[0];
+    for (const it of list) if (x >= it.from) cur = it;
+    return cur.f(x);
   }
 
-  function broadcast(msg) {
-    Object.values(connections).forEach(c => { if (c.open) c.send(msg); });
+  function zoneModifier(key, x) {
+    if (key === 'ice') return -15;
+    if (key === 'water') return -60;
+    if (key === 'ramps') return Math.abs(Math.sin(x / 90)) * 45;
+    return 0;
   }
 
-  function send(msg) {
-    if (isHost) broadcast(msg);
-    else if (hostConn && hostConn.open) hostConn.send(msg);
+  // Fiorellini decorativi lungo il percorso: un piccolo dosso morbido, non un vero ostacolo.
+  // Devono essere IDENTICI su host e client (la fisica gira solo sull'host, i client disegnano
+  // soltanto), quindi niente Math.random() qui: solo funzioni deterministiche di x, così
+  // applyLayout(stessiLayoutKeys) produce sempre lo stesso elenco ovunque sia chiamata.
+  function pseudo(x) { const v = Math.sin(x * 12.9898) * 43758.5453; return v - Math.floor(v); } // 0..1
+
+  function generateFlowers() {
+    const flowers = [];
+    let x = TRACK_START + 1500; // niente fiori appena dopo la partenza
+    const STOP_X = TRACK_END - 900; // niente fiori appena prima del traguardo
+    let i = 0; // indice del fiore piazzato: usato per far ruotare le specie (non x, che salta
+               // in modo irregolare a causa delle zone acqua saltate)
+    while (x < STOP_X) {
+      const zone = dominantZoneOf(x, ZONES).key;
+      if (zone !== 'start' && zone !== 'finish' && zone !== 'water') {
+        flowers.push({
+          x: Math.round(x),
+          r: 9 + pseudo(x) * 6,                   // 9–15px: la "gobba" fisica, piccola rispetto alla ruota (r=80).
+                                                    // Invariato apposta: è il valore già testato con la fisica.
+          hue: Math.floor(pseudo(x * 3.1) * 5),    // indice colore, 0-4
+          // Specie: ruota sempre fra le 3 (0 margherita, 1 tulipano, 2 rosa) invece di sceglierle
+          // in modo indipendente — con solo 3 valori il caso puro le raggruppava spesso a coppie
+          // o terne uguali. i%3 garantisce la rotazione, +0/1 pseudo-deterministico la rimescola
+          // un po' così non sembra un pattern meccanico 1-2-3-1-2-3.
+          species: (i + Math.floor(pseudo(x * 7.3) * 2)) % 3,
+          stemScale: 0.7 + pseudo(x * 4.1) * 1.7,  // altezza dello stelo: solo estetica, non tocca la fisica
+        });
+        i++;
+      }
+      x += 460 + pseudo(x * 1.7) * 340; // passo variabile ma deterministico, 460–800px: un accento
+                                          // sparso sul paesaggio, non un campo di fiori
+    }
+    return flowers;
   }
 
-  return {
-    hostGame, joinGame, broadcast, send, on,
-    get isHost() { return isHost; },
-    get myId() { return myId; },
-    get players() { return players; },
+  // stessa logica di dominantZone, ma prende ZONES come parametro: generateFlowers() viene
+  // chiamata mentre applyLayout sta ancora scrivendo ZONES, quindi non può usare la closure.
+  function dominantZoneOf(x, zones) {
+    for (const z of zones) { if (x >= z.start && x <= z.end) return z; }
+    return zones[0] || { key: 'hills' };
+  }
+
+  function height(x) {
+    const zoneList = ZONES.map(z => ({ from: z.start, f: xx => zoneModifier(z.key, xx) }));
+    return blendAt(sections(), x) + blendAt(zoneList, x);
+  }
+
+  function dominantZone(x) {
+    for (const z of ZONES) { if (x >= z.start && x <= z.end) return z; }
+    return ZONES[0] || { key: 'hills' };
+  }
+
+  applyLayout(generateRandomLayout());
+
+  return { 
+    generateRandomLayout, applyLayout, height, 
+    frictionAt: (x) => FRICTION[dominantZone(x).key] || 0.9, 
+    colorAt: (x) => dominantZone(x).color || '#059669', 
+    get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; }, get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; } 
   };
-})();
+})(); // terrain 
