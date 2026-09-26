@@ -3,7 +3,9 @@ const createWheelDrawer = (canvasEl) => {
   const MIN_POINTS = 12, MIN_AREA = 500; 
 
   function init() {
-    canvas.addEventListener('pointerdown', start); canvas.addEventListener('pointermove', move); window.addEventListener('pointerup', end);
+    canvas.addEventListener('pointerdown', start, { passive: false }); 
+    canvas.addEventListener('pointermove', move, { passive: false }); 
+    window.addEventListener('pointerup', end);
     clear();
   }
   function clear() { points = []; redraw(); }
@@ -17,8 +19,8 @@ const createWheelDrawer = (canvasEl) => {
     const r = canvas.getBoundingClientRect();
     return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
   }
-  function start(e) { drawing = true; points = [localPos(e)]; redraw(); }
-  function move(e) { if (!drawing) return; points.push(localPos(e)); redraw(); }
+  function start(e) { e.preventDefault(); drawing = true; points = [localPos(e)]; redraw(); }
+  function move(e) { e.preventDefault(); if (!drawing) return; points.push(localPos(e)); redraw(); }
   function end() { if (!drawing) return; drawing = false; redraw(); }
   function redraw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height); drawGuide();
@@ -57,10 +59,6 @@ const createWheelDrawer = (canvasEl) => {
     return rdp(pts);
   }
 
-  // ---- make the outline a SIMPLE polygon (no self-crossings) -------------------------
-  // Freehand loops almost always cross themselves (tail overlapping the start, figure-eights).
-  // poly-decomp can't split such outlines, so the wheel came out mangled in the physics.
-  // Where two edges cross we get two loops; keep the larger one.
   function crossPoint(a, b, c, d) {
     const r = { x: b.x - a.x, y: b.y - a.y }, s = { x: d.x - c.x, y: d.y - c.y };
     const den = r.x * s.y - r.y * s.x;
@@ -85,10 +83,8 @@ const createWheelDrawer = (canvasEl) => {
       const loopB = [cut.p, ...pts.slice(cut.j + 1), ...pts.slice(0, cut.i + 1)];
       pts = polygonArea(loopA) >= polygonArea(loopB) ? loopA : loopB;
     }
-    return null; // still tangled after 12 cuts
+    return null; 
   }
-  // Same test physics.js uses to decide if a wheel can be built from the exact outline
-  // (it also catches edges that merely touch, which poly-decomp chokes on like real crossings).
   function isSimple(pts) {
     const o = (p, q, r) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
     const n = pts.length;
@@ -101,7 +97,7 @@ const createWheelDrawer = (canvasEl) => {
     }
     return true;
   }
-  function convexHull(pts) { // Andrew's monotone chain
+  function convexHull(pts) { 
     const p = pts.map(q => ({ x: q.x, y: q.y })).sort((a, b) => a.x - b.x || a.y - b.y);
     const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
     const lo = [], up = [];
@@ -110,7 +106,6 @@ const createWheelDrawer = (canvasEl) => {
     return lo.slice(0, -1).concat(up.slice(0, -1));
   }
 
-  // raw stroke -> simplified, non-crossing polygon (still in canvas units)
   function outline(raw) {
     let pts = simplify(raw, 2.5);
     if (pts.length > 3) {
@@ -123,16 +118,11 @@ const createWheelDrawer = (canvasEl) => {
     }
     return pts;
   }
-  // valid = enough points and a real enclosed area AFTER untangling (a figure-eight's signed
-  // area cancels out, so measuring the raw stroke wrongly rejected it)
   function isValid() { return points.length >= MIN_POINTS && polygonArea(outline(points)) > MIN_AREA; }
 
-  // Pure function (also handy for tests): raw stroke points -> normalised polygon around (0,0)
   function normalize(rawPoints, targetRadius = 80) {
     let pts = outline(rawPoints);
     if (pts.length < 3) pts = fallbackCircle();
-    // Centre on the AREA centroid, not the mean of the vertices: Matter.js puts the body's origin
-    // at the area centroid, so anything else makes the drawn wheel drift off its physics body.
     let cx = 0, cy = 0, area2 = 0;
     for (let i = 0; i < pts.length; i++) {
       const p1 = pts[i], p2 = pts[(i + 1) % pts.length], cross = p1.x * p2.y - p2.x * p1.y;
@@ -149,4 +139,4 @@ const createWheelDrawer = (canvasEl) => {
     const pts = []; for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; pts.push({ x: Math.cos(a) * 100, y: Math.sin(a) * 100 }); } return pts;
   }
   return { init, clear, isValid, getNormalizedVertices, normalize, fallbackCircle };
-}; //fine draw.js
+};
