@@ -205,7 +205,7 @@
     // Fiorellini lungo il percorso, disegnati prima delle bici così restano sullo sfondo.
     Terrain.FLOWERS.forEach(f => {
       const fx = f.x - smoothCamX;
-      if (fx > -30 && fx < w + 30) drawFlower(fx, groundY - Terrain.height(f.x), f.r, f.hue);
+      if (fx > -30 && fx < w + 30) drawFlower(fx, groundY - Terrain.height(f.x), f.r, f.hue, f.species, f.stemScale);
     });
 
     Object.entries(latestRacers).forEach(([id, r]) => {
@@ -348,27 +348,26 @@
     ctx2d.restore();
   }
 
-  // Un fiorellino "da bambino": stelo verde, petali colorati intorno a un centro giallo.
-  // Sta appoggiato sulla linea del terreno; l'altezza è proporzionata al raggio (piccolo,
-  // 9-15px), così resta un dettaglio del paesaggio e non un vero muro da evitare.
+  // Fiorellini "da bambino": tre specie diverse, non solo colori diversi. Lo stelo ha
+  // un'altezza sua (stemScale) scorporata dal raggio r — r è solo la piccola "gobba" fisica
+  // (9-15px, invariata) su cui rotolano le ruote; l'altezza del fiore sopra di essa è
+  // puramente decorativa e può variare molto senza toccare la fisica.
   const FLOWER_PALETTE = ['#f472b6', '#f87171', '#c084fc', '#fb923c', '#60a5fa'];
+  const TULIP_PALETTE  = ['#e11d48', '#db2777', '#f97316', '#a21caf', '#facc15'];
+  const ROSE_PALETTE   = ['#be123c', '#e11d48', '#f43f5e', '#9f1239', '#fb7185'];
 
-  function drawFlower(x, groundYScreen, r, hue) {
-    const color = FLOWER_PALETTE[hue % FLOWER_PALETTE.length];
-    const stemH = r * 1.7, topY = groundYScreen - stemH;
-    ctx2d.save();
-
-    // Stelo
-    ctx2d.strokeStyle = '#16a34a'; ctx2d.lineWidth = Math.max(2, r * 0.22); ctx2d.lineCap = 'round';
+  // Stelo + una fogliolina: condiviso dalle tre specie, così restano coerenti fra loro.
+  function drawStemAndLeaf(x, groundYScreen, topY, r, leafFlip) {
+    ctx2d.strokeStyle = '#16a34a'; ctx2d.lineWidth = Math.max(2, r * 0.2); ctx2d.lineCap = 'round';
     ctx2d.beginPath(); ctx2d.moveTo(x, groundYScreen + 2); ctx2d.lineTo(x, topY); ctx2d.stroke();
-
-    // Fogliolina
     ctx2d.fillStyle = '#22c55e';
     ctx2d.beginPath();
-    ctx2d.ellipse(x + r * 0.5, groundYScreen - stemH * 0.4, r * 0.5, r * 0.22, -0.5, 0, Math.PI * 2);
+    ctx2d.ellipse(x + leafFlip * r * 0.5, groundYScreen - (groundYScreen - topY) * 0.38, r * 0.45, r * 0.2, leafFlip * -0.5, 0, Math.PI * 2);
     ctx2d.fill();
+  }
 
-    // Petali intorno al centro
+  // Specie 0: margherita/gerbera — petali tondi intorno a un centro giallo.
+  function drawDaisy(x, topY, r, color) {
     const petalR = r * 0.55, orbit = r * 0.6, petals = 6;
     ctx2d.fillStyle = color;
     for (let i = 0; i < petals; i++) {
@@ -377,12 +376,58 @@
       ctx2d.arc(x + Math.cos(a) * orbit, topY + Math.sin(a) * orbit, petalR, 0, Math.PI * 2);
       ctx2d.fill();
     }
-
-    // Centro
     ctx2d.beginPath(); ctx2d.arc(x, topY, r * 0.55, 0, Math.PI * 2);
     ctx2d.fillStyle = '#fde047'; ctx2d.fill();
     ctx2d.lineWidth = Math.max(1.5, r * 0.1); ctx2d.strokeStyle = '#ca8a04'; ctx2d.stroke();
+  }
 
+  // Specie 1: tulipano — una coppa a tre punte, tinta unita, come lo disegna un bambino.
+  function drawTulip(x, topY, r, color) {
+    const hw = r * 0.85, hgt = r * 1.5;
+    ctx2d.fillStyle = color;
+    ctx2d.beginPath();
+    ctx2d.moveTo(x - hw * 0.55, topY + hgt * 0.3);
+    ctx2d.quadraticCurveTo(x - hw * 0.85, topY - hgt * 0.1, x - hw * 0.32, topY - hgt * 0.55);
+    ctx2d.quadraticCurveTo(x - hw * 0.14, topY - hgt * 0.28, x, topY - hgt * 0.72);
+    ctx2d.quadraticCurveTo(x + hw * 0.14, topY - hgt * 0.28, x + hw * 0.32, topY - hgt * 0.55);
+    ctx2d.quadraticCurveTo(x + hw * 0.85, topY - hgt * 0.1, x + hw * 0.55, topY + hgt * 0.3);
+    ctx2d.quadraticCurveTo(x, topY + hgt * 0.5, x - hw * 0.55, topY + hgt * 0.3);
+    ctx2d.closePath();
+    ctx2d.fill();
+    ctx2d.lineWidth = Math.max(1.5, r * 0.09); ctx2d.strokeStyle = 'rgba(0,0,0,0.22)'; ctx2d.stroke();
+  }
+
+  // Specie 2: rosa — la spirale che disegnano tutti da bambini, con due spinette sullo stelo.
+  function drawRose(x, groundYScreen, topY, r, color) {
+    const stemHalf = Math.max(2, r * 0.2) / 2;
+    ctx2d.fillStyle = '#b91c1c';
+    [0.35, 0.65].forEach(t => {
+      const ty = groundYScreen + (topY - groundYScreen) * t, side = t < 0.5 ? -1 : 1, len = r * 0.35;
+      ctx2d.beginPath();
+      ctx2d.moveTo(x + side * stemHalf, ty - r * 0.14);
+      ctx2d.lineTo(x + side * stemHalf, ty + r * 0.14);
+      ctx2d.lineTo(x + side * (stemHalf + len), ty);
+      ctx2d.closePath();
+      ctx2d.fill();
+    });
+    ctx2d.strokeStyle = color; ctx2d.lineWidth = Math.max(2.5, r * 0.24); ctx2d.lineCap = 'round';
+    ctx2d.beginPath();
+    const turns = 2.1, steps = 26;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps, a = t * turns * Math.PI * 2, rad = r * 0.7 * (1 - t * 0.82);
+      const px = x + Math.cos(a) * rad, py = topY + Math.sin(a) * rad;
+      if (i === 0) ctx2d.moveTo(px, py); else ctx2d.lineTo(px, py);
+    }
+    ctx2d.stroke();
+  }
+
+  function drawFlower(x, groundYScreen, r, hue, species, stemScale) {
+    const stemH = r * 1.6 * stemScale, topY = groundYScreen - stemH;
+    ctx2d.save();
+    drawStemAndLeaf(x, groundYScreen, topY, r, species === 1 ? 1 : -1);
+    if (species === 1) drawTulip(x, topY, r, TULIP_PALETTE[hue % TULIP_PALETTE.length]);
+    else if (species === 2) drawRose(x, groundYScreen, topY, r, ROSE_PALETTE[hue % ROSE_PALETTE.length]);
+    else drawDaisy(x, topY, r, FLOWER_PALETTE[hue % FLOWER_PALETTE.length]);
     ctx2d.restore();
   }
 
