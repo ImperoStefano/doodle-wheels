@@ -24,6 +24,10 @@
 
   let myVertices = null, wheels = {}, drawTimerHandle = null, latestRacers = {}, raceMeta = {}, raceLoopHandle = null, snapshotLoopHandle = null;
   let ctx2d = null, minimapCtx = null, smoothCamX = 0, particles = [], myRedrawsLeft = 2;
+  // viewW/viewH: dimensioni del mondo visibili sullo schermo, in "unità logiche" (indipendenti
+  // dalla risoluzione fisica). Su schermi stretti (telefoni) viewScale < 1 così si vede più
+  // pista invece di restare incollati a un fotogramma stretto come su desktop.
+  let viewScale = 1, viewW = 0, viewH = 0, minimapMetrics = { w: 0, h: 0 };
 
   function showScreen(name) { ['menu', 'lobby', 'draw', 'race', 'results'].forEach(s => els[s].classList.toggle('screen--active', s === name)); }
 
@@ -88,7 +92,32 @@
     if (data.type === 'wheelUpdated') { if (raceMeta[data.id]) raceMeta[data.id].vertices = data.vertices; }
   });
 
+  // Wake Lock: senza, lo schermo si spegne da solo dopo un po' di inattività (tipico durante
+  // una gara in cui si guarda senza toccare) — sul telefono host questo blocca anche la fisica,
+  // perché il browser rallenta drasticamente i timer di una scheda non visibile. Supportato su
+  // tutti i browser principali (anche Safari iOS, da qualche tempo), ma con controllo esplicito
+  // perché su versioni più vecchie l'API semplicemente non esiste: in quel caso il gioco
+  // funziona comunque, solo senza questa protezione.
+  let wakeLock = null;
+  async function requestWakeLock() {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (e) { /* negato dal sistema o dall'utente: il gioco funziona comunque */ }
+  }
+  function releaseWakeLock() { if (wakeLock) { wakeLock.release(); wakeLock = null; } }
+  // Il wake lock si rilascia da solo quando la scheda passa in background, e va richiesto di
+  // nuovo quando torna visibile — altrimenti dopo un cambio app rapido lo schermo tornerebbe a spegnersi da solo.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' &&
+        (els.draw.classList.contains('screen--active') || els.race.classList.contains('screen--active'))) {
+      requestWakeLock();
+    }
+  });
+
   function enterDrawPhase() {
+    requestWakeLock();
     stopRaceLoops(); raceStarting = false; preRaceDrawer.clear(); myVertices = null; els.btnSubmitWheel.disabled = true; els.drawWait.textContent = ''; showScreen('draw');
     let t = 30; els.drawTimer.textContent = t; clearInterval(drawTimerHandle);
     drawTimerHandle = setInterval(() => { t--; els.drawTimer.textContent = Math.max(t, 0); if (t <= 0) { clearInterval(drawTimerHandle); if (!myVertices) submitWheel(true); } }, 1000);
@@ -143,17 +172,58 @@
 
   function applySnapshot(racers) { racers.forEach(r => latestRacers[r.id] = r); }
   function setupCanvas() { ctx2d = els.raceCanvas.getContext('2d'); minimapCtx = els.minimap.getContext('2d'); resizeCanvas(); }
-  function resizeCanvas() { els.raceCanvas.width = window.innerWidth; els.raceCanvas.height = window.innerHeight; }
+
+  // Sotto MOBILE_BREAKPOINT (in CSS px) lo zoom scende gradualmente fino a MIN_VIEW_SCALE: su un
+  // telefono stretto si vede quasi il doppio di pista rispetto a prima (a 1:1 pixel, la bici da
+  // sola occupava già un quarto dello schermo). Sopra la soglia resta 1 = nessun cambiamento
+  // rispetto a com'era già su desktop.
+  const MOBILE_BREAKPOINT = 760, MIN_VIEW_SCALE = 0.55;
+
+  function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = window.innerWidth, cssH = window.innerHeight;
+
+    viewScale = Math.min(1, Math.max(MIN_VIEW_SCALE, cssW / MOBILE_BREAKPOINT));
+    viewW = cssW / viewScale;
+    viewH = cssH / viewScale;
+
+    // Backing store a risoluzione fisica (nitido sugli schermi retina/telefono), dimensione CSS
+    // invariata; poi un'unica trasformazione che unisce DPR e zoom, così tutto il resto del
+    // codice di disegno continua a lavorare in "unità logiche" (viewW/viewH) senza saperlo.
+    els.raceCanvas.width = Math.round(cssW * dpr);
+    els.raceCanvas.height = Math.round(cssH * dpr);
+    els.raceCanvas.style.width = cssW + 'px';
+    els.raceCanvas.style.height = cssH + 'px';
+    if (ctx2d) ctx2d.setTransform(dpr * viewScale, 0, 0, dpr * viewScale, 0, 0);
+
+    resizeMinimap();
+  }
   window.addEventListener('resize', resizeCanvas);
 
+  // Stessa correzione DPR per la minimappa: legge la sua dimensione CSS reale (qualunque essa
+  // sia) e adatta la risoluzione interna, invece di restare sfocata sugli schermi retina.
+  function resizeMinimap() {
+    if (!minimapCtx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = els.minimap.getBoundingClientRect();
+    if (!rect.width || !rect.height) return; // non ancora visibile/layoutato
+    els.minimap.width = Math.round(rect.width * dpr);
+    els.minimap.height = Math.round(rect.height * dpr);
+    minimapMetrics = { w: rect.width, h: rect.height };
+    minimapCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
   function renderRace() {
-    const w = els.raceCanvas.width, h = els.raceCanvas.height, me = latestRacers[Net.myId];
+    const w = viewW, h = viewH, me = latestRacers[Net.myId];
     smoothCamX += ((me ? me.x - w * 0.32 : 0) - smoothCamX) * 0.08; 
     
     // Cielo
     const grad = ctx2d.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, '#e0f2fe'); grad.addColorStop(1, '#bae6fd');
     ctx2d.fillStyle = grad; ctx2d.fillRect(0, 0, w, h);
-    const groundY = h - 160;
+    // Proporzionale all'altezza, non un valore fisso: su un telefono in verticale (molto più
+    // alto che largo) un offset fisso lasciava quasi tutto lo schermo di cielo e schiacciava
+    // bici e pista in una striscia sottile in fondo.
+    const groundY = h * 0.8;
 
     // SOLE (in stile disegno di un bambino: cerchio con faccina + raggi dritti)
     drawChildSun(w);
@@ -447,7 +517,7 @@
   }
 
   function drawMinimap() {
-    const w = els.minimap.width, h = els.minimap.height, tL = Terrain.FINISH_X; minimapCtx.clearRect(0, 0, w, h);
+    const w = minimapMetrics.w, h = minimapMetrics.h, tL = Terrain.FINISH_X; minimapCtx.clearRect(0, 0, w, h);
     const toPx = (x) => (Math.max(0, Math.min(1, x / tL))) * (w - 10) + 5;
     Terrain.ZONES.forEach(z => {
       const zS = Math.max(0, z.start), zE = Math.min(tL, z.end); if (zE <= zS) return;
@@ -463,7 +533,7 @@
   }
 
   function stopRaceLoops() { if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) clearInterval(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; els.redrawUi.style.display = els.redrawModal.style.display = 'none'; }
-  function showResults(st) { stopRaceLoops(); els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${i + 1}°</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : 'DNF'}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
+  function showResults(st) { stopRaceLoops(); releaseWakeLock(); els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${i + 1}°</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : 'DNF'}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
   els.btnRematch.addEventListener('click', () => { if (Net.isHost) { wheels = {}; Net.broadcast({ type: 'restartToDraw' }); enterDrawPhase(); } });
   els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
 })();

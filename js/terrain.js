@@ -70,16 +70,27 @@ const Terrain = (() => {
     const flowers = [];
     let x = TRACK_START + 1500; // niente fiori appena dopo la partenza
     const STOP_X = TRACK_END - 900; // niente fiori appena prima del traguardo
+    let i = 0; // indice del fiore piazzato: usato per far ruotare le specie (non x, che salta
+               // in modo irregolare a causa delle zone acqua saltate)
     while (x < STOP_X) {
       const zone = dominantZoneOf(x, ZONES).key;
       if (zone !== 'start' && zone !== 'finish' && zone !== 'water') {
         flowers.push({
           x: Math.round(x),
-          r: 9 + pseudo(x) * 6,            // 9–15px: piccolo rispetto alla ruota (r=80)
-          hue: Math.floor(pseudo(x * 3.1) * 5), // indice colore petali, 0-4
+          r: 9 + pseudo(x) * 6,                   // 9–15px: la "gobba" fisica, piccola rispetto alla ruota (r=80).
+                                                    // Invariato apposta: è il valore già testato con la fisica.
+          hue: Math.floor(pseudo(x * 3.1) * 5),    // indice colore, 0-4
+          // Specie: ruota sempre fra le 3 (0 margherita, 1 tulipano, 2 rosa) invece di sceglierle
+          // in modo indipendente — con solo 3 valori il caso puro le raggruppava spesso a coppie
+          // o terne uguali. i%3 garantisce la rotazione, +0/1 pseudo-deterministico la rimescola
+          // un po' così non sembra un pattern meccanico 1-2-3-1-2-3.
+          species: (i + Math.floor(pseudo(x * 7.3) * 2)) % 3,
+          stemScale: 0.7 + pseudo(x * 4.1) * 1.7,  // altezza dello stelo: solo estetica, non tocca la fisica
         });
+        i++;
       }
-      x += 340 + pseudo(x * 1.7) * 260; // passo variabile ma deterministico, 340–600px
+      x += 460 + pseudo(x * 1.7) * 340; // passo variabile ma deterministico, 460–800px: un accento
+                                          // sparso sul paesaggio, non un campo di fiori
     }
     return flowers;
   }
