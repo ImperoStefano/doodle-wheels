@@ -7,7 +7,7 @@
 * { box-sizing: border-box; }
 
 body {
-  margin: 0; height: 100vh; overflow: hidden;
+  margin: 0; height: 100vh; height: 100dvh; overflow: hidden;
   background-color: var(--paper);
   background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 24px 24px; color: var(--ink);
@@ -104,7 +104,11 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 .draw-actions { display: flex; gap: 12px; }
 .draw-actions .btn { flex: 1; }
 
-.race-wrap { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #87CEEB; }
+/* 100vh su mobile include la barra degli indirizzi nel calcolo iniziale, poi lo spazio reale
+   cambia quando appare/scompare: elementi ancorati al fondo (es. il pulsante pit-stop) possono
+   finire spinti oltre il bordo visibile. 100dvh si adatta allo spazio davvero visibile in ogni
+   momento; il valore vh resta come fallback per i browser che non lo supportano. */
+.race-wrap { position: relative; width: 100vw; height: 100vh; height: 100dvh; overflow: hidden; background: #87CEEB; }
 #race-canvas { width: 100%; height: 100%; display: block; }
 .countdown-overlay {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -112,18 +116,25 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
   text-shadow: 6px 6px 0 var(--ink); pointer-events: none; z-index: 50;
 }
 
-/* FIX HUD: Posizioni rigide, stile glassmorphism */
+/* FIX HUD: Posizioni rigide, stile glassmorphism. calc(...+env(safe-area-inset-*)) tiene HUD e
+   pulsanti lontani da tacche/isole dinamiche/barra di gestures sui telefoni con bordi non
+   rettangolari (serve viewport-fit=cover nel tag <meta> perché env() dia un valore reale). */
 .hud {
-  position: absolute; top: 20px; left: 20px;
+  position: absolute;
+  top: calc(20px + env(safe-area-inset-top, 0px));
+  left: calc(20px + env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 10px;
   background: rgba(255, 255, 255, 0.25); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   padding: 14px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.4);
   box-shadow: 0 8px 24px rgba(0,0,0,0.1); z-index: 1000 !important; pointer-events: none;
+  max-width: min(260px, calc(100vw - 40px));
 }
 .hud-progress { height: 6px; background: rgba(0,0,0,0.1); border-radius: 4px; overflow: hidden; width: 100%; }
 .hud-progress-fill { height: 100%; background: var(--blue); width: 0%; transition: width 0.15s linear; }
 .minimap {
-  display: block; width: 240px !important; height: 36px !important;
+  /* clamp() invece di un salto secco a un solo breakpoint: si adatta con continuità a qualsiasi
+     larghezza di schermo, dai telefoni più piccoli ai tablet, non solo alle due taglie previste. */
+  display: block; width: clamp(140px, 40vw, 240px) !important; height: clamp(22px, 6vw, 36px) !important;
   border: 2px solid rgba(16, 42, 67, 0.8); border-radius: 8px; background: rgba(255,255,255,0.85) !important;
 }
 .hud-leaderboard { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; width: 100%; }
@@ -134,8 +145,13 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 .hud-leaderboard li.is-me { background: var(--yellow); border-color: var(--ink); }
 .rank-num { font-family: 'Kalam', cursive; font-weight: 700; width: 1.2em; font-size: 0.95rem; }
 
-/* FIX PIT-STOP: Sempre visibile e ancorato */
-.redraw-ui { position: absolute; bottom: 32px !important; right: 32px !important; z-index: 999 !important; }
+/* FIX PIT-STOP: Sempre visibile e ancorato, anche dietro la barra dei gesture in basso */
+.redraw-ui {
+  position: absolute;
+  bottom: calc(32px + env(safe-area-inset-bottom, 0px)) !important;
+  right: calc(32px + env(safe-area-inset-right, 0px)) !important;
+  z-index: 999 !important;
+}
 .redraw-ui .btn { padding: 18px 28px; font-size: 1.2rem; border-radius: 16px; background: var(--yellow); }
 .modal-overlay {
   position: absolute; inset: 0; background: rgba(16, 42, 67, 0.8); backdrop-filter: blur(4px);
@@ -143,20 +159,44 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 }
 .modal-overlay .card { max-width: 90vw; margin: 16px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
 
+/* Prima copriva TUTTA la gara con un blocco nero finché non si ruotava il telefono — chi lo
+   tiene in verticale (la stragrande maggioranza, di default) non vedeva né la pista né il
+   pulsante "Cambia Forma", non perché fossero mal disegnati ma perché erano sotto questo
+   overlay. Ora è un suggerimento in un fumetto discreto in alto, che non blocca i tocchi
+   (pointer-events: none) né copre il gioco: si può giocare comunque in verticale, l'orizzontale
+   resta solo consigliato per vedere più pista in una volta. */
 #orientation-warning {
-  display: none; position: absolute; inset: 0; background: var(--ink); color: #fff;
-  z-index: 3000; flex-direction: column; align-items: center; justify-content: center;
-  font-family: 'Space Grotesk', sans-serif; font-size: 1.4rem; text-align: center; padding: 30px; line-height: 1.4;
+  display: none;
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3000;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  background: rgba(16, 42, 67, 0.88);
+  color: #fff;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: left;
+  padding: 8px 16px;
+  border-radius: 999px;
+  line-height: 1.3;
+  pointer-events: none;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+  max-width: calc(100% - 24px);
+  white-space: nowrap;
 }
-#orientation-warning span { font-size: 4rem; margin-bottom: 20px; display: inline-block; animation: spin 2s infinite ease-in-out; }
+#orientation-warning span { font-size: 1.1rem; display: inline-block; animation: spin 2s infinite ease-in-out; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(90deg); } }
 
 /* Media Queries per Touch/Mobile */
 @media (max-width: 768px) and (pointer: coarse) {
   @media (orientation: portrait) { #screen-race.screen--active #orientation-warning { display: flex; } }
-  .hud { top: 12px; left: 12px; padding: 10px; gap: 8px; }
-  .minimap { width: 180px !important; height: 28px !important; }
-  .redraw-ui { bottom: 20px !important; right: 20px !important; }
+  .hud { top: calc(12px + env(safe-area-inset-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); padding: 10px; gap: 8px; }
+  .redraw-ui { bottom: calc(20px + env(safe-area-inset-bottom, 0px)) !important; right: calc(20px + env(safe-area-inset-right, 0px)) !important; }
   .redraw-ui .btn { padding: 14px 20px; font-size: 1rem; }
   .modal-overlay .card { max-width: 90vw; padding: 16px; margin: 10px; }
   .draw-canvas { margin: 10px auto; }
