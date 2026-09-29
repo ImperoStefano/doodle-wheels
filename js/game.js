@@ -491,13 +491,19 @@
     ctx2d.stroke();
   }
 
+  // r è il raggio fisico del dosso (9-15px, validato con la fisica: le ruote lo scavalcano
+  // senza incastrarsi). BLOOM_SCALE ingrandisce SOLO il disegno — stelo, foglia e fiore — senza
+  // toccare quella dimensione: il dosso che sente la ruota resta esattamente lo stesso.
+  const BLOOM_SCALE = 1.7;
+
   function drawFlower(x, groundYScreen, r, hue, species, stemScale) {
-    const stemH = r * 1.6 * stemScale, topY = groundYScreen - stemH;
+    const vr = r * BLOOM_SCALE;
+    const stemH = vr * 1.6 * stemScale, topY = groundYScreen - stemH;
     ctx2d.save();
-    drawStemAndLeaf(x, groundYScreen, topY, r, species === 1 ? 1 : -1);
-    if (species === 1) drawTulip(x, topY, r, TULIP_PALETTE[hue % TULIP_PALETTE.length]);
-    else if (species === 2) drawRose(x, groundYScreen, topY, r, ROSE_PALETTE[hue % ROSE_PALETTE.length]);
-    else drawDaisy(x, topY, r, FLOWER_PALETTE[hue % FLOWER_PALETTE.length]);
+    drawStemAndLeaf(x, groundYScreen, topY, vr, species === 1 ? 1 : -1);
+    if (species === 1) drawTulip(x, topY, vr, TULIP_PALETTE[hue % TULIP_PALETTE.length]);
+    else if (species === 2) drawRose(x, groundYScreen, topY, vr, ROSE_PALETTE[hue % ROSE_PALETTE.length]);
+    else drawDaisy(x, topY, vr, FLOWER_PALETTE[hue % FLOWER_PALETTE.length]);
     ctx2d.restore();
   }
 
