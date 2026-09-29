@@ -103,17 +103,17 @@ const Sim = (() => {
     return (Terrain.FLOWERS || []).map(f => {
       const groundY = GROUND_Y - Terrain.height(f.x);
       
-      // Valori base (usati di default per le margherite, f.species === 0)
       let currentFriction = Terrain.frictionAt ? Terrain.frictionAt(f.x) : 0.8;
-      let currentRestitution = 0.15;
+      let currentRestitution = 0.15; // Margherite: fluide e normali (nessuna modifica)
 
-      // Personalizzazione basata sulla specie del fiore
       if (f.species === 1) { 
-        // Tulipano: Molto elastico, fa rimbalzare
-        currentRestitution = 0.8; 
+        // TULIPANO (Effetto Trampolino)
+        // 0.8 era troppo poco per un dosso così piccolo. Con 1.8 la ruota farà un bel salto!
+        currentRestitution = 1.8; 
       } else if (f.species === 2) { 
-        // Rosa: Molto attrito, rallenta la corsa
-        currentFriction = 2.0; 
+        // ROSA (Frenata Brusca / Sabbie Mobili)
+        // Alziamo drasticamente l'attrito per bloccare o rallentare di colpo la ruota
+        currentFriction = 8.0; 
       }
 
       const body = Matter.Bodies.circle(f.x, groundY - f.r * FLOWER_POKE, f.r, {
