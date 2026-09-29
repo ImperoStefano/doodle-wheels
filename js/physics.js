@@ -102,10 +102,24 @@ const Sim = (() => {
   function buildFlowers() {
     return (Terrain.FLOWERS || []).map(f => {
       const groundY = GROUND_Y - Terrain.height(f.x);
+      
+      // Valori base (usati di default per le margherite, f.species === 0)
+      let currentFriction = Terrain.frictionAt ? Terrain.frictionAt(f.x) : 0.8;
+      let currentRestitution = 0.15;
+
+      // Personalizzazione basata sulla specie del fiore
+      if (f.species === 1) { 
+        // Tulipano: Molto elastico, fa rimbalzare
+        currentRestitution = 0.8; 
+      } else if (f.species === 2) { 
+        // Rosa: Molto attrito, rallenta la corsa
+        currentFriction = 2.0; 
+      }
+
       const body = Matter.Bodies.circle(f.x, groundY - f.r * FLOWER_POKE, f.r, {
         isStatic: true,
-        friction: Terrain.frictionAt ? Terrain.frictionAt(f.x) : 0.8,
-        restitution: 0.15,
+        friction: currentFriction,
+        restitution: currentRestitution,
         slop: 0.02,
         label: 'flower'
       });
