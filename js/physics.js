@@ -104,29 +104,26 @@ const Sim = (() => {
       const groundY = GROUND_Y - Terrain.height(f.x);
       
       let currentFriction = Terrain.frictionAt ? Terrain.frictionAt(f.x) : 0.8;
-      let currentRestitution = 0.15; // Margherite: fluide e normali (nessuna modifica)
+      let currentRestitution = 0.15; // Margherite normali
 
       if (f.species === 1) { 
-        // TULIPANO (Effetto Trampolino)
-        // 0.8 era troppo poco per un dosso così piccolo. Con 1.8 la ruota farà un bel salto!
-        currentRestitution = 1.8; 
+        // Tulipano: Rimbalzo controllato (restitution alta ma gestita dal motore)
+        currentRestitution = 0.85; 
       } else if (f.species === 2) { 
-        // ROSA (Frenata Brusca / Sabbie Mobili)
-        // Alziamo drasticamente l'attrito per bloccare o rallentare di colpo la ruota
-        currentFriction = 8.0; 
+        // Rosa: Attrito elevato per frenare la ruota al passaggio
+        currentFriction = 3.5; 
       }
 
       const body = Matter.Bodies.circle(f.x, groundY - f.r * FLOWER_POKE, f.r, {
         isStatic: true,
         friction: currentFriction,
         restitution: currentRestitution,
-        slop: 0.02,
+        slop: 0.01,
         label: 'flower'
       });
       return body;
     });
   }
-
   function wheelOptions(group) {
     return {
       friction: WHEEL_FRICTION,
