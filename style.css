@@ -96,9 +96,12 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 }
 
 #redraw-canvas {
-  max-width: 100%;
-  aspect-ratio: 1 / 1;
+  width: 100%;
+  max-width: 42vh; /* Il trucco: spostiamo il limite verticale sulla larghezza */
   height: auto;
+  aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  display: block;
 }
 
 .draw-actions { display: flex; gap: 12px; }
