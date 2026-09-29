@@ -494,7 +494,7 @@
   // r è il raggio fisico del dosso (9-15px, validato con la fisica: le ruote lo scavalcano
   // senza incastrarsi). BLOOM_SCALE ingrandisce SOLO il disegno — stelo, foglia e fiore — senza
   // toccare quella dimensione: il dosso che sente la ruota resta esattamente lo stesso.
-  const BLOOM_SCALE = 1.7;
+  const BLOOM_SCALE = 2.5;
 
   function drawFlower(x, groundYScreen, r, hue, species, stemScale) {
     const vr = r * BLOOM_SCALE;
