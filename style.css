@@ -160,7 +160,13 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
   position: absolute; inset: 0; background: rgba(16, 42, 67, 0.8); backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center; z-index: 2000;
 }
-.modal-overlay .card { max-width: 90vw; margin: 16px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
+.modal-overlay .card { 
+  width: 100%;
+  max-width: 420px !important; 
+  margin: 16px; 
+  padding: 24px; 
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4); 
+}
 
 /* Prima copriva TUTTA la gara con un blocco nero finché non si ruotava il telefono — chi lo
    tiene in verticale (la stragrande maggioranza, di default) non vedeva né la pista né il
