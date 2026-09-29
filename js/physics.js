@@ -356,30 +356,7 @@ const Sim = (() => {
       });
     }
 
-    // --- NUOVA LOGICA FIORI (Metodo Arcade) ---
-    if (Terrain.FLOWERS) {
-      for (const f of Terrain.FLOWERS) {
-        // Se il centro della bici (chassis) passa esattamente sopra un fiore
-        if (Math.abs(r.chassis.position.x - f.x) < 40) {
-          
-          if (f.species === 1) { 
-            // TULIPANO (Effetto Trampolino)
-            // Applica una forte spinta verso l'alto (y: -16) solo se non sta già volando
-            if (r.chassis.velocity.y > -2) {
-              Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: -16 });
-            }
-          } 
-          
-          else if (f.species === 2) { 
-            // ROSA (Effetto Freno / Sabbie Mobili)
-            // Abbattiamo la velocità orizzontale moltiplicandola per 0.88 ad ogni frame
-            Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x * 0.88, y: r.chassis.velocity.y });
-          }
-          
-        }
-      }
-    }
-    // ------------------------------------------
+   
 
     if (r.chassis.position.x >= Terrain.FINISH_X) {
       r.finished = true;
