@@ -70,27 +70,35 @@ const Terrain = (() => {
     const flowers = [];
     let x = TRACK_START + 1500; // niente fiori appena dopo la partenza
     const STOP_X = TRACK_END - 900; // niente fiori appena prima del traguardo
-    let i = 0; // indice del fiore piazzato: usato per far ruotare le specie (non x, che salta
-               // in modo irregolare a causa delle zone acqua saltate)
+    let i = 0; 
+    
     while (x < STOP_X) {
       const zone = dominantZoneOf(x, ZONES).key;
       if (zone !== 'start' && zone !== 'finish' && zone !== 'water') {
+        
+        // 1. Calcoliamo prima quale specie sarà questo fiore
+        const currentSpecies = (i + Math.floor(pseudo(x * 7.3) * 2)) % 3;
+        
+        // 2. Assegniamo il raggio in base alla specie
+        let physRadius = 9 + pseudo(x) * 6; // Base per margherite (0)
+        
+        if (currentSpecies === 1) {
+          physRadius = 24 + pseudo(x) * 6; // Tulipani (1): ostacolo grande per rimbalzare
+        } else if (currentSpecies === 2) {
+          physRadius = 20 + pseudo(x) * 5; // Rose (2): ostacolo medio-grande per frenare
+        }
+
+        // 3. Aggiungiamo il fiore con i valori ricalcolati
         flowers.push({
           x: Math.round(x),
-          r: 9 + pseudo(x) * 6,                   // 9–15px: la "gobba" fisica, piccola rispetto alla ruota (r=80).
-                                                    // Invariato apposta: è il valore già testato con la fisica.
-          hue: Math.floor(pseudo(x * 3.1) * 5),    // indice colore, 0-4
-          // Specie: ruota sempre fra le 3 (0 margherita, 1 tulipano, 2 rosa) invece di sceglierle
-          // in modo indipendente — con solo 3 valori il caso puro le raggruppava spesso a coppie
-          // o terne uguali. i%3 garantisce la rotazione, +0/1 pseudo-deterministico la rimescola
-          // un po' così non sembra un pattern meccanico 1-2-3-1-2-3.
-          species: (i + Math.floor(pseudo(x * 7.3) * 2)) % 3,
-          stemScale: 0.7 + pseudo(x * 4.1) * 1.7,  // altezza dello stelo: solo estetica, non tocca la fisica
+          r: physRadius,
+          hue: Math.floor(pseudo(x * 3.1) * 5),
+          species: currentSpecies,
+          stemScale: 0.7 + pseudo(x * 4.1) * 1.7,
         });
         i++;
       }
-      x += 460 + pseudo(x * 1.7) * 340; // passo variabile ma deterministico, 460–800px: un accento
-                                          // sparso sul paesaggio, non un campo di fiori
+      x += 460 + pseudo(x * 1.7) * 340; 
     }
     return flowers;
   }
