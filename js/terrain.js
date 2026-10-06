@@ -1,5 +1,5 @@
 const Terrain = (() => {
-  let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500, ZONES = [], FLOWERS = [];
+  let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500, ZONES = [], FLOWERS = [], BRIDGE = null;
   
   const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps'];
   const ZONE_COLORS = {
@@ -19,6 +19,7 @@ const Terrain = (() => {
     ZONES.push({ key: 'finish', start: currentX, end: currentX + 1200, color: ZONE_COLORS.finish });
     TRACK_END = currentX + 1200; FINISH_X = currentX + 300;
     FLOWERS = generateFlowers();
+    BRIDGE = generateBridge();
   }
 
   // The profile is made of sections (by x) plus a per-zone modifier (ice/water/ramps).
@@ -53,10 +54,29 @@ const Terrain = (() => {
     return cur.f(x);
   }
 
+  // Rampa vera: salita netta fino a un picco, poi una discesa più ripida che scende sotto la
+  // quota base (un piccolo distacco prima dell'atterraggio), poi un ritorno dolce alla quota
+  // base prima della rampa successiva. Tutti e tre i tratti usano lo stesso easing smoothstep
+  // già validato altrove (nessuno spigolo), solo più netto di una semplice onda sinusoidale.
+  const RAMP_PERIOD = 500, RAMP_RISE = 220, RAMP_DROP = 140, RAMP_PEAK = 70, RAMP_GAP = 15;
+
+  function rampProfile(x) {
+    const u = ((x % RAMP_PERIOD) + RAMP_PERIOD) % RAMP_PERIOD;
+    if (u < RAMP_RISE) {
+      return smooth(u / RAMP_RISE) * RAMP_PEAK;
+    } else if (u < RAMP_RISE + RAMP_DROP) {
+      const t = (u - RAMP_RISE) / RAMP_DROP;
+      return RAMP_PEAK * (1 - smooth(t)) - RAMP_GAP * smooth(t);
+    } else {
+      const t = (u - RAMP_RISE - RAMP_DROP) / (RAMP_PERIOD - RAMP_RISE - RAMP_DROP);
+      return -RAMP_GAP * (1 - smooth(t));
+    }
+  }
+
   function zoneModifier(key, x) {
     if (key === 'ice') return -15;
     if (key === 'water') return -60;
-    if (key === 'ramps') return Math.abs(Math.sin(x / 90)) * 45;
+    if (key === 'ramps') return rampProfile(x);
     return 0;
   }
 
@@ -70,37 +90,46 @@ const Terrain = (() => {
     const flowers = [];
     let x = TRACK_START + 1500; // niente fiori appena dopo la partenza
     const STOP_X = TRACK_END - 900; // niente fiori appena prima del traguardo
-    let i = 0; 
-    
+    let i = 0; // indice del fiore piazzato: usato per far ruotare le specie (non x, che salta
+               // in modo irregolare a causa delle zone acqua saltate)
     while (x < STOP_X) {
       const zone = dominantZoneOf(x, ZONES).key;
       if (zone !== 'start' && zone !== 'finish' && zone !== 'water') {
-        
-        // 1. Calcoliamo prima quale specie sarà questo fiore
-        const currentSpecies = (i + Math.floor(pseudo(x * 7.3) * 2)) % 3;
-        
-        // 2. Assegniamo il raggio in base alla specie
-        let physRadius = 9 + pseudo(x) * 6; // Base per margherite (0)
-        
-        if (currentSpecies === 1) {
-          physRadius = 24 + pseudo(x) * 6; // Tulipani (1): ostacolo grande per rimbalzare
-        } else if (currentSpecies === 2) {
-          physRadius = 20 + pseudo(x) * 5; // Rose (2): ostacolo medio-grande per frenare
-        }
-
-        // 3. Aggiungiamo il fiore con i valori ricalcolati
         flowers.push({
           x: Math.round(x),
-          r: physRadius,
-          hue: Math.floor(pseudo(x * 3.1) * 5),
-          species: currentSpecies,
-          stemScale: 0.7 + pseudo(x * 4.1) * 1.7,
+          r: 9 + pseudo(x) * 6,                   // 9–15px: la "gobba" fisica, piccola rispetto alla ruota (r=80).
+                                                    // Invariato apposta: è il valore già testato con la fisica.
+          hue: Math.floor(pseudo(x * 3.1) * 5),    // indice colore, 0-4
+          // Specie: ruota sempre fra le 3 (0 margherita, 1 tulipano, 2 rosa) invece di sceglierle
+          // in modo indipendente — con solo 3 valori il caso puro le raggruppava spesso a coppie
+          // o terne uguali. i%3 garantisce la rotazione, +0/1 pseudo-deterministico la rimescola
+          // un po' così non sembra un pattern meccanico 1-2-3-1-2-3.
+          species: (i + Math.floor(pseudo(x * 7.3) * 2)) % 4, // 0 margherita, 1 tulipano, 2 rosa, 3 girasole
+          stemScale: 0.7 + pseudo(x * 4.1) * 1.7,  // altezza dello stelo: solo estetica, non tocca la fisica
         });
         i++;
       }
-      x += 460 + pseudo(x * 1.7) * 340; 
+      x += 460 + pseudo(x * 1.7) * 340; // passo variabile ma deterministico, 460–800px: un accento
+                                          // sparso sul paesaggio, non un campo di fiori
     }
     return flowers;
+  }
+
+  // Ponte: non in ogni gara (il tiro deterministico qui sotto esce "vero" in circa 45% dei
+  // casi), e solo quando il layout ha davvero una zona acqua su cui ha senso che passi. Niente
+  // nuova fisica: è solo un tratto di terreno appiattito a un'altezza costante (con lo stesso
+  // raccordo smoothstep già usato per i confini di zona) più la decorazione visiva sopra — le
+  // ruote lo attraversano esattamente come qualunque altro tratto di terreno.
+  function generateBridge() {
+    const water = ZONES.find(z => z.key === 'water');
+    if (!water) return null;
+    const key = ZONES.map(z => z.key + z.start).join('|');
+    let h = 0; for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
+    if ((h % 100) / 100 > 0.45) return null; // ~45% delle gare
+
+    const span = Math.min(480, (water.end - water.start) * 0.85);
+    const mid = (water.start + water.end) / 2;
+    return { start: mid - span / 2, end: mid + span / 2, peakHeight: 60 };
   }
 
   // stessa logica di dominantZone, ma prende ZONES come parametro: generateFlowers() viene
@@ -110,9 +139,33 @@ const Terrain = (() => {
     return zones[0] || { key: 'hills' };
   }
 
-  function height(x) {
+  // Altezza "vera" del terreno, senza l'eventuale ponte: serve a game.js per disegnare il
+  // vuoto/l'acqua sotto l'impalcato (altrimenti la riva piena nasconderebbe la campata).
+  function naturalHeight(x) {
     const zoneList = ZONES.map(z => ({ from: z.start, f: xx => zoneModifier(z.key, xx) }));
     return blendAt(sections(), x) + blendAt(zoneList, x);
+  }
+
+  // Quota su cui guidano davvero le ruote: uguale al terreno naturale ovunque, tranne che sopra
+  // il ponte, dove diventa un arco che parte e arriva al livello delle due sponde (non una
+  // quota fissa) — così l'impalcato si aggancia bene al terreno anche se le due sponde non sono
+  // perfettamente alla stessa altezza.
+  function height(x) {
+    const natural = naturalHeight(x);
+    if (!BRIDGE) return natural;
+    const { start, end, peakHeight } = BRIDGE;
+    if (x < start - BLEND || x > end + BLEND) return natural;
+
+    const hStart = naturalHeight(start), hEnd = naturalHeight(end);
+    if (x >= start && x <= end) {
+      const t = (x - start) / (end - start);
+      const bankLevel = hStart * (1 - t) + hEnd * t;
+      const arc = Math.sin(t * Math.PI) * peakHeight;
+      return bankLevel + arc;
+    }
+    const edgeTarget = x < start ? hStart : hEnd;
+    const t2 = x < start ? smooth((x - (start - BLEND)) / BLEND) : 1 - smooth((x - end) / BLEND);
+    return natural * (1 - t2) + edgeTarget * t2;
   }
 
   function dominantZone(x) {
@@ -126,6 +179,7 @@ const Terrain = (() => {
     generateRandomLayout, applyLayout, height, 
     frictionAt: (x) => FRICTION[dominantZone(x).key] || 0.9, 
     colorAt: (x) => dominantZone(x).color || '#059669', 
-    get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; }, get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; } 
+    get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; }, get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; }, get BRIDGE() { return BRIDGE; }, naturalHeight,
+    get RAMP_PERIOD() { return RAMP_PERIOD; }, get RAMP_RISE() { return RAMP_RISE; }
   };
 })(); // terrain 

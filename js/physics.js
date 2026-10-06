@@ -102,28 +102,17 @@ const Sim = (() => {
   function buildFlowers() {
     return (Terrain.FLOWERS || []).map(f => {
       const groundY = GROUND_Y - Terrain.height(f.x);
-      
-      let currentFriction = Terrain.frictionAt ? Terrain.frictionAt(f.x) : 0.8;
-      let currentRestitution = 0.15; // Margherite normali
-
-      if (f.species === 1) { 
-        // Tulipano: Rimbalzo controllato (restitution alta ma gestita dal motore)
-        currentRestitution = 0.85; 
-      } else if (f.species === 2) { 
-        // Rosa: Attrito elevato per frenare la ruota al passaggio
-        currentFriction = 3.5; 
-      }
-
       const body = Matter.Bodies.circle(f.x, groundY - f.r * FLOWER_POKE, f.r, {
         isStatic: true,
-        friction: currentFriction,
-        restitution: currentRestitution,
-        slop: 0.01,
+        friction: Terrain.frictionAt ? Terrain.frictionAt(f.x) : 0.8,
+        restitution: 0.15,
+        slop: 0.02,
         label: 'flower'
       });
       return body;
     });
   }
+
   function wheelOptions(group) {
     return {
       friction: WHEEL_FRICTION,
@@ -332,7 +321,7 @@ const Sim = (() => {
   }
 
   // Per-racer logic, runs at the fixed 60Hz step.
- function stepRacer(r, elapsed) {
+  function stepRacer(r, elapsed) {
     if (r.finished) return;
 
     const ramp = Math.min(1, elapsed / 1500);
@@ -356,13 +345,12 @@ const Sim = (() => {
       });
     }
 
-   
-
     if (r.chassis.position.x >= Terrain.FINISH_X) {
       r.finished = true;
       r.finishTime = elapsed;
     }
   }
+
   // Called with real elapsed ms; physics is sub-stepped at a fixed 60Hz.
   function tick(dtMs) {
     if (!running) return;

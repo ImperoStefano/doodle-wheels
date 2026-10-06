@@ -173,17 +173,18 @@
   function applySnapshot(racers) { racers.forEach(r => latestRacers[r.id] = r); }
   function setupCanvas() { ctx2d = els.raceCanvas.getContext('2d'); minimapCtx = els.minimap.getContext('2d'); resizeCanvas(); }
 
-  // Sotto MOBILE_BREAKPOINT (in CSS px) lo zoom scende gradualmente fino a MIN_VIEW_SCALE: su un
-  // telefono stretto si vede quasi il doppio di pista rispetto a prima (a 1:1 pixel, la bici da
-  // sola occupava già un quarto dello schermo). Sopra la soglia resta 1 = nessun cambiamento
-  // rispetto a com'era già su desktop.
-  const MOBILE_BREAKPOINT = 760, MIN_VIEW_SCALE = 0.55;
+  // Lo zoom guardava solo la larghezza: un telefono ruotato in orizzontale è largo (sopra la
+  // soglia, quindi "zoom 1, nessun ritocco") ma bassissimo — bici enormi, HUD che copre tutto,
+  // pochissima pista visibile. Ora guarda la dimensione PIÙ STRETTA fra le due (larghezza
+  // rispetto a REF_W, altezza rispetto a REF_H) e zooma di conseguenza, qualunque sia
+  // l'orientamento. Sopra entrambe le soglie resta 1 = nessun cambiamento rispetto a desktop.
+  const REF_W = 760, REF_H = 900, MIN_VIEW_SCALE = 0.42;
 
   function resizeCanvas() {
     const dpr = window.devicePixelRatio || 1;
     const cssW = window.innerWidth, cssH = window.innerHeight;
 
-    viewScale = Math.min(1, Math.max(MIN_VIEW_SCALE, cssW / MOBILE_BREAKPOINT));
+    viewScale = Math.min(1, Math.max(MIN_VIEW_SCALE, Math.min(cssW / REF_W, cssH / REF_H)));
     viewW = cssW / viewScale;
     viewH = cssH / viewScale;
 
@@ -235,18 +236,20 @@
       drawCloud(cx, c.y, c.scale, c.alpha);
     });
 
-    // COLLINE DI SFONDO MORBIDE (Niente più triangoli appuntiti)
-    ctx2d.fillStyle = '#93c5fd'; 
-    ctx2d.beginPath();
-    ctx2d.moveTo(0, groundY);
-    for (let sx = 0; sx <= w; sx += 10) {
-      const worldX = sx + smoothCamX * 0.2;
-      const hillY = groundY - 120 - (Math.sin(worldX / 300) * 80 + Math.cos(worldX / 150) * 40);
-      ctx2d.lineTo(sx, hillY);
-    }
-    ctx2d.lineTo(w, groundY);
-    ctx2d.closePath();
-    ctx2d.fill();
+    // MONTAGNE DI SFONDO: 4 livelli di profondità invece dell'unica collina piatta di prima,
+    // ognuno scorre a una frazione diversa di smoothCamX (parallasse, stessa idea delle nuvole).
+    // Interamente procedurale: stesso costo per fotogramma di prima, solo x4 (economico, niente
+    // immagini da caricare).
+    MOUNTAIN_LAYERS.forEach(layer => drawRidge(w, groundY, smoothCamX, layer));
+    // Alberi appoggiati sulle due creste più vicine, posizioni fisse che scorrono con la loro
+    // montagna: stesso trucco di scorrimento/avvolgimento già usato per le nuvole.
+    TREE_DEFS.forEach(t => {
+      let tx = (t.x - smoothCamX * t.layer.speed) % (w + 500);
+      if (tx < -200) tx += w + 700;
+      const worldX = tx + smoothCamX * t.layer.speed;
+      const ty = ridgeY(t.layer, worldX, groundY);
+      drawTree(tx, ty, t.scale, t.layer.treeColor);
+    });
 
     // Particelle
     for (let i = particles.length - 1; i >= 0; i--) {
@@ -255,9 +258,10 @@
       ctx2d.fillStyle = `${p.col}${p.life})`; ctx2d.beginPath(); ctx2d.arc(p.x - smoothCamX, p.y - Sim.GROUND_Y + groundY, p.size, 0, Math.PI*2); ctx2d.fill();
     }
 
-    // Terreno Core (Gradiente Terriccio)
+    // Terreno Core (Gradiente Terriccio). Sotto il ponte uso l'altezza "naturale" (senza la
+    // campata) così si vede davvero il vuoto/l'acqua sotto l'impalcato, invece di terra piena.
     ctx2d.beginPath(); ctx2d.moveTo(0, h);
-    for (let sx = 0; sx <= w + 20; sx += 20) ctx2d.lineTo(sx, groundY - Terrain.height(sx + smoothCamX));
+    for (let sx = 0; sx <= w + 20; sx += 20) ctx2d.lineTo(sx, groundY - groundVisualHeight(sx + smoothCamX));
     ctx2d.lineTo(w, h); ctx2d.closePath();
     const gGrad = ctx2d.createLinearGradient(0, groundY-50, 0, h); gGrad.addColorStop(0, '#78350f'); gGrad.addColorStop(1, '#451a03');
     ctx2d.fillStyle = gGrad; ctx2d.fill();
@@ -265,12 +269,23 @@
     // Superficie Colorata
     ctx2d.lineWidth = 8; ctx2d.beginPath(); let started = false;
     for (let sx = 0; sx <= w + 20; sx += 20) {
-      const y = groundY - Terrain.height(sx + smoothCamX); if (!started) { ctx2d.moveTo(sx, y); started = true; } else ctx2d.lineTo(sx, y);
+      const y = groundY - groundVisualHeight(sx + smoothCamX); if (!started) { ctx2d.moveTo(sx, y); started = true; } else ctx2d.lineTo(sx, y);
     }
     ctx2d.strokeStyle = Terrain.colorAt(smoothCamX + w / 2); ctx2d.stroke();
     ctx2d.strokeStyle = '#1e293b'; ctx2d.lineWidth = 2; ctx2d.stroke();
 
+    // Assi di legno sulla salita di ogni rampa: identità visiva della zona, nessuna fisica nuova.
+    drawRampTreads(w, groundY, smoothCamX);
+
     const fX = Terrain.FINISH_X - smoothCamX; if (fX > -50 && fX < w + 50) drawFinishFlag(fX, groundY - Terrain.height(Terrain.FINISH_X));
+
+    // Ponte ad arco: non sempre presente (vedi terrain.js). L'impalcato segue la stessa curva
+    // che usa la fisica (Terrain.height), i piloni scendono fino al terreno naturale qui sotto
+    // — il vuoto che si vede è lo stesso disegnato sopra nel riempimento del terreno.
+    if (Terrain.BRIDGE) {
+      const bx0 = Terrain.BRIDGE.start - smoothCamX, bx1 = Terrain.BRIDGE.end - smoothCamX;
+      if (bx1 > -60 && bx0 < w + 60) drawBridge(smoothCamX, groundY);
+    }
 
     // Fiorellini lungo il percorso, disegnati prima delle bici così restano sullo sfondo.
     Terrain.FLOWERS.forEach(f => {
@@ -344,6 +359,111 @@
     ctx2d.restore();
   }
 
+  // MONTAGNE DI SFONDO: 4 livelli di profondità, ognuno con la sua velocità di parallasse
+  // (più lontano = più lento), ampiezza e colore (più lontano = più chiaro/freddo, più vicino
+  // = più scuro/saturo) — stessa idea della profondità atmosferica di un paesaggio dipinto, ma
+  // fatta con gradient/trigonometria invece che con un'immagine.
+  const MOUNTAIN_LAYERS = [
+    { speed: 0.05, baseOffset: 150, amp1: 70, amp2: 30, freq1: 340, freq2: 130, color: '#b8d4ef', treeColor: null },
+    { speed: 0.10, baseOffset: 115, amp1: 90, amp2: 40, freq1: 260, freq2: 95,  color: '#9cc0e3', treeColor: '#4a8a45' },
+    { speed: 0.17, baseOffset: 75,  amp1: 60, amp2: 25, freq1: 180, freq2: 70,  color: '#6fa3cf', treeColor: '#3f7a3a' },
+    { speed: 0.26, baseOffset: 40,  amp1: 45, amp2: 18, freq1: 120, freq2: 50,  color: '#4a85b3', treeColor: '#2f6b3a' },
+  ];
+
+  function ridgeY(layer, worldX, groundY) {
+    return groundY - layer.baseOffset - (Math.sin(worldX / layer.freq1) * layer.amp1 + Math.cos(worldX / layer.freq2) * layer.amp2);
+  }
+
+  function drawRidge(w, groundY, smoothCamX, layer) {
+    ctx2d.fillStyle = layer.color;
+    ctx2d.beginPath(); ctx2d.moveTo(0, groundY);
+    for (let sx = 0; sx <= w; sx += 14) {
+      ctx2d.lineTo(sx, ridgeY(layer, sx + smoothCamX * layer.speed, groundY));
+    }
+    ctx2d.lineTo(w, groundY); ctx2d.closePath(); ctx2d.fill();
+  }
+
+  // Alberi in silhouette appoggiati sulle due creste più vicine (le uniche con treeColor):
+  // elenco fisso come le nuvole, stesso trucco di avvolgimento quando escono dallo schermo.
+  const TREE_DEFS = [
+    { x: 80,   scale: 0.8,  layer: MOUNTAIN_LAYERS[3] },
+    { x: 250,  scale: 0.55, layer: MOUNTAIN_LAYERS[3] },
+    { x: 520,  scale: 0.7,  layer: MOUNTAIN_LAYERS[2] },
+    { x: 760,  scale: 0.5,  layer: MOUNTAIN_LAYERS[2] },
+    { x: 1040, scale: 0.85, layer: MOUNTAIN_LAYERS[3] },
+    { x: 1260, scale: 0.6,  layer: MOUNTAIN_LAYERS[3] },
+  ];
+
+  function drawTree(x, y, scale, color) {
+    ctx2d.save(); ctx2d.translate(x, y); ctx2d.scale(scale, scale);
+    ctx2d.fillStyle = '#5b3a22'; ctx2d.fillRect(-4, -34, 8, 34);
+    ctx2d.fillStyle = color;
+    [[0, -70, 34], [-22, -52, 26], [22, -52, 26]].forEach(([dx, dy, r]) => { ctx2d.beginPath(); ctx2d.arc(dx, dy, r, 0, Math.PI * 2); ctx2d.fill(); });
+    ctx2d.restore();
+  }
+
+  // Altezza da disegnare per il riempimento del terreno: uguale a Terrain.height() ovunque,
+  // tranne esattamente sopra il ponte, dove uso quella "naturale" (senza la campata) così il
+  // riempimento di terra segue il vero avvallamento sotto l'impalcato invece di nasconderlo.
+  function groundVisualHeight(worldX) {
+    const B = Terrain.BRIDGE;
+    if (B && worldX >= B.start && worldX <= B.end) return Terrain.naturalHeight(worldX);
+    return Terrain.height(worldX);
+  }
+
+  // Ponte ad arco: l'impalcato segue la stessa curva di Terrain.height() (quella su cui guida
+  // davvero la bici), due piloni di pietra scendono fino al terreno naturale — lo stesso vuoto
+  // già visibile nel riempimento del terreno qui sopra, non un'altra forma scollegata.
+  function drawBridge(smoothCamX, groundY) {
+    const B = Terrain.BRIDGE, steps = 22;
+    const pts = [];
+    for (let i = 0; i <= steps; i++) {
+      const worldX = B.start + (B.end - B.start) * (i / steps);
+      pts.push({ x: worldX - smoothCamX, y: groundY - Terrain.height(worldX) });
+    }
+
+    // piloni: dall'impalcato fino alla quota naturale del terreno in quel punto
+    ctx2d.fillStyle = '#8a8a8a';
+    [0.22, 0.78].forEach(t => {
+      const worldX = B.start + (B.end - B.start) * t;
+      const deckY = groundY - Terrain.height(worldX);
+      const bankY = groundY - Terrain.naturalHeight(worldX);
+      const px = worldX - smoothCamX;
+      ctx2d.fillRect(px - 9, deckY, 18, Math.max(0, bankY - deckY));
+      ctx2d.strokeStyle = '#5f5f5f'; ctx2d.lineWidth = 1.5;
+      ctx2d.strokeRect(px - 9, deckY, 18, Math.max(0, bankY - deckY));
+    });
+
+    // impalcato: un'unica striscia di legno che segue la curva
+    ctx2d.strokeStyle = '#8a5a34'; ctx2d.lineWidth = 15; ctx2d.lineCap = 'round'; ctx2d.lineJoin = 'round';
+    ctx2d.beginPath(); pts.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y)); ctx2d.stroke();
+
+    // tacche delle assi, verticali: a questa scala la curva è dolce, non serve ruotarle
+    ctx2d.strokeStyle = '#5c3a1f'; ctx2d.lineWidth = 2;
+    for (let i = 0; i < pts.length; i += 2) { const p = pts[i]; ctx2d.beginPath(); ctx2d.moveTo(p.x, p.y - 7); ctx2d.lineTo(p.x, p.y + 7); ctx2d.stroke(); }
+
+    // parapetto: stessa curva, spostata in alto, con montanti verticali
+    ctx2d.strokeStyle = '#a16d3f'; ctx2d.lineWidth = 4;
+    ctx2d.beginPath(); pts.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y - 24) : ctx2d.lineTo(p.x, p.y - 24)); ctx2d.stroke();
+    for (let i = 0; i < pts.length; i += 3) { const p = pts[i]; ctx2d.beginPath(); ctx2d.moveTo(p.x, p.y - 24); ctx2d.lineTo(p.x, p.y - 9); ctx2d.stroke(); }
+  }
+
+  // Assi di legno sulla sola salita di ogni rampa (non sulla discesa/rientro): dà identità
+  // visiva alla zona rampe senza bisogno di un elenco di decorazioni a parte — uso gli stessi
+  // RAMP_PERIOD/RAMP_RISE che la fisica già usa in terrain.js.
+  function drawRampTreads(w, groundY, smoothCamX) {
+    const period = Terrain.RAMP_PERIOD, rise = Terrain.RAMP_RISE;
+    ctx2d.strokeStyle = '#8a5a2e'; ctx2d.lineWidth = 3;
+    for (let sx = 0; sx <= w; sx += 14) {
+      const worldX = sx + smoothCamX;
+      if (Terrain.colorAt(worldX) !== '#f59e0b') continue; // solo nella zona rampe
+      const u = ((worldX % period) + period) % period;
+      if (u >= rise) continue; // solo sulla salita
+      const y = groundY - Terrain.height(worldX);
+      ctx2d.beginPath(); ctx2d.moveTo(sx - 9, y + 6); ctx2d.lineTo(sx + 9, y - 3); ctx2d.stroke();
+    }
+  }
+
   // Definizione delle nuvole: livelli di profondità diversi (speed) per una parallasse più viva,
   // dimensioni/trasparenze diverse così non sembrano tutte stampate dallo stesso timbro.
   const CLOUD_DEFS = [
@@ -389,6 +509,13 @@
     ctx2d.save();
     ctx2d.translate(cx, cy);
 
+    // Alone caldo dietro al sole: un solo radial gradient, economico quanto un cerchio pieno.
+    const glow = ctx2d.createRadialGradient(0, 0, r * 0.2, 0, 0, r * 4.2);
+    glow.addColorStop(0, 'rgba(255,230,150,0.45)');
+    glow.addColorStop(1, 'rgba(255,230,150,0)');
+    ctx2d.fillStyle = glow;
+    ctx2d.beginPath(); ctx2d.arc(0, 0, r * 4.2, 0, Math.PI * 2); ctx2d.fill();
+
     // Raggi: linee dritte alternate lunghe/corte, come tratti di pennarello
     ctx2d.strokeStyle = '#f59e0b';
     ctx2d.lineWidth = Math.max(4, r * 0.09);
@@ -425,6 +552,7 @@
   const FLOWER_PALETTE = ['#f472b6', '#f87171', '#c084fc', '#fb923c', '#60a5fa'];
   const TULIP_PALETTE  = ['#e11d48', '#db2777', '#f97316', '#a21caf', '#facc15'];
   const ROSE_PALETTE   = ['#be123c', '#e11d48', '#f43f5e', '#9f1239', '#fb7185'];
+  const SUNFLOWER_PALETTE = ['#fbbf24', '#f59e0b', '#facc15', '#fcd34d', '#eab308'];
 
   // Stelo + una fogliolina: condiviso dalle tre specie, così restano coerenti fra loro.
   function drawStemAndLeaf(x, groundYScreen, topY, r, leafFlip) {
@@ -491,18 +619,45 @@
     ctx2d.stroke();
   }
 
+  // Specie 3: girasole — petali allungati disposti a raggiera intorno a un grande centro scuro
+  // "a semini". Più vistoso delle altre tre specie, come un vero girasole fra le margherite.
+  function drawSunflower(x, topY, r, petalColor) {
+    const petals = 14, petalLen = r * 0.95, petalW = r * 0.38, orbit = r * 0.18;
+    ctx2d.fillStyle = petalColor;
+    for (let i = 0; i < petals; i++) {
+      const a = (i / petals) * Math.PI * 2;
+      ctx2d.save();
+      ctx2d.translate(x + Math.cos(a) * orbit, topY + Math.sin(a) * orbit);
+      ctx2d.rotate(a);
+      ctx2d.beginPath();
+      ctx2d.ellipse(petalLen * 0.5, 0, petalLen * 0.5, petalW * 0.5, 0, 0, Math.PI * 2);
+      ctx2d.fill();
+      ctx2d.restore();
+    }
+    ctx2d.beginPath(); ctx2d.arc(x, topY, r * 0.62, 0, Math.PI * 2);
+    ctx2d.fillStyle = '#78350f'; ctx2d.fill();
+    ctx2d.lineWidth = Math.max(1.5, r * 0.08); ctx2d.strokeStyle = '#451a03'; ctx2d.stroke();
+    ctx2d.fillStyle = '#451a03';
+    for (let i = 0; i < 10; i++) {
+      const a = i * 2.4, rad = r * 0.62 * 0.55 * ((i % 3) / 3 + 0.3);
+      ctx2d.beginPath(); ctx2d.arc(x + Math.cos(a) * rad, topY + Math.sin(a) * rad, r * 0.06, 0, Math.PI * 2); ctx2d.fill();
+    }
+  }
+
   // r è il raggio fisico del dosso (9-15px, validato con la fisica: le ruote lo scavalcano
   // senza incastrarsi). BLOOM_SCALE ingrandisce SOLO il disegno — stelo, foglia e fiore — senza
   // toccare quella dimensione: il dosso che sente la ruota resta esattamente lo stesso.
-  const BLOOM_SCALE = 2.1;
+  const BLOOM_SCALE = 1.7;
 
   function drawFlower(x, groundYScreen, r, hue, species, stemScale) {
     const vr = r * BLOOM_SCALE;
-    const stemH = vr * 1.6 * stemScale, topY = groundYScreen - stemH;
+    const tall = species === 3 ? 1.25 : 1; // i girasoli sono classicamente più alti delle altre specie
+    const stemH = vr * 1.6 * stemScale * tall, topY = groundYScreen - stemH;
     ctx2d.save();
     drawStemAndLeaf(x, groundYScreen, topY, vr, species === 1 ? 1 : -1);
     if (species === 1) drawTulip(x, topY, vr, TULIP_PALETTE[hue % TULIP_PALETTE.length]);
     else if (species === 2) drawRose(x, groundYScreen, topY, vr, ROSE_PALETTE[hue % ROSE_PALETTE.length]);
+    else if (species === 3) drawSunflower(x, topY, vr, SUNFLOWER_PALETTE[hue % SUNFLOWER_PALETTE.length]);
     else drawDaisy(x, topY, vr, FLOWER_PALETTE[hue % FLOWER_PALETTE.length]);
     ctx2d.restore();
   }
