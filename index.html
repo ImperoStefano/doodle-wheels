@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Doodle Wheels — corsa online</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=20261021">
+</head>
+<body>
+<div class="page">
+  <!-- MENU -->
+  <section id="screen-menu" class="screen screen--active">
+    <div class="card card--hero">
+      <h1 class="title">Doodle Wheels</h1>
+      <p class="subtitle">Disegna la tua ruota e affronta ostacoli dinamici.<br>Sfida fino a 4 amici in tempo reale.</p>
+      <label class="field">
+        <span>Il tuo nome</span>
+        <input id="input-name" type="text" maxlength="14" placeholder="Inserisci il nome..." autocomplete="off">
+      </label>
+      <div class="menu-actions">
+        <button id="btn-host" class="btn btn--primary">Crea Nuova Gara</button>
+        <div class="join-row">
+          <input id="input-code" type="text" maxlength="4" placeholder="CODICE" autocomplete="off" class="code-input">
+          <button id="btn-join" class="btn btn--secondary">Unisciti</button>
+        </div>
+      </div>
+      <p id="menu-error" class="error-text"></p>
+    </div>
+  </section>
+
+  <!-- LOBBY -->
+  <section id="screen-lobby" class="screen">
+    <div class="card">
+      <p class="eyebrow-free">Codice della gara</p>
+      <div class="room-code" id="room-code">----</div>
+      <p class="hint">Condividi questo codice per far entrare altri giocatori.</p>
+      <ul id="player-list" class="player-list"></ul>
+      <div id="len-picker" class="len-picker" style="display:none">
+        <p class="eyebrow-free">Lunghezza pista</p>
+        <div class="seg">
+          <button type="button" data-len="corta" class="seg-btn">Corta</button>
+          <button type="button" data-len="media" class="seg-btn">Media</button>
+          <button type="button" data-len="lunga" class="seg-btn seg-btn--on">Lunga</button>
+        </div>
+        <p class="hint" id="len-hint"></p>
+      </div>
+      <button id="btn-start-race" class="btn btn--primary" disabled>In attesa di giocatori…</button>
+      <p class="hint" id="lobby-hint"></p>
+    </div>
+  </section>
+
+  <!-- DRAW PRE-GARA -->
+  <section id="screen-draw" class="screen">
+    <div class="card card--wide">
+      <div class="draw-header">
+        <h2 class="section-title">Disegna il tuo assetto</h2>
+        <div class="timer-pill" id="draw-timer">30</div>
+      </div>
+      <p class="hint">Traccia una linea chiusa. Tonda per la velocità, irregolare per far presa su ostacoli difficili.</p>
+      <canvas id="draw-canvas" width="480" height="480" class="draw-canvas"></canvas>
+      <div class="draw-actions">
+        <button id="btn-clear" class="btn btn--ghost">Pulisci</button>
+        <button id="btn-submit-wheel" class="btn btn--primary" disabled>Invia Forma</button>
+      </div>
+      <p class="hint" id="draw-wait"></p>
+    </div>
+  </section>
+
+  <!-- GARA -->
+  <section id="screen-race" class="screen">
+    <div class="race-wrap">
+      <canvas id="race-canvas"></canvas>
+      <canvas id="intro-canvas" class="intro-canvas" style="display:none"></canvas>
+      <div id="orientation-warning">
+        <span>🔄</span>Consigliata visuale orizzontale
+      </div>
+      <div id="countdown-overlay" class="countdown-overlay"></div>
+      <div id="lastcall" class="lastcall" style="display:none"></div>
+
+      <!-- HUD Ottimizzato -->
+      <div class="hud">
+        <div class="hud-progress"><div class="hud-progress-fill" id="hud-progress-fill"></div></div>
+        <canvas id="minimap-canvas" width="220" height="32" class="minimap"></canvas>
+        <ol id="hud-leaderboard" class="hud-leaderboard"></ol>
+      </div>
+
+      <!-- BOTTONE PIT-STOP -->
+      <div id="redraw-ui" class="redraw-ui" style="display:none;">
+        <button id="btn-redraw-trigger" class="btn btn--secondary">Cambia Forma (2)</button>
+      </div>
+
+      <!-- MODALE PIT-STOP -->
+      <div id="redraw-modal" class="modal-overlay" style="display:none;">
+        <div class="card">
+          <h3 class="section-title">Pit Stop!</h3>
+          <p class="hint">Disegna in fretta, la gara non si ferma.</p>
+          <canvas id="redraw-canvas" width="300" height="300" class="draw-canvas"></canvas>
+          <div class="draw-actions">
+            <button id="btn-cancel-redraw" class="btn btn--ghost">Annulla</button>
+            <button id="btn-submit-redraw" class="btn btn--primary" disabled>Applica Ora</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- RISULTATI -->
+  <section id="screen-results" class="screen">
+    <div class="card">
+      <h2 class="section-title">Traguardo</h2>
+      <ol id="results-list" class="results-list"></ol>
+      <div class="draw-actions">
+        <button id="btn-rematch" class="btn btn--primary">Rigioca Stessa Pista</button>
+        <button id="btn-back-menu" class="btn btn--ghost">Nuova Pista</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
+<script src="js/peer.js?v=20261021"></script>
+<script src="js/draw.js?v=20261021"></script>
+<script src="js/terrain.js?v=20261021"></script>
+<script src="js/scenery.js?v=20261021"></script>
+<script src="js/flora.js?v=20261021"></script>
+<script src="js/props.js?v=20261021"></script>
+<script src="js/physics.js?v=20261021"></script>
+<script src="js/intro.js?v=20261021"></script>
+  <script src="js/game.js?v=20261021"></script>
+</body>
+</html>
