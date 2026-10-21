@@ -1,5 +1,10 @@
 const Sim = (() => {
-  const GROUND_Y = 520, RACE_TIMEOUT_MS = 180000;
+  const GROUND_Y = 520;
+  // Pista lunga => tempo massimo proporzionale (almeno 3 minuti, poi ~100px/s di media minima)
+  const raceTimeoutMs = () => Math.max(180000, ((Terrain.FINISH_X - 60) / 100) * 1000);
+  // Dopo il primo traguardo gli altri hanno ancora un po' di tempo, poi la gara si chiude (DNF):
+  // su una pista lunga non si tiene nessuno in ostaggio dell'ultimo arrivato.
+  const GRACE_BASE_MS = 30000, GRACE_FRAC = 0.4;
   const FIXED_DT = 1000 / 60; // 60 Hz physics
 
   // --- Motor -----------------------------------------------------------------
@@ -25,7 +30,7 @@ const Sim = (() => {
   const MAX_SINK = 2;         // px a wheel corner may dip below the ground line before it's lifted out
   const SUBSTEPS = 2;         // physics sub-steps per 60Hz step: softer landings, less corner digging
 
-  let engine, world, racers = {}, running = false, timedOut = false, startedAt = 0, accumulator = 0;
+  let engine, world, racers = {}, running = false, timedOut = false, startedAt = 0, accumulator = 0, firstFinishAt = null, timeoutMs = 180000;
   // ONE shared negative group for every racer: bikes pass through each other (ghost racing) but all
   // collide with the ground (group 0). With a group per racer the grid spacing (200px) is smaller
   // than a bike + its wheels, so neighbouring wheels spawned overlapping and were violently ejected.
@@ -50,6 +55,8 @@ const Sim = (() => {
     running = false;
     timedOut = false;
     accumulator = 0;
+    firstFinishAt = null;
+    timeoutMs = raceTimeoutMs();
   }
 
   // Ground = one convex quad per 40px column whose TOP EDGE is exactly the terrain line.
@@ -348,6 +355,7 @@ const Sim = (() => {
     if (r.chassis.position.x >= Terrain.FINISH_X) {
       r.finished = true;
       r.finishTime = elapsed;
+      if (firstFinishAt === null) firstFinishAt = elapsed;
     }
   }
 
@@ -392,7 +400,11 @@ const Sim = (() => {
 
   function isTimedOut() {
     // stays true after tick() stops the sim, otherwise game.js never sees the timeout
-    return timedOut || (running && (performance.now() - startedAt) > RACE_TIMEOUT_MS);
+    if (timedOut) return true;
+    if (!running) return false;
+    const el = performance.now() - startedAt;
+    if (el > timeoutMs) return true;
+    return firstFinishAt !== null && el - firstFinishAt > GRACE_BASE_MS + firstFinishAt * GRACE_FRAC;
   }
 
   function standings() {
@@ -411,6 +423,8 @@ const Sim = (() => {
   return {
     init, addRacer, updateRacerWheel, start, tick,
     snapshot, allFinished, isTimedOut, standings, GROUND_Y,
-    get FINISH_X() { return Terrain.FINISH_X; }
+    get FINISH_X() { return Terrain.FINISH_X; },
+    // ms rimasti agli altri dopo che il primo ha tagliato il traguardo (null = nessuno è arrivato)
+    graceLeft() { if (firstFinishAt === null || !running) return null; return Math.max(0, GRACE_BASE_MS + firstFinishAt * GRACE_FRAC - (performance.now() - startedAt - firstFinishAt)); },
   };
 })();

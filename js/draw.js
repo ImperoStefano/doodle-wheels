@@ -112,6 +112,12 @@ const createWheelDrawer = (canvasEl) => {
 
   // raw stroke -> simplified, non-crossing polygon (still in canvas units)
   function outline(raw) {
+    // Un cerchio chiuso alla perfezione finisce esattamente dove è iniziato: con primo e ultimo punto
+    // coincidenti la semplificazione (RDP) collassa a 2 punti e la forma risultava "non valida".
+    if (raw.length > 3) {
+      const f0 = raw[0], l0 = raw[raw.length - 1];
+      if (Math.hypot(f0.x - l0.x, f0.y - l0.y) < 1) raw = raw.slice(0, -1);
+    }
     let pts = simplify(raw, 2.5);
     if (pts.length > 3) {
       const first = pts[0], last = pts[pts.length - 1];
