@@ -119,7 +119,7 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 .countdown-overlay {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   font-family: 'Kalam', cursive; font-size: 8rem; font-weight: 700; color: #fff;
-  text-shadow: 6px 6px 0 var(--ink); pointer-events: none; z-index: 50;
+  text-shadow: 6px 6px 0 var(--ink); pointer-events: none; z-index: 1200;
 }
 
 /* FIX HUD: Posizioni rigide, stile glassmorphism. calc(...+env(safe-area-inset-*)) tiene HUD e
@@ -218,3 +218,7 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 .seg-btn { flex: 1; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.95rem; padding: 10px 8px; border: 2px solid var(--ink); border-radius: 12px; background: #fff; color: var(--ink); cursor: pointer; box-shadow: 2px 3px 0 var(--ink); }
 .seg-btn--on { background: var(--yellow); }
 .lastcall { position: absolute; top: calc(64px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 1500; background: rgba(225, 29, 72, 0.92); color: #fff; font-weight: 700; font-size: 0.95rem; padding: 8px 18px; border-radius: 999px; border: 2px solid var(--ink); pointer-events: none; white-space: nowrap; max-width: calc(100% - 24px); }
+
+/* intro: foglio spennellato */
+.intro-canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1100; touch-action: manipulation; }
+.intro-on #orientation-warning { display: none !important; }

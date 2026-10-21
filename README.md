@@ -84,3 +84,6 @@ doodle-wheels/
 - **Ponti** (`js/props.js`): ponte di pietra ad arco sulla laguna, ponte di corda sul canyon; almeno uno per gara, di media 2–4 nelle piste lunghe.
 - **Fiori** (`js/terrain.js` + `js/flora.js`): posizione e specie derivano solo dalla coordinata x e dal bioma (uguali per tutti i giocatori, nessun dato in rete). Margherite, tulipani, rose, girasoli (campi da 4), bucaneve, cristalli di ghiaccio, funghi, cactus. Fanno piccoli dossi fisici; l'animazione è solo visiva: ondeggiano col vento, si piegano al passaggio, sbocciano di giorno e si chiudono di notte, i girasoli seguono il sole, le api volano attorno.
 - Cache: gli script in `index.html` hanno `?v=20261021`; se il sito pubblicato sembra vecchio, ricarica forzando (Ctrl+Shift+R) e verifica che anche `style.css` sia stato caricato.
+
+## Intro: il foglio spennellato
+`js/intro.js` + `img/avatar.png`, `img/brush.png`. Durante il conto alla rovescia un foglio crema col titolo copre la gara; l'avatar con il pennello lo cancella a pennellate (scia d'inchiostro che svanisce) e compare la scena con le bici in griglia. Dura 1,5–4 s agganciata all'orario di partenza; un tocco la salta. Per spegnerla: `localStorage.setItem('dw_intro','off')`. È solo grafica locale, non tocca fisica né rete.
