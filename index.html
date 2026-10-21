@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261021">
 </head>
 <body>
 <div class="page">
@@ -38,6 +38,15 @@
       <div class="room-code" id="room-code">----</div>
       <p class="hint">Condividi questo codice per far entrare altri giocatori.</p>
       <ul id="player-list" class="player-list"></ul>
+      <div id="len-picker" class="len-picker" style="display:none">
+        <p class="eyebrow-free">Lunghezza pista</p>
+        <div class="seg">
+          <button type="button" data-len="corta" class="seg-btn">Corta</button>
+          <button type="button" data-len="media" class="seg-btn">Media</button>
+          <button type="button" data-len="lunga" class="seg-btn seg-btn--on">Lunga</button>
+        </div>
+        <p class="hint" id="len-hint"></p>
+      </div>
       <button id="btn-start-race" class="btn btn--primary" disabled>In attesa di giocatori…</button>
       <p class="hint" id="lobby-hint"></p>
     </div>
@@ -68,6 +77,7 @@
         <span>🔄</span>Consigliata visuale orizzontale
       </div>
       <div id="countdown-overlay" class="countdown-overlay"></div>
+      <div id="lastcall" class="lastcall" style="display:none"></div>
 
       <!-- HUD Ottimizzato -->
       <div class="hud">
@@ -112,10 +122,13 @@
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
-<script src="js/peer.js"></script>
-<script src="js/draw.js"></script>
-<script src="js/terrain.js"></script>
-<script src="js/physics.js"></script>
-<script src="js/game.js"></script>
+<script src="js/peer.js?v=20261021"></script>
+<script src="js/draw.js?v=20261021"></script>
+<script src="js/terrain.js?v=20261021"></script>
+<script src="js/scenery.js?v=20261021"></script>
+<script src="js/flora.js?v=20261021"></script>
+<script src="js/props.js?v=20261021"></script>
+<script src="js/physics.js?v=20261021"></script>
+<script src="js/game.js?v=20261021"></script>
 </body>
 </html>

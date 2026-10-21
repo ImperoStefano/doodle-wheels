@@ -211,3 +211,10 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
   .modal-overlay .card { max-width: 90vw; padding: 16px; margin: 10px; }
   .draw-canvas { margin: 10px auto; }
 }
+
+/* scelta lunghezza pista (lobby, solo host) */
+.len-picker { margin: 0 0 16px; }
+.seg { display: flex; gap: 8px; }
+.seg-btn { flex: 1; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.95rem; padding: 10px 8px; border: 2px solid var(--ink); border-radius: 12px; background: #fff; color: var(--ink); cursor: pointer; box-shadow: 2px 3px 0 var(--ink); }
+.seg-btn--on { background: var(--yellow); }
+.lastcall { position: absolute; top: calc(64px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 1500; background: rgba(225, 29, 72, 0.92); color: #fff; font-weight: 700; font-size: 0.95rem; padding: 8px 18px; border-radius: 999px; border: 2px solid var(--ink); pointer-events: none; white-space: nowrap; max-width: calc(100% - 24px); }
