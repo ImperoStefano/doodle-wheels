@@ -12,7 +12,7 @@
  */
 const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
-  let ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [];
+  let ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], PATCHES = [];
 
   const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps'];
   const ZONE_COLORS = {
@@ -88,8 +88,117 @@ const Terrain = (() => {
     return -RAMP_GAP * (1 - smooth(t));
   }
 
+
+  // ---- terreni a tema (patch) ---------------------------------------------------------------------
+  // Dentro ogni bioma, un tratto di terreno che premia FORME DI RUOTA diverse (la tonda non vince
+  // ovunque). Tutto deterministico (stesso layout => stessa pista) e senza icone: il giocatore lo
+  // scopre guidando. Ogni patch parte e finisce a quota 0 rispetto alla riva, quindi si innesta senza salti.
+  //   arch    strada acciottolata ad archi (catenarie): il QUADRATO rotola liscio, la tonda sobbalza
+  //   stairs  scalinata di roccia/ghiaccio seguita da un altopiano: le punte (stella) si agganciano
+  //   holes   buche: la tonda le scavalca, le forme spigolose ci cadono dentro
+  //   ripples dune a lamiera ondulata: il ritmo dei vertici decide
+  //   logs    tronchi caduti: un grosso diametro li supera meglio
+  //   mud     fango (nessun profilo): la ruota liscia slitta, quella con punte morde (vedi gripAt)
+    function patchOffset(p, x) {
+    const u = x - p.a, L = p.b - p.a;
+    if (u < 0 || u > L) return 0;
+    switch (p.kind) {
+      case 'arch': { const t = ((u % p.S) + p.S) % p.S - p.S / 2; return p.f * p.ac * (p.c - Math.cosh(t / p.ac)); }
+      case 'stairs': {
+        let h = 0; const top = p.n * p.h;
+        for (let k = 1; k <= p.n; k++) h += p.h * smooth((u - k * p.T) / p.rw);
+        const d0 = p.n * p.T + p.rw + p.P;
+        return h - top * smooth((u - d0) / p.D);
+      }
+      case 'holes': {
+        let best = 0;
+        for (let j = 0; j < p.k; j++) {
+          const d = Math.abs(u - (j + 0.5) * p.sp), e = p.e;
+          const v = d < p.W / 2 - e ? 1 : d > p.W / 2 ? 0 : 1 - smooth((d - (p.W / 2 - e)) / e);
+          if (v > best) best = v;
+        }
+        return -p.D * best;
+      }
+      case 'ripples': { const w = smooth(u / 120) * smooth((L - u) / 120); return w * p.A * (0.5 - 0.5 * Math.cos(2 * Math.PI * u / p.lam)); }
+      case 'logs': {
+        for (let j = 0; j < p.k; j++) { const d = Math.abs(u - (j + 0.5) * p.sp) / p.w; if (d < 1) return p.H * Math.pow(1 - d * d, 0.6); }
+        return 0;
+      }
+      case 'mud': { // un'altura fangosa: salita, pianoro, discesa (la presa decide chi sale)
+        return p.H * (smooth(u / p.rl) - smooth((u - p.rl - p.pl) / p.rl)); }
+      default: return 0;
+    }
+  }
+  const PATCH_FLAT = { arch: 1, stairs: 1, holes: 1, ripples: 0.7, logs: 0.8, mud: 1 };
+  // quanto il tratto "appiattisce" l'onda del bioma sotto di sé (0..1)
+  function patchMask(z, x) {
+    let m = 0;
+    for (const p of z.patches) {
+      const f = PATCH_FLAT[p.kind]; if (!f) continue;
+      const v = smooth((x - (p.a - 110)) / 160) * smooth(((p.b + 110) - x) / 160) * f; if (v > m) m = v;
+    }
+    return m;
+  }
+  function patchSum(z, x) { let h = 0; for (const p of z.patches) h += patchOffset(p, x); return h; }
+
+  // Strada ad archi per un poligono regolare a N lati (lato S = 2·80·sin(π/N)): la catenaria rovesciata
+  // y = a(1/sin(π/N) − cosh(x/a)), a = S / (2·ln cot(π/2N)), fa rotolare quel poligono "dritto" (il centro non sale né scende).
+  // Chi ha N lati ci va liscio; le altre forme sobbalzano.
+  function archSpec(n, rnd, f) {
+    const S = 2 * 80 * Math.sin(Math.PI / n);
+    const ac = S / (2 * Math.log(1 / Math.tan(Math.PI / (2 * n))));
+    const k = Math.ceil(880 / S) + (rnd ? Math.floor(rnd() * 2) : 0);
+    return { kind: 'arch', n, S, ac, c: 1 / Math.sin(Math.PI / n), f: f == null ? 1.2 : f, len: k * S };
+  }
+  // costruttori dei tipi di patch (lunghezza e parametri); il centro lo sceglie planPatches
+  function makePatch(kind, rnd) {
+    switch (kind) {
+      case 'arch': return archSpec(3 + Math.floor(rnd() * 3), rnd);
+      case 'stairs': { const n = 3 + Math.floor(rnd() * 2), T = 150 + Math.round(rnd() * 15), rw = 30, h = 32 + Math.round(rnd() * 8), P = 150, D = 200; return { kind, len: n * T + rw + P + D, n, T, rw, h, P, D }; }
+      case 'holes': { const k = 3 + Math.floor(rnd() * 2), sp = 340, W = 150 + Math.round(rnd() * 20); return { kind, len: k * sp, k, sp, W, D: 55, e: 30 }; }
+      case 'ripples': { const lam = 100 + Math.round(rnd() * 20); return { kind, len: 8 * lam, lam, A: 17 }; }
+      case 'logs': { const k = 3 + Math.floor(rnd() * 2); return { kind, len: k * 320, k, sp: 320, w: 52, H: 34 }; }
+      case 'mud': { const rl = 260, pl = 300; return { kind, len: 2 * rl + pl, rl, pl, H: -22 }; }
+    }
+    return null;
+  }
+  const PATCH_TABLE = {            // per bioma: [tipo, probabilità] — il resto del tempo la zona resta "pulita"
+    hills:  [['arch', 0.4], ['holes', 0.25], ['mud', 0.15], ['stairs', 0.1]],
+    ice:    [],                      // il ghiaccio agisce su tutta la zona (vedi gripAt): liscia scivola, punte mordono
+    gravel: [['ripples', 0.4], ['stairs', 0.25], ['arch', 0.1]],
+    water:  [],                      // laguna: ponti e bacini (nessun terreno speciale)
+    ramps:  [['logs', 0.3], ['mud', 0.35]],
+  };
+  function planPatches(rnd, force) {
+    PATCHES = [];
+    // "sapore" della gara: ogni pista accentua alcuni terreni e ne riduce altri, così non vince sempre la stessa forma
+    const flavor = {}; ['arch', 'mud', 'holes', 'stairs', 'ripples', 'logs'].forEach(k => { flavor[k] = 0.2 + 2.1 * rnd() * rnd() + 0.5 * rnd(); });
+    ZONES.forEach(z => {
+      z.patches = [];
+      if (force && force.nopatch) return;
+      const forced = force && force[z.index];
+      const tbl = PATCH_TABLE[z.key];
+      const picks = forced ? forced : (tbl ? (() => { const r = rnd(); let acc = 0; for (const [k, pr] of tbl) { acc += Math.min(0.95, pr * flavor[k]); if (r < acc) return [k]; } return []; })() : []);
+      picks.forEach(kind => {
+        const spec = typeof kind === 'string' ? makePatch(kind, rnd) : kind;
+        if (!spec) return;
+        // intervalli liberi: lontano dai bordi della zona e dal vuoto sotto un ponte
+        const lo = z.start + 260, hi = z.end - 260;
+        const blocks = z.gap ? [[z.gap.g0 - 220, z.gap.g1 + 220]] : [];
+        const free = []; let cur = lo;
+        for (const [b0, b1] of blocks) { if (b0 > cur) free.push([cur, Math.min(b0, hi)]); cur = Math.max(cur, b1); }
+        if (hi > cur) free.push([cur, hi]);
+        free.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
+        const slot = free.find(f => f[1] - f[0] >= spec.len); if (!slot) return;
+        const a = Math.round(slot[0] + (slot[1] - slot[0] - spec.len) * (forced ? 0.5 : 0.25 + rnd() * 0.5));
+        const pt = Object.assign({}, spec, { a, b: a + spec.len, zone: z.index, zkey: z.key });
+        z.patches.push(pt); PATCHES.push(pt);
+      });
+    });
+  }
+
   // ---- costruzione delle zone ---------------------------------------------------------------
-  function applyLayout(layoutKeys) {
+  function applyLayout(layoutKeys, force) {
     const keys = (layoutKeys && layoutKeys.length ? layoutKeys : generateRandomLayout()).slice();
     const rnd = mulberry32(hashStr(keys.join(',')));
     ZONES = []; BRIDGES = [];
@@ -114,7 +223,8 @@ const Terrain = (() => {
     TRACK_END = x;
     FINISH_X = ZONES[ZONES.length - 1].start + 300;
 
-    planGaps(rnd);
+    if (!(force && force.nogap)) planGaps(rnd);
+    planPatches(rnd, force);
     FLOWERS = generateFlowers(rnd);
     LILIES = generateLilies();
   }
@@ -170,8 +280,9 @@ const Terrain = (() => {
     if (win > 0) {
       let w = zoneWave(z, u);
       if (z.bridge) w *= 1 - smooth((x - (z.gap.g0 - 150)) / 150) * smooth((z.gap.g1 + 150 - x) / 150);  // piatto vicino al ponte
-      h += win * w;
+      h += win * w * (1 - (z.patches && z.patches.length ? patchMask(z, x) : 0));
     }
+    if (z.patches && z.patches.length) h += patchSum(z, x);
     return h;
   }
 
@@ -229,6 +340,7 @@ const Terrain = (() => {
       if (z.bridge) { /* non sul ponte né sul crepaccio */ }
       const place = (px, species, scale) => {
         if (z.gap && px > z.gap.g0 - 120 && px < z.gap.g1 + 120) return false;   // niente fiori sul ponte
+        if (z.patches && z.patches.some(p => px > p.a - 90 && px < p.b + 90)) return false;   // né sui terreni a tema
         flowers.push({
           x: Math.round(px),
           r: 9 + pseudo(px) * 6,
@@ -281,7 +393,11 @@ const Terrain = (() => {
     LENGTHS,
     get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; },
     get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; }, get LILIES() { return LILIES; },
-    get BRIDGES() { return BRIDGES; },
+    get BRIDGES() { return BRIDGES; }, get PATCHES() { return PATCHES; },
+    // tipo di presa speciale sotto la ruota: 'mud' (fango), 'ice' (ghiaccio) o null
+    gripAt: x => { const z = zoneAt(x); if (z.key === 'ice') return 'ice'; if (z.patches) for (const p of z.patches) if (x >= p.a && x <= p.b) { if (p.kind === 'mud') return 'mud'; if (p.kind === 'arch' || p.kind === 'ripples') return 'rough'; } return null; },
+    _archSpec: archSpec,
+    patchAt: x => { const z = zoneAt(x); for (const p of z.patches) if (x >= p.a && x <= p.b) return p; return null; },
     RAMP_PERIOD, RAMP_RISE, RAMP_LEAD,
   };
 })(); // terrain

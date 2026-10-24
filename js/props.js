@@ -152,6 +152,111 @@ const Props = (() => {
     }
   }
 
+
+  // ---------- terreni a tema --------------------------------------------------------------------
+  // Niente icone: il tratto si riconosce dal disegno stesso del terreno (acciottolato ad archi, gradoni,
+  // buche, fango, dune, tronchi). La fisica conosce solo Terrain.height(): qui si colorano quelle curve.
+  function drawPatches(ctx, camX, w, gy, S) {
+    const ps = Terrain.PATCHES; if (!ps || !ps.length) return;
+    const t = performance.now() / 1000;
+    for (let i = 0; i < ps.length; i++) {
+      const p = ps[i];
+      if (p.b - camX < -60 || p.a - camX > w + 60) continue;
+      const x0 = Math.max(p.a, camX - 40), x1 = Math.min(p.b, camX + w + 40);
+      const H = x => gy - Terrain.height(x);
+      const sub = (step, fn) => { ctx.beginPath(); let first = true; for (let x = x0; x <= x1 + 0.1; x += step) { const px = x - camX, py = fn(x); if (first) { ctx.moveTo(px, py); first = false; } else ctx.lineTo(px, py); } };
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      if (p.kind === 'arch') archRoad(ctx, p, camX, x0, x1, H, sub);
+      else if (p.kind === 'stairs') stairsRock(ctx, p, camX, x0, x1, H, sub);
+      else if (p.kind === 'holes') holesPits(ctx, p, camX, x0, x1, H, sub, gy, t);
+      else if (p.kind === 'ripples') rippleDunes(ctx, p, camX, x0, x1, H, sub);
+      else if (p.kind === 'logs') logsDraw(ctx, p, camX, H);
+      else if (p.kind === 'mud') mudBog(ctx, p, camX, x0, x1, H, sub, t);
+    }
+  }
+  function archRoad(ctx, p, camX, x0, x1, H, sub) {
+    // fascia di strada selciata sopra il prato, giunti verticali alle cuspidi, filari curvi sotto
+    sub(4, H); ctx.strokeStyle = 'rgba(40,32,24,0.55)'; ctx.lineWidth = 16; ctx.stroke();
+    ctx.strokeStyle = '#c9b68f'; ctx.lineWidth = 12; ctx.stroke();
+    ctx.strokeStyle = 'rgba(95,78,52,0.75)'; ctx.lineWidth = 1.6;
+    for (let r = 1; r <= 2; r++) { sub(4, x => H(x) + r * 6); ctx.stroke(); }
+    ctx.beginPath();
+    const k0 = Math.ceil((x0 - p.a) / p.S), k1 = Math.floor((x1 - p.a) / p.S);
+    for (let k = k0; k <= k1; k++) { const x = p.a + k * p.S - camX, y = H(p.a + k * p.S); ctx.moveTo(x, y - 6); ctx.lineTo(x, y + 14); }
+    // un giunto al centro di ogni arco
+    for (let k = k0 - 1; k <= k1; k++) { const wx = p.a + (k + 0.5) * p.S; if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.moveTo(wx - camX, y - 5); ctx.lineTo(wx - camX, y + 6); }
+    ctx.stroke();
+    sub(4, x => H(x) - 4); ctx.strokeStyle = 'rgba(255,250,235,0.45)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  function stairsRock(ctx, p, camX, x0, x1, H, sub) {
+    const ice = p.zkey === 'ice', col = ice ? '#cfe3f0' : (p.zkey === 'gravel' ? '#c08f66' : '#aaa59a'), dk = ice ? '#7d98ad' : '#6b5442';
+    sub(4, H); ctx.strokeStyle = 'rgba(30,25,20,0.5)'; ctx.lineWidth = 16; ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = 12; ctx.stroke();
+    // alzata scura di ogni gradino + una crepa
+    for (let k = 1; k <= p.n; k++) {
+      const cx = p.a + k * p.T + p.rw / 2; if (cx < x0 - 20 || cx > x1 + 20) continue;
+      const yTop = H(cx + p.rw / 2 + 1), yBot = H(cx - p.rw / 2 - 1);
+      ctx.strokeStyle = dk; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx - camX + 1, yTop + 5); ctx.lineTo(cx - camX + 1, yBot + 18); ctx.stroke();
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(cx - camX - 40, yBot + 9); ctx.lineTo(cx - camX - 8, yBot + 9); ctx.moveTo(cx - camX + 14, yTop + 13); ctx.lineTo(cx - camX + 52, yTop + 13); ctx.stroke();
+    }
+    sub(4, x => H(x) - 4); ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  function holesPits(ctx, p, camX, x0, x1, H, sub, gy, t) {
+    // il fondo scuro della buca: dalla superficie fino a poco sotto; bordo chiaro di terra smossa
+    sub(4, x => H(x) + 3); ctx.strokeStyle = 'rgba(30,18,10,0.65)'; ctx.lineWidth = 18; ctx.stroke();
+    for (let j = 0; j < p.k; j++) {
+      const cx = p.a + (j + 0.5) * p.sp; if (cx < x0 - 120 || cx > x1 + 120) continue;
+      const half = p.W / 2, y = H(cx);
+      const g = ctx.createLinearGradient(0, y - 2, 0, y + 26); g.addColorStop(0, 'rgba(24,14,8,0.92)'); g.addColorStop(1, 'rgba(24,14,8,0.5)');
+      ctx.beginPath(); for (let x = cx - half; x <= cx + half + 0.1; x += 4) { const px = x - camX, py = H(x) + 2; if (x === cx - half) ctx.moveTo(px, py); else ctx.lineTo(px, py); }
+      for (let x = cx + half; x >= cx - half - 0.1; x -= 4) ctx.lineTo(x - camX, H(x) + 26);
+      ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+      // pozzanghera sul fondo, con un lampo di luce
+      ctx.fillStyle = 'rgba(120,170,210,0.55)'; ctx.beginPath(); ctx.ellipse(cx - camX, y + 5, half * 0.42, 3.2, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.beginPath(); ctx.ellipse(cx - camX - half * 0.12 + Math.sin(t * 1.3 + j) * 3, y + 4, half * 0.1, 1.4, 0, 0, TAU); ctx.fill();
+      // foglie secche vicino al bordo
+      ctx.fillStyle = '#a4541e'; [[-half - 8, 0.4], [half + 10, -0.5], [-half + 14, 0.9]].forEach(([dx, r], q) => { ctx.beginPath(); ctx.ellipse(cx + dx - camX, H(cx + dx) - 3, 6, 2.6, r + q, 0, TAU); ctx.fill(); });
+    }
+    sub(4, x => H(x) - 3); ctx.strokeStyle = 'rgba(224,196,150,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  function rippleDunes(ctx, p, camX, x0, x1, H, sub) {
+    sub(4, H); ctx.strokeStyle = 'rgba(70,45,20,0.45)'; ctx.lineWidth = 15; ctx.stroke();
+    ctx.strokeStyle = '#e1c590'; ctx.lineWidth = 11; ctx.stroke();
+    ctx.strokeStyle = 'rgba(150,105,55,0.45)'; ctx.lineWidth = 1.5;
+    for (let r = 1; r <= 3; r++) { sub(4, x => H(x) + r * 5.5); ctx.stroke(); }
+    sub(4, x => H(x) - 3.5); ctx.strokeStyle = 'rgba(255,248,220,0.55)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  function logsDraw(ctx, p, camX, H) {
+    for (let j = 0; j < p.k; j++) {
+      const cx = p.a + (j + 0.5) * p.sp, x = cx - camX, y = H(cx);
+      const rx = p.w + 6, ry = p.H * 0.62 + 6, cy = y + ry * 0.35;
+      // tronco visto di testa, semisepolto
+      ctx.fillStyle = '#6a4220'; ctx.strokeStyle = '#2f1d0e'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(x, cy, rx, ry, 0, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#d3a56b'; ctx.beginPath(); ctx.ellipse(x, cy, rx - 8, ry - 7, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(110,70,30,0.7)'; ctx.lineWidth = 1.4;
+      for (let r = 1; r <= 3; r++) { ctx.beginPath(); ctx.ellipse(x, cy, (rx - 8) * r / 3.6, (ry - 7) * r / 3.6, 0, 0, TAU); ctx.stroke(); }
+      ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x + (rx - 10) * 0.8, cy - (ry - 8) * 0.25); ctx.stroke();
+      // un ciuffo di muschio sulla cima
+      ctx.fillStyle = '#5f8f3c'; ctx.beginPath(); ctx.ellipse(x - rx * 0.35, cy - ry + 3, 13, 4, -0.2, 0, TAU); ctx.fill();
+    }
+  }
+  function mudBog(ctx, p, camX, x0, x1, H, sub, t) {
+    sub(4, x => H(x) + 4); ctx.strokeStyle = 'rgba(30,18,8,0.55)'; ctx.lineWidth = 20; ctx.stroke();
+    sub(4, x => H(x) + 2); ctx.strokeStyle = '#5a3d22'; ctx.lineWidth = 14; ctx.stroke();
+    ctx.strokeStyle = 'rgba(150,105,60,0.55)'; ctx.lineWidth = 2; sub(4, x => H(x) - 2); ctx.stroke();
+    // bolle di fango che salgono e scoppiano
+    for (let k = 0; k < 9; k++) {
+      const wx = p.a + 60 + ((k * 197) % Math.max(1, p.len - 120)); if (wx < x0 - 20 || wx > x1 + 20) continue;
+      const ph = ((t * 0.55 + k * 0.37) % 1), r = 2 + 4 * Math.sin(ph * Math.PI);
+      ctx.fillStyle = 'rgba(170,125,78,0.8)'; ctx.beginPath(); ctx.arc(wx - camX, H(wx) - 2 - ph * 6, r, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(40,24,10,0.6)'; ctx.lineWidth = 1; ctx.stroke();
+    }
+    // pozzanghere lucide
+    ctx.fillStyle = 'rgba(150,185,205,0.35)';
+    for (let k = 0; k < 4; k++) { const wx = p.a + 120 + k * (p.len - 240) / 3; if (wx < x0 - 40 || wx > x1 + 40) continue; ctx.beginPath(); ctx.ellipse(wx - camX, H(wx) - 1, 22, 2.6, 0, 0, TAU); ctx.fill(); }
+  }
+
   // ---------- traguardo --------------------------------------------------------------------------
   function drawFinish(ctx, camX, w, gy, S) {
     const fx = Terrain.FINISH_X, x0 = fx - camX; if (x0 < -620 || x0 > w + 620) return;
@@ -191,5 +296,5 @@ const Props = (() => {
     });
   }
 
-  return { drawBridges, drawRamps, drawSigns, drawFinish };
+  return { drawBridges, drawRamps, drawSigns, drawFinish, drawPatches };
 })(); // props

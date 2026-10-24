@@ -187,14 +187,19 @@
     });
   }
 
+  // Più la gara è lunga, più cambi forma hai: corta 2, media 4, lunga 6 (le zone vere sono ZONES meno partenza e arrivo)
+  function redrawsForTrack() { const n = Math.max(0, (Terrain.ZONES ? Terrain.ZONES.length : 0) - 2); return n <= 7 ? 2 : n <= 11 ? 4 : 6; }
+
   function startCountdown(startTime) {
-    showScreen('race'); setupCanvas(); myRedrawsLeft = 2; els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'block';
+    showScreen('race'); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'block';
     raceMeta = {}; Object.values(Net.players).forEach(p => raceMeta[p.id] = { color: p.color, name: p.name, vertices: wheels[p.id] || preRaceDrawer.fallbackCircle() });
+    // l'host tara in anticipo ogni ruota (a fette, durante l'intro): così su terreno normale vanno tutte alla pari
+    if (Net.isHost) Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {}));
     hideLastCall(); lastCallSent = false;
     Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X); Flora.setTrack(); Scenery.setQuality(0); Flora.setQuality(0); qSlow = 0;
     Scenery.warmup();
     placeGrid();
-    const me = latestRacers[Net.myId]; smoothCamX = me ? me.x - viewW * 0.32 : 0; particles = [];
+    const me = latestRacers[Net.myId]; smoothCamX = me ? me.x - viewW * 0.34 : 0; particles = []; cam.dy = 0; cam.vx = 0; cam.lead = 0.34; lastCamTs = 0;
     startRenderLoop();
     Intro.init(); Intro.play(startTime);
 
@@ -282,14 +287,40 @@
   const surfBuf = new Float32Array(256);
   let hudAt = 0, lastTs = 0, qSlow = 0;
 
+  // ---- Telecamera ---------------------------------------------------------------------------------
+  // - segue la tua bici con una morbidezza indipendente dagli fps (prima era un 8% fisso a fotogramma);
+  // - guarda avanti: più vai forte, più la bici scivola verso sinistra e vedi la pista che arriva;
+  // - segue anche in verticale: su rampe e salite la bici resta nella fascia 30%-72% dello schermo
+  //   (prima la linea del terreno era fissa e un salto alto portava la bici fuori quadro);
+  // - dopo il traguardo (o se sei fuori) segue il primo ancora in gara, senza fermarsi sul vuoto.
+  const cam = { dy: 0, lead: 0.34, vx: 0 };
+  let lastCamTs = 0;
+  const camK = (k, dt) => 1 - Math.exp(-k * dt);
+  function updateCamera(dt, w, h) {
+    let t = latestRacers[Net.myId];
+    if (t && t.finished) {
+      let best = null; for (const id in latestRacers) { const r = latestRacers[id]; if (!r.finished && (!best || r.x > best.x)) best = r; }
+      if (best) t = best;
+    }
+    if (!t) return;
+    if (!dt) dt = 1 / 60;
+    cam.vx += ((t.vx || 0) * 60 - cam.vx) * camK(3, dt);
+    const speed = Math.max(0, Math.min(1, cam.vx / 520));
+    cam.lead += ((0.34 - 0.13 * speed) - cam.lead) * camK(2.5, dt);
+    smoothCamX += ((t.x - w * cam.lead) - smoothCamX) * camK(5.5, dt);
+    // verticale: dove finirebbe la bici sullo schermo con la linea di terra al 80% dell'altezza
+    const y0 = (t.y - Sim.GROUND_Y) + h * 0.8, lo = h * 0.30, hi = h * 0.72;
+    let want = 0;
+    if (y0 < lo) want = lo - y0; else if (y0 > hi) want = hi - y0;
+    want = Math.max(-h * 0.12, Math.min(h * 0.5, want));
+    cam.dy += (want - cam.dy) * camK(3, dt);
+  }
+
   function renderRace(ts) {
     const t0 = performance.now();
     const w = viewW, h = viewH, me = latestRacers[Net.myId];
-    smoothCamX += ((me ? me.x - w * 0.32 : 0) - smoothCamX) * 0.08;
-    // Proporzionale all'altezza, non un valore fisso: su un telefono in verticale (molto più
-    // alto che largo) un offset fisso lasciava quasi tutto lo schermo di cielo e schiacciava
-    // bici e pista in una striscia sottile in fondo.
-    const groundY = h * 0.8, camX = smoothCamX;
+    updateCamera(Math.min(0.1, (ts - (lastCamTs || ts)) / 1000), w, h); lastCamTs = ts;
+    const groundY = h * 0.8 + cam.dy, camX = smoothCamX;
     const SC = Scenery.state;
 
     Scenery.update(camX, w, h, groundY, t0);
@@ -308,6 +339,7 @@
     for (let i = 0; i < n; i++) surfBuf[i] = Terrain.naturalHeight(camX + i * SURF_STEP);
     Scenery.drawGround(ctx2d, surfBuf, n, SURF_STEP);
 
+    Props.drawPatches(ctx2d, camX, w, groundY, SC);
     Props.drawRamps(ctx2d, camX, w, groundY);
     Props.drawSigns(ctx2d, camX, w, groundY);
     Props.drawFinish(ctx2d, camX, w, groundY, SC);

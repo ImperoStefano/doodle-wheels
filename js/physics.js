@@ -16,6 +16,14 @@ const Sim = (() => {
   const MOTOR_ACCEL = 0.02;   // rad/step^2 — strong enough to tip a triangle over its corner
   const WHEEL_FRICTION = 2.0; // Matter uses min(wheel, ground) -> the ground value decides
   const GROUND_DEPTH = 300;   // thick ground: a fast wheel can never tunnel through it
+  const V_CAP = 7.3;         // oltre questa velocità (px/tick a 60 Hz ≈ 440 px/s) il motore smette di spingere
+  const ACCEL_SPIKE = 3;     // le forme spigolose hanno più "coppia" per riprendere velocità dopo ogni urto
+  const ROLL_MAX = 1.7;      // tetto della compensazione di velocità su piano
+  const ROLL_GAIN = 1.0;     // 1 = pareggio teorico (perimetro dell'involucro convesso)
+  // Fango e ghiaccio: serve una forma "con le punte" per mordere; strade acciottolate e dune: le forme
+  // poligonali le prendono bene, la tonda sobbalza. min = fattore sulla spinta della ruota perfettamente tonda;
+  // full = spigolosità oltre la quale non si perde nulla.
+  const GRIP = { mud: { min: 0.42, full: 1 }, ice: { min: 0.7, full: 1 }, rough: { min: 0.74, full: 0.75 } };
   const WHEEL_STATIC = 0.5;    // static friction (Matter takes the max of the two bodies)
   const GROUND_STATIC = 0.5;
   const AXLE_STIFFNESS = 1;
@@ -63,7 +71,7 @@ const Sim = (() => {
   // (Rotated rectangles offset vertically leave small steps at the joints between segments
   // with different slopes; a triangle's corner catches on those steps and digs in.)
   function buildGround() {
-    const segW = 40;
+    const segW = 20;
     const bodies = [];
     for (let x = Terrain.TRACK_START; x < Terrain.TRACK_END; x += segW) {
       const x2 = x + segW;
@@ -234,7 +242,8 @@ const Sim = (() => {
     racers[id] = {
       chassis, fw, rw, axF, axR, color, name,
       finished: false, finishTime: null,
-      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0
+      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0,
+      cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), roll: rollFactor(vertices, teethGrip(vertices)), accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
   }
 
@@ -242,6 +251,8 @@ const Sim = (() => {
     const r = racers[id];
     if (!r || r.finished) return;
 
+    r.cal = calOf(vertices); calibrate(vertices, v => { r.cal = v; });
+    r.spike = spikiness(vertices); r.teeth = teethGrip(vertices); r.roll = rollFactor(vertices, r.teeth); r.accelK = 1 + ACCEL_SPIKE * r.spike;
     const group = r.chassis.collisionFilter.group;
     const wOpt = wheelOptions(group);
 
@@ -284,23 +295,107 @@ const Sim = (() => {
     return false;
   }
 
-  function driveWheel(wheel, target) {
+  // "Spigolosità" di una forma: 0 = tonda, ~0.3 quadrato, ~0.5 triangolo, ~0.6+ stella.
+  // = 1 - (raggio del cerchio inscritto / raggio del cerchio circoscritto), rispetto al baricentro.
+  function spikiness(vertices) {
+    if (!vertices || vertices.length < 3) return 0;
+    let cx = 0, cy = 0;
+    for (const v of vertices) { cx += v.x; cy += v.y; }
+    cx /= vertices.length; cy /= vertices.length;
+    let rout = 0, rin = Infinity;
+    for (let i = 0; i < vertices.length; i++) {
+      const a = vertices[i], b = vertices[(i + 1) % vertices.length];
+      rout = Math.max(rout, Math.hypot(a.x - cx, a.y - cy));
+      const ex = b.x - a.x, ey = b.y - a.y, L = Math.hypot(ex, ey) || 1;
+      rin = Math.min(rin, Math.abs((cx - a.x) * ey - (cy - a.y) * ex) / L);
+    }
+    return rout > 0 ? Math.max(0, Math.min(1, 1 - rin / rout)) : 0;
+  }
+  // "Denti": quante punte vere ha il contorno (massimi del raggio con una certa prominenza). Una tonda ne ha 0,
+  // un ovale 2, un triangolo 3, un quadrato 4, una stella 5. Serve a decidere quanto "morde" fango e ghiaccio:
+  // basta un ovale allungato a non mordere come una stella.
+  function teethGrip(vertices) {
+    if (!vertices || vertices.length < 3) return 0;
+    let cx = 0, cy = 0;
+    for (const v of vertices) { cx += v.x; cy += v.y; }
+    cx /= vertices.length; cy /= vertices.length;
+    const N = 90, rr = new Array(N).fill(0);
+    let rout = 0;
+    for (let i = 0; i < N; i++) {
+      const dx = Math.cos(i / N * 2 * Math.PI), dy = Math.sin(i / N * 2 * Math.PI);
+      let best = 0;
+      for (let j = 0; j < vertices.length; j++) {
+        const a = vertices[j], b = vertices[(j + 1) % vertices.length];
+        const ex = b.x - a.x, ey = b.y - a.y, den = dx * ey - dy * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((a.x - cx) * ey - (a.y - cy) * ex) / den, u = ((a.x - cx) * dy - (a.y - cy) * dx) / den;
+        if (t > best && u >= 0 && u <= 1) best = t;
+      }
+      rr[i] = best; if (best > rout) rout = best;
+    }
+    if (rout <= 0) return 0;
+    const sm = rr.map((_, i) => (rr[(i + N - 1) % N] + 2 * rr[i] + rr[(i + 1) % N]) / 4);
+    let peaks = 0, promSum = 0;
+    for (let i = 0; i < N; i++) {
+      const v = sm[i];
+      if (v < sm[(i + N - 1) % N] || v <= sm[(i + 1) % N]) continue;           // massimo locale (a destra stretto)
+      let lmin = v, rmin = v;
+      for (let k = 1; k < N; k++) { const w = sm[(i - k + N) % N]; if (w > v) break; if (w < lmin) lmin = w; }
+      for (let k = 1; k < N; k++) { const w = sm[(i + k) % N]; if (w > v) break; if (w < rmin) rmin = w; }
+      const prom = v - Math.max(lmin, rmin);
+      if (prom >= 0.1 * rout) { peaks++; promSum += prom / rout; }
+    }
+    if (!peaks) return 0;
+    return Math.min(1, peaks / 4) * Math.min(1, (promSum / peaks) / 0.24);
+  }
+  // Compensazione "su piano": una forma con meno perimetro del cerchio percorre meno strada per
+  // giro (triangolo ~0.83, quadrato ~0.90). Il motore la gira un po' più in fretta, così su terreno
+  // piatto tutte le forme vanno circa alla stessa velocità e a decidere sono i terreni, non la geometria.
+  // Reff = perimetro dell'involucro convesso / 2π; fattore = raggio massimo / Reff (>= 1, con un tetto).
+  function rollFactor(vertices, teeth) {
+    if (!vertices || vertices.length < 3) return 1;
+    let hull;
+    try { hull = Matter.Vertices.hull(vertices.map(v => ({ x: v.x, y: v.y }))); } catch (e) { return 1; }
+    if (!hull || hull.length < 3) return 1;
+    let cx = 0, cy = 0;
+    for (const v of vertices) { cx += v.x; cy += v.y; }
+    cx /= vertices.length; cy /= vertices.length;
+    let rout = 0, per = 0;
+    for (let i = 0; i < hull.length; i++) {
+      const a = hull[i], b = hull[(i + 1) % hull.length];
+      rout = Math.max(rout, Math.hypot(a.x - cx, a.y - cy));
+      per += Math.hypot(b.x - a.x, b.y - a.y);
+    }
+    const reff = per / (2 * Math.PI);
+    return reff > 0 ? Math.max(1, Math.min(ROLL_MAX, 1 + ROLL_GAIN * (0.35 + 0.65 * (teeth || 0)) * (rout / reff - 1))) : 1;
+  }
+  // Fango e ghiaccio: la ruota liscia "pattina" e rende meno, quella con le punte morde.
+  // Fattore sulla velocità del motore (0..1): in modo deterministico, senza dipendere dall'attrito di Matter.
+  function gripFactor(grip, teeth) {
+    if (!grip) return 1;
+    const g = GRIP[grip]; if (!g) return 1;
+    return g.min + (1 - g.min) * Math.min(1, teeth / g.full);
+  }
+
+  function driveWheel(wheel, target, accelK) {
     // getAngularVelocity is normalised to a 60Hz step, so it stays correct with SUBSTEPS > 1
     const w = Matter.Body.getAngularVelocity(wheel);
-    const dw = Math.max(-MOTOR_ACCEL, Math.min(MOTOR_ACCEL, target - w));
+    const acc = MOTOR_ACCEL * (accelK || 1);
+    const dw = Math.max(-acc, Math.min(acc, target - w));
     Matter.Body.setAngularVelocity(wheel, w + dw);
   }
 
   // Safety net: the terrain profile is known exactly, so if a wheel corner ever ends up more
   // than MAX_SINK px below the ground line (hard landing on a ramp edge), lift the wheel back to
   // the surface instead of letting it dig in and stall.
-  function antiSink(wheel) {
+  function antiSink(wheel, hfn) {
+    const H = hfn || Terrain.height;
     const parts = wheel.parts.length > 1 ? wheel.parts.slice(1) : [wheel];
     let worst = 0;
     for (const p of parts) {
       for (const v of p.vertices) {
-        if (v.x < Terrain.TRACK_START || v.x > Terrain.TRACK_END) continue; // no ground out there
-        const sink = v.y - (GROUND_Y - Terrain.height(v.x));
+        if (!hfn && (v.x < Terrain.TRACK_START || v.x > Terrain.TRACK_END)) continue; // no ground out there
+        const sink = v.y - (GROUND_Y - H(v.x));
         if (sink > worst) worst = sink;
       }
     }
@@ -327,13 +422,110 @@ const Sim = (() => {
     r.hopBaseX = cx;
   }
 
+  // Spinta delle due ruote: tetto di velocità (governor), compensazione di forma, presa su fango/ghiaccio/strade dissestate
+  // e taratura individuale r.cal (vedi calibrate): il motore smette di spingere oltre V_CAP, la bici prosegue per inerzia.
+  function driveRacer(r, elapsed, useGrip) {
+    const governed = r.chassis.velocity.x > V_CAP;
+    const ramp = Math.min(1, elapsed / 1500);
+    const gf = useGrip && Terrain.gripAt ? gripFactor(Terrain.gripAt(r.fw.position.x), r.teeth) : 1;
+    const gr = useGrip && Terrain.gripAt ? gripFactor(Terrain.gripAt(r.rw.position.x), r.teeth) : 1;
+    const c = r.roll * (r.cal || 1);
+    driveWheel(r.fw, governed ? 0 : MOTOR_SPEED * ramp * gf * c, r.accelK);
+    driveWheel(r.rw, governed ? 0 : MOTOR_SPEED * ramp * gr * c, r.accelK);
+  }
+
+
+  // ---- Taratura automatica delle ruote ---------------------------------------------------------------
+  // Ogni forma disegnata a mano rotola diversamente (rimbalza, perde spinta agli urti): nessuna formula fissa
+  // le pareggia. Quindi, prima del via, ogni ruota fa una breve prova invisibile su un tratto neutro
+  // (colline dolci, in un motore fisico a parte) e trova il moltiplicatore di spinta `cal` che la porta
+  // allo stesso tempo di una tonda perfetta. Così su terreno normale vanno tutte uguali e a fare la differenza
+  // sono i terreni a tema. La prova gira a fette di pochi ms (generatore), senza bloccare il gioco.
+  const CAL_X0 = 450, CAL_X1 = 2450, CAL_START = 150, CAL_MAX_TICKS = 640, CAL_CLAMP = [0.6, 2.2];
+  const calSm = t => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+  const calH = x => calSm((x - 300) / 300) * (38 * Math.sin(x / 260) + 9 * Math.sin(x / 90) + 5 * Math.sin(x / 41));
+  let calRefTicks = null;
+  const calCache = new Map();
+  const calKey = v => v.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(';');
+
+  function* calTrial(vertices, cal) {
+    if (typeof decomp !== 'undefined' && Matter.Common.setDecomp) Matter.Common.setDecomp(decomp);
+    const eng = Matter.Engine.create(); eng.gravity.y = 1.3; eng.positionIterations = 30; eng.velocityIterations = 20;
+    const w = eng.world, grp = Matter.Body.nextGroup(true), W = 20, segs = [];
+    for (let x = 0; x < 2700; x += W) {
+      const y1 = GROUND_Y - calH(x), y2 = GROUND_Y - calH(x + W);
+      const quad = [{ x, y: y1 }, { x: x + W, y: y2 }, { x: x + W, y: Math.max(y1, y2) + GROUND_DEPTH }, { x, y: Math.max(y1, y2) + GROUND_DEPTH }];
+      const c = Matter.Vertices.centre(quad);
+      const seg = Matter.Bodies.fromVertices(c.x, c.y, [quad], { isStatic: true, friction: 0.9, frictionStatic: GROUND_STATIC, restitution: 0.05, slop: 0.02, label: 'ground' });
+      seg.friction = 0.9; seg.restitution = 0.05; segs.push(seg);
+    }
+    Matter.World.add(w, segs);
+    Matter.World.add(w, Matter.Bodies.rectangle(-50, GROUND_Y - 500, 100, 2400, { isStatic: true, friction: 0 }));
+    const wOpt = wheelOptions(grp);
+    const fw = createWheelBody(CAL_START + 90, GROUND_Y - SPAWN_H, vertices, wOpt), rw = createWheelBody(CAL_START - 90, GROUND_Y - SPAWN_H, vertices, wOpt);
+    const chassis = Matter.Bodies.rectangle(CAL_START, GROUND_Y - SPAWN_H, 160, 16, { density: 0.001, friction: 0.4, collisionFilter: { group: grp }, label: 'chassis' });
+    Matter.World.add(w, [chassis, fw, rw, makeAxle(chassis, 80, fw), makeAxle(chassis, -80, rw)]);
+    const r = { chassis, fw, rw, spike: spikiness(vertices), teeth: teethGrip(vertices), cal };
+    r.roll = rollFactor(vertices, r.teeth); r.accelK = 1 + ACCEL_SPIKE * r.spike;
+    let tIn = null;
+    for (let tick = 0; tick < CAL_MAX_TICKS; tick++) {
+      driveRacer(r, tick * FIXED_DT, false);
+      for (let i = 0; i < SUBSTEPS; i++) { Matter.Engine.update(eng, FIXED_DT / SUBSTEPS); antiSink(fw, calH2); antiSink(rw, calH2); }
+      const x = chassis.position.x;
+      if (tIn === null && x >= CAL_X0) tIn = tick;
+      if (x >= CAL_X1) return tick - (tIn === null ? tick : tIn);
+      if (tick % 20 === 19) yield;
+    }
+    return CAL_MAX_TICKS;      // non arriva: tempo massimo
+  }
+  const calH2 = calH;
+
+  function* calibrateGen(vertices) {
+    if (calRefTicks === null) {
+      const circle = Array.from({ length: 32 }, (_, i) => ({ x: Math.cos(i / 32 * 2 * Math.PI) * 80, y: Math.sin(i / 32 * 2 * Math.PI) * 80 }));
+      calRefTicks = yield* calTrial(circle, 1);
+    }
+    const ref = calRefTicks;
+    let k = 1, t = yield* calTrial(vertices, k), bestK = k, bestErr = Math.abs(t - ref);
+    for (let it = 0; it < 3 && bestErr > 2; it++) {
+      k = Math.max(CAL_CLAMP[0], Math.min(CAL_CLAMP[1], k * Math.pow(t / ref, 1.1)));
+      t = yield* calTrial(vertices, k);
+      const err = Math.abs(t - ref); if (err < bestErr) { bestErr = err; bestK = k; }
+    }
+    return bestK;
+  }
+
+  // esegue un generatore a fette (≈8 ms alla volta); cb(valore) alla fine
+  function runSliced(gen, cb) {
+    const step = () => {
+      const t0 = Date.now();
+      for (;;) {
+        const r = gen.next();
+        if (r.done) { cb(r.value); return; }
+        if (Date.now() - t0 > 8) break;
+      }
+      setTimeout(step, 0);
+    };
+    step();
+  }
+  function drain(gen) { for (;;) { const r = gen.next(); if (r.done) return r.value; } }
+
+  // Taratura di una forma: usa la cache; cb(cal). Se già pronta risponde subito.
+  function calibrate(vertices, cb) {
+    if (!vertices || vertices.length < 3) { cb(1); return; }
+    const key = calKey(vertices);
+    if (calCache.has(key)) { const v = calCache.get(key); if (typeof v === 'number') { cb(v); return; } v.push(cb); return; }
+    const waiting = [cb]; calCache.set(key, waiting);
+    runSliced(calibrateGen(vertices), val => { calCache.set(key, val); waiting.forEach(f => f(val)); if (calCache.size > 60) calCache.delete(calCache.keys().next().value); });
+  }
+  function calibrateSync(vertices) { const key = calKey(vertices); const v = calCache.get(key); if (typeof v === 'number') return v; const val = drain(calibrateGen(vertices)); calCache.set(key, val); return val; }
+  function calOf(vertices) { const v = calCache.get(calKey(vertices)); return typeof v === 'number' ? v : 1; }
+
   // Per-racer logic, runs at the fixed 60Hz step.
   function stepRacer(r, elapsed) {
     if (r.finished) return;
 
-    const ramp = Math.min(1, elapsed / 1500);
-    driveWheel(r.fw, MOTOR_SPEED * ramp);
-    driveWheel(r.rw, MOTOR_SPEED * ramp);
+    driveRacer(r, elapsed, true);
 
     // progress = furthest x reached; if it hasn't improved enough for STALL_MS, hop
     if (r.chassis.position.x > r.bestX + STALL_MIN_PROGRESS) {
@@ -421,7 +613,7 @@ const Sim = (() => {
   }
 
   return {
-    init, addRacer, updateRacerWheel, start, tick,
+    init, addRacer, updateRacerWheel, start, tick, calibrate, calibrateSync,
     snapshot, allFinished, isTimedOut, standings, GROUND_Y,
     get FINISH_X() { return Terrain.FINISH_X; },
     // ms rimasti agli altri dopo che il primo ha tagliato il traguardo (null = nessuno è arrivato)
