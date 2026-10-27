@@ -26,6 +26,13 @@ const Sim = (() => {
   // full = spigolosità oltre la quale non si perde nulla.
   const MATCH_MAX = 1.14;   // bonus di spinta per la forma "in tinta" con la strada ad archi
   const GRIP = { mud: { min: 0.75, full: 1 }, ice: { min: 0.95, full: 1 }, rough: { min: 0.93, full: 0.75 } };
+  // Contatto: la bici non deve "galleggiare" né far girare le ruote a vuoto.
+  //  downAcc  : accelerazione verticale extra (px/tick^2) per una ruota senza contatto (gravità circa 1.8x in volo)
+  //  airGap   : distanza (px) oltre la quale una ruota si considera in aria
+  //  hold/holdMin/hopV/antiHop : vicino al suolo (fra holdMin e hold px: a contatto no, altrimenti si frena il rotolamento sullo spigolo) la velocità che si allontana dalla strada (<hopV px/tick) viene smorzata
+  //  airDamp  : smorzamento del giro delle ruote in aria; slipMax : (0 = spento) tetto di giro rispetto all'avanzamento a terra —
+  //  provato e scartato: anche a 2.0 rallenta troppo le partenze e le salite
+  const TUNE = { downAcc: 0.6, airGap: 4, hold: 16, holdMin: 1.5, hopV: 12, antiHop: 0.8, airDamp: 1, slipMax: 0, slipVmin: 2.5, speed: 1 };
   const WHEEL_STATIC = 0.5;    // static friction (Matter takes the max of the two bodies)
   const GROUND_STATIC = 0.5;
   const AXLE_STIFFNESS = 1;
@@ -245,7 +252,7 @@ const Sim = (() => {
       chassis, fw, rw, axF, axR, color, name,
       finished: false, finishTime: null,
       bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0,
-      cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
+      cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
   }
 
@@ -254,7 +261,7 @@ const Sim = (() => {
     if (!r || r.finished) return;
 
     r.cal = calOf(vertices); calibrate(vertices, v => { r.cal = v; });
-    r.spike = spikiness(vertices); r.teeth = teethGrip(vertices); r.peaks = lastPeaks; r.prom = lastProm; r.roll = rollFactor(vertices, r.teeth); r.accelK = 1 + ACCEL_SPIKE * r.spike;
+    r.spike = spikiness(vertices); r.teeth = teethGrip(vertices); r.peaks = lastPeaks; r.prom = lastProm; r.roll = rollFactor(vertices, r.teeth); r.reff = lastReff; r.accelK = 1 + ACCEL_SPIKE * r.spike;
     const group = r.chassis.collisionFilter.group;
     const wOpt = wheelOptions(group);
 
@@ -318,7 +325,7 @@ const Sim = (() => {
   // basta un ovale allungato a non mordere come una stella.
   const PEAK_PROM = 0.065;
   const MISMATCH = 0.22;   // su una strada a N archi chi ha un numero di punte diverso da N perde fino al 12%
-  let lastPeaks = 0, lastProm = 0;
+  let lastPeaks = 0, lastProm = 0, lastReff = 0;
   function teethGrip(vertices) {
     lastPeaks = 0; lastProm = 0;
     if (!vertices || vertices.length < 3) return 0;
@@ -373,7 +380,7 @@ const Sim = (() => {
       rout = Math.max(rout, Math.hypot(a.x - cx, a.y - cy));
       per += Math.hypot(b.x - a.x, b.y - a.y);
     }
-    const reff = per / (2 * Math.PI);
+    const reff = per / (2 * Math.PI); lastReff = reff;
     return reff > 0 ? Math.max(1, Math.min(ROLL_MAX, 1 + ROLL_GAIN * (0.35 + 0.65 * (teeth || 0)) * (rout / reff - 1))) : 1;
   }
   // Fango e ghiaccio: la ruota liscia "pattina" e rende meno, quella con le punte morde.
@@ -396,12 +403,39 @@ const Sim = (() => {
     return base;
   }
 
-  function driveWheel(wheel, target, accelK) {
+  function driveWheel(wheel, target, accelK, lim) {
     // getAngularVelocity is normalised to a 60Hz step, so it stays correct with SUBSTEPS > 1
-    const w = Matter.Body.getAngularVelocity(wheel);
+    let w = Matter.Body.getAngularVelocity(wheel);
+    const g = wheel.gapNow;
+    if (g !== undefined && g > TUNE.airGap) {            // in aria il motore non "frulla" la ruota: smorzamento, nessuna spinta
+      Matter.Body.setAngularVelocity(wheel, w * TUNE.airDamp);
+      return;
+    }
     const acc = MOTOR_ACCEL * (accelK || 1);
+    if (lim !== undefined && target > lim) target = Math.max(lim, w > lim ? w * 0.9 : 0, 0);   // a terra: niente giro oltre SLIP_MAX volte l'avanzamento
     const dw = Math.max(-acc, Math.min(acc, target - w));
     Matter.Body.setAngularVelocity(wheel, w + dw);
+  }
+
+  // Aderenza: una ruota senza contatto viene richiamata a terra (gravità extra), e vicino al suolo un rimbalzo piccolo
+  // viene smorzato lungo la normale della strada: la bici resta incollata alla pista invece di galleggiare sui saltelli.
+  // I salti veri (rampe) restano: sopra HOP_V la velocità non viene toccata.
+  function assist(r, H) {
+    H = H || Terrain.height;
+    for (const w of [r.fw, r.rw]) {
+      const g = w.gapNow; if (g === undefined) continue;
+      const v = w.velocity;
+      if (g > TUNE.airGap) {
+        Matter.Body.setVelocity(w, { x: v.x, y: v.y + TUNE.downAcc });
+      } else if (g < TUNE.hold && g > TUNE.holdMin) {
+        const x = w.position.x, s = (H(x + 3) - H(x - 3)) / 6;           // pendenza della strada (y verso il basso: la normale va in su e indietro)
+        const l = Math.hypot(s, 1), nx = s / l, ny = -1 / l;
+        const vn = v.x * nx + v.y * ny;
+        if (vn > 0 && vn < TUNE.hopV) Matter.Body.setVelocity(w, { x: v.x - vn * TUNE.antiHop * nx, y: v.y - vn * TUNE.antiHop * ny });
+      }
+    }
+    // telaio: se tutte e due le ruote sono in aria cade con la stessa gravità extra
+    if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + TUNE.downAcc });
   }
 
   // Safety net: the terrain profile is known exactly, so if a wheel corner ever ends up more
@@ -410,14 +444,16 @@ const Sim = (() => {
   function antiSink(wheel, hfn) {
     const H = hfn || Terrain.height;
     const parts = wheel.parts.length > 1 ? wheel.parts.slice(1) : [wheel];
-    let worst = 0;
+    let worst = 0, gap = 1e9;
     for (const p of parts) {
       for (const v of p.vertices) {
         if (!hfn && (v.x < Terrain.TRACK_START || v.x > Terrain.TRACK_END)) continue; // no ground out there
         const sink = v.y - (GROUND_Y - H(v.x));
         if (sink > worst) worst = sink;
+        if (-sink < gap) gap = -sink;
       }
     }
+    wheel.gapNow = gap > 1e8 ? undefined : gap;
     if (worst > MAX_SINK) {
       Matter.Body.translate(wheel, { x: 0, y: -(worst - MAX_SINK) });
       if (wheel.velocity.y > 0) Matter.Body.setVelocity(wheel, { x: wheel.velocity.x, y: 0 });
@@ -452,8 +488,10 @@ const Sim = (() => {
     // la presa sposta anche il tetto di velocità: sul terreno sbagliato la bici non arriva a V_CAP, su quello giusto sì (o poco oltre)
     const capK = Math.min(CAP_GRIP_MAX, (gf + gr) / 2);
     const gov = r.chassis.velocity.x > V_CAP * capK;
-    driveWheel(r.fw, gov ? 0 : MOTOR_SPEED * ramp * gf * c, r.accelK);
-    driveWheel(r.rw, gov ? 0 : MOTOR_SPEED * ramp * gr * c, r.accelK);
+    // tetto di giro a terra: la ruota non gira più di SLIP_MAX volte quanto serve per l'avanzamento (partenza: velocità minima di riferimento)
+    const lim = TUNE.slipMax > 0 && r.reff > 0 ? TUNE.slipMax * Math.max(r.chassis.velocity.x, TUNE.slipVmin) / r.reff : undefined;
+    driveWheel(r.fw, gov ? 0 : MOTOR_SPEED * TUNE.speed * ramp * gf * c, r.accelK, lim);
+    driveWheel(r.rw, gov ? 0 : MOTOR_SPEED * TUNE.speed * ramp * gr * c, r.accelK, lim);
   }
 
 
@@ -512,10 +550,11 @@ const Sim = (() => {
     const chassis = Matter.Bodies.rectangle(CAL_START, GROUND_Y - SPAWN_H, 160, 16, { density: 0.001, friction: 0.4, collisionFilter: { group: grp }, label: 'chassis' });
     Matter.World.add(w, [chassis, fw, rw, makeAxle(chassis, 80, fw), makeAxle(chassis, -80, rw)]);
     const r = { chassis, fw, rw, spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, cal, secOf: calSecOf };
-    r.roll = rollFactor(vertices, r.teeth); r.accelK = 1 + ACCEL_SPIKE * r.spike;
+    r.roll = rollFactor(vertices, r.teeth); r.reff = lastReff; r.accelK = 1 + ACCEL_SPIKE * r.spike;
     const at = CAL_SEC.map(() => null);
     for (let tick = 0; tick < CAL_MAX_TICKS; tick++) {
       driveRacer(r, tick * FIXED_DT, false);
+      assist(r, hf);
       for (let i = 0; i < SUBSTEPS; i++) { Matter.Engine.update(eng, FIXED_DT / SUBSTEPS); antiSink(fw, hf); antiSink(rw, hf); }
       const x = chassis.position.x;
       for (let s = 0; s < CAL_SEC.length; s++) if (at[s] === null && x >= CAL_SEC[s]) at[s] = tick;
@@ -622,6 +661,7 @@ const Sim = (() => {
     while (accumulator >= FIXED_DT) {
       for (const r of Object.values(racers)) {
         stepRacer(r, elapsed);
+        if (!r.finished) assist(r);
       }
       for (let i = 0; i < SUBSTEPS; i++) {
         Matter.Engine.update(engine, FIXED_DT / SUBSTEPS);
