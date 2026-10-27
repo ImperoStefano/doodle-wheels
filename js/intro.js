@@ -4,7 +4,7 @@
 // fisica e rete non c'entrano. Un tocco la salta.
 const Intro = (() => {
   const DUR = 4750;                                  // durata totale (ms); il 3-2-1 parte dopo
-  const LEAD = 400, LANE = 1300, PAUSE = 150;
+  const LEAD = 400, LANE = 1500, PAUSE = 150;
   const LANES = [0.29, 0.53, 0.78];                  // altezza della punta (frazione di H)
   const BANDS = [0.58, 0.40, 0.52];                  // spessore della pennellata per corsia (frazione di H)
   const INK = '#0b0b0d';
