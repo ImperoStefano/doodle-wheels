@@ -159,7 +159,9 @@
 
   let raceStarting = false; // host: never start the countdown twice
 
-  function receiveWheel(id, vertices) { wheels[id] = vertices; checkAllWheelsIn(); }
+  // La taratura non dipende dalla pista: l'host la fa partire appena arriva ogni ruota (a fette di 8 ms), mentre gli altri
+  // stanno ancora disegnando, così al via è già pronta anche su telefoni lenti. Al conto alla rovescia resta in cache.
+  function receiveWheel(id, vertices) { wheels[id] = vertices; if (Net.isHost) Sim.calibrate(vertices, () => {}); checkAllWheelsIn(); }
 
   // Counts only players still connected: a player who leaves while drawing can't hang the host
   // forever waiting for a wheel that will never arrive.
@@ -180,7 +182,7 @@
   // Durante il conto alla rovescia le bici stanno ferme in griglia (stesse posizioni di partenza
   // della fisica), così si vede già il mondo e chi c'è in gara; il primo snapshot le sostituisce.
   function placeGrid() {
-    latestRacers = {};
+    latestRacers = {}; snapBuf.length = 0;
     Object.keys(raceMeta).forEach((id, i) => {
       const x = 60 + i * 200, y = Sim.GROUND_Y - Terrain.height(x) - 70;
       latestRacers[id] = { id, x, y, angle: 0, fwX: x + 90, fwY: y, fwAngle: 0, rwX: x - 90, rwY: y, rwAngle: 0, vx: 0, finished: false, finishTime: null };
@@ -217,14 +219,16 @@
   function beginRace() {
     Sim.init(); let i = 0; Object.entries(raceMeta).forEach(([id, m]) => Sim.addRacer(id, m.vertices, m.color, m.name, i++));
     Sim.start(); let last = performance.now();
+    let lastSend = 0;
     snapshotLoopHandle = setInterval(() => {
       const now = performance.now(), dt = Math.min(now - last, 100); last = now;
-      Sim.tick(dt); const snap = Sim.snapshot(); applySnapshot(snap); Net.broadcast({ type: 'snap', racers: snap });
+      Sim.tick(dt); const snap = Sim.snapshot(); applySnapshot(snap);
+      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap }); }
       // primo traguardo: gli altri hanno un tempo limitato, e lo sanno
       const gl = Sim.graceLeft();
       if (gl !== null && !lastCallSent) { lastCallSent = true; Net.broadcast({ type: 'lastCall', ms: gl }); showLastCall(gl); }
       if (Sim.allFinished() || Sim.isTimedOut()) { clearInterval(snapshotLoopHandle); const s = Sim.standings(); Net.broadcast({ type: 'results', standings: s }); showResults(s); }
-    }, 50);
+    }, 16);
     startRenderLoop();
   }
 
@@ -236,7 +240,34 @@
     els.lastCall.textContent = I18n.t('race.lastcall', { s });
   }
 
-  function applySnapshot(racers) { racers.forEach(r => latestRacers[r.id] = r); }
+  // Fluidità: la fisica gira a scatti (host: ogni ~16 ms, ma i client ricevono 20 snapshot/s) mentre lo schermo va a 60/120 Hz.
+  // Disegnare l'ultimo snapshot fa "scattare" bici e ruote a 20 fps. Si tengono gli ultimi snapshot e si disegna un istante
+  // nel passato (INTERP_MS) interpolando fra i due che lo racchiudono: nessun controllo da inseguire, quindi il ritardo è invisibile.
+  const snapBuf = [];
+  const INTERP_HOST_MS = 45, INTERP_CLIENT_MS = 130;
+  function applySnapshot(racers) {
+    const m = {}; racers.forEach(r => { m[r.id] = r; latestRacers[r.id] = r; });
+    snapBuf.push({ t: performance.now(), m }); if (snapBuf.length > 16) snapBuf.shift();
+  }
+  const angLerp = (a, b, k) => { let d = b - a; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return a + d * k; };
+  function interpolateRacers(now) {
+    const n = snapBuf.length; if (!n) return;
+    const rt = now - (Net.isHost ? INTERP_HOST_MS : INTERP_CLIENT_MS);
+    let a = snapBuf[0], b = snapBuf[0];
+    if (rt >= snapBuf[n - 1].t) { a = b = snapBuf[n - 1]; }
+    else if (rt > snapBuf[0].t) { for (let i = n - 1; i > 0; i--) if (snapBuf[i - 1].t <= rt) { a = snapBuf[i - 1]; b = snapBuf[i]; break; } }
+    const k = b.t > a.t ? Math.max(0, Math.min(1, (rt - a.t) / (b.t - a.t))) : 1;
+    for (const id in b.m) {
+      const rb = b.m[id], ra = a.m[id];
+      if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250) { latestRacers[id] = rb; continue; }   // nuovo arrivato o salto (rimessa in pista): niente scivolata
+      latestRacers[id] = {
+        id, finished: rb.finished, finishTime: rb.finishTime,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k,
+        fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
+        rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
+      };
+    }
+  }
   function setupCanvas() { ctx2d = els.raceCanvas.getContext('2d'); minimapCtx = els.minimap.getContext('2d'); resizeCanvas(); }
 
   // Lo zoom guardava solo la larghezza: un telefono ruotato in orizzontale è largo (sopra la
@@ -318,6 +349,7 @@
 
   function renderRace(ts) {
     const t0 = performance.now();
+    interpolateRacers(t0);
     const w = viewW, h = viewH, me = latestRacers[Net.myId];
     updateCamera(Math.min(0.1, (ts - (lastCamTs || ts)) / 1000), w, h); lastCamTs = ts;
     const groundY = h * 0.8 + cam.dy, camX = smoothCamX;
@@ -358,6 +390,7 @@
 
       const zk = Terrain.zoneKeyAt(r.x);
       const wet = zk === 'water' && Terrain.isWater(r.x);
+      if (r.vx > 1.5 && Terrain.gripAt(r.rwX) === 'sand' && Math.random() > 0.35 && particles.length < 90) particles.push({ x: r.rwX, y: r.rwY + 22, vx: -Math.random() * (r.vx * 0.6) - 0.6, vy: -Math.random() * 3.2 - 0.6, life: 1, size: Math.random() * 3 + 2, col: 'rgba(226,196,126,' });
       if (r.vx > 2 && (zk === 'gravel' || zk === 'ice' || wet) && Math.random() > 0.4 && particles.length < 90) {
         let col = 'rgba(148,163,184,', sz = Math.random() * 3 + 2, vy = -Math.random() * 3;
         if (zk === 'ice') { col = 'rgba(255,255,255,'; sz = 2.5; }

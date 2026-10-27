@@ -108,6 +108,7 @@ e poi lasciano decidere ai terreni (tutti **senza icone**: si scoprono guidando)
 | Fango | colline, bosco | forme con punte vere (il numero di "denti" conta: un ovale morde la metà di una stella) |
 | Ghiaccio (tutta la zona) | ghiacciaio | idem, più lieve |
 | Buche, tronchi, gradoni alti | colline, bosco, canyon | la tonda e le forme grandi e lisce |
+| Sabbia | colline, canyon, rampe | la tonda (galleggia); le punte affondano |
 
 Parametri in `physics.js`: `GRIP` (fango/ghiaccio/strade), `ROLL_GAIN`, `ACCEL_SPIKE`, `V_CAP`; in `terrain.js`: `PATCH_TABLE`.
 
@@ -120,3 +121,40 @@ Nota: la griglia di partenza è sfalsata di 200 px a testa e il tempo si misura 
 
 **Telecamera** (`updateCamera` in `game.js`): morbidezza indipendente dagli fps, "guarda avanti" in base alla velocità, inseguimento verticale
 (la bici resta tra il 30% e il 72% dell'altezza su rampe e salite), e dopo il traguardo segue il primo ancora in gara.
+
+**Terreni su misura per forme specifiche** (`gripN`, `gripFactor` in `physics.js`):
+- *Strada ad archi per un poligono a N lati* (N = 3, 4, 5 o 6): la forma con esattamente N punte (contate dal contorno, non dai lati disegnati) ci rotola in tinta e prende un piccolo bonus di spinta; le altre sobbalzano.
+- *Dentiera* (rotaia con denti a V, canyon e colline): premia le forme con 5+ punte affilate (stella); la tonda sbanda.
+- *Ramponi* su fango e ghiaccio: un bonus extra per punte lunghe e affilate (triangolo, stella).
+- La taratura automatica ora include anche una rampa vera, così l'atterraggio non penalizza in partenza le forme spigolose.
+
+### Bilanciamento — secondo giro (misure oneste)
+
+Cosa è cambiato rispetto al giro precedente, e perché:
+- **La presa ora sposta anche il tetto di velocità.** Prima il limitatore `V_CAP` mascherava quasi del tutto fango/ghiaccio/strade: ora chi sbaglia terreno non arriva a `V_CAP` (`GRIP`: fango 0.75, ghiaccio 0.95, strade 0.93 per la tonda).
+- **Strade ad archi:** chi ha un numero di punte diverso da N perde fino al 22% (`MISMATCH`); il bonus per la forma "in tinta" non dipende più da quanto è profonda la punta (l'esagono ha punte basse ma deve poter vincere sulla sua strada a 6).
+- **Dentiera** (`gripFactor`): conta le punte (≥5) e quanto sono affilate; senza punte buone si perde il 30%.
+- **Punte più affidabili** (`PEAK_PROM`): con una forma disegnata a mano l'esagono veniva letto come 1–4 punte; ora 5–6 in modo stabile, e la tonda ruvida resta a 0.
+- **Coppia del motore** `MOTOR_ACCEL` 0.02→0.035: le forme a punte erano limitate dalla coppia e la taratura non poteva compensarlo.
+- **Buche** più piccole (W 140–155, D 48): prima le forme a punte perdevano ~1 s a buca.
+- **Taratura più robusta:** il tempo di prova oscilla di ±5–8% da un k al successivo, per cui ogni misura è la media su 3 varianti di pista (colline, ponte ad arco, ghiaia con ponte di corda, due rampe di fila, ghiaccio) e 2 prove, e ci sono 3 moltiplicatori (piano / rampe / ghiaccio). Costa ~0,5 s a ruota, a fette di 8 ms: 4 ruote ≈ 2,4 s in Chromium headless; su un telefono lento può finire dopo il via (fino ad allora vale 1, poi si applica).
+- Provato e scartato: una taratura per sezione, una retta di regressione, alzare anche il tetto di velocità con la taratura (tutte rendevano una forma sola vincente o la tonda più lenta del 10–17%).
+
+**Terreno più denso (terzo giro):** zone di colline/ghiaia/rampe più corte (1750/1750/2000 px), tratti a tema anche sul ghiaccio (archi, dentiera: lì vale la strada, non il ghiaccio), più buche in collina e più tronchi sulle rampe per dare una nicchia alla tonda; pavimento della dentiera 0.78; limite della taratura 3.2.
+
+**Sabbia (quarto giro)** — resa grafica: strato spesso a sfumatura calda con creste e ombre di vento, ciuffi d'erba secca che ondeggiano, conchiglie e sassolini, granelli portati dal vento, luccichii, estremità che si assottigliano; la bici solleva polvere dorata. Il terreno "al contrario": la tonda galleggia (fino a +6% di velocità), le forme con denti e punte affondano (`gripFactor`, `'sand'`: 1.06 − 0.28·(0.7·denti + 0.6·spigolosità)); compare in colline, ghiaia e rampe. Dà alla tonda una nicchia vera: sul tratto di sabbia perde circa 40% la stella e guadagna la tonda. Dentiera più frequente (colline 0.2, ghiaia 0.3, ghiaccio 0.3) per la stella.
+
+**Superfici ridisegnate (quinto giro)** — stesso trattamento della sabbia per tutti i terreni, nessuna modifica alla fisica: *fango* lucido a strati con solchi di ruote, pozze che riflettono il cielo, bolle che scoppiano e giunchi che ondeggiano; *dentiera* con ballast, traversine di legno, rotaia d'acciaio con bulloni e ruggine e paraurti giallo-neri; *strada ad archi* in selciato di arenaria a filari sfalsati con chiavi di volta e muschio; *gradoni* di pietra a blocchi con alzate in ombra, licheni (o brina e cristalli sul ghiaccio); *buche* con pareti di terra e sassi, fondo con pozza e anelli d'acqua animati; *tronchi* di testa con anelli, corteccia, muschio e funghetti; *dune ondulate* come la sabbia in tono ghiaia. Estremità che si assottigliano ovunque; solo path e gradienti semplici, nessun offscreen canvas.
+
+**Studio** (9 forme perfette, 2 serie da 60 piste, ognuna da sola e tarata → 120 piste): pentagono 32, ovale 21, esagono 16, triangolo 15, quadrato 14, tonda 11, stella 8, dentata 3, blob 0. Ritardo medio: pentagono ~1.4%, tonda 2.4%, quadrato 2.2%, esagono 2.3%, ovale 2.7%, triangolo 3%, dentata 3%, stella 3.2%, blob 6%. Da una serie all'altra una forma varia di ±5–8 vittorie (rumore).
+Con forme disegnate a mano (rumore + rotazione, 60 piste): quadrato 24, pentagono 18, esagono 7, dentata 4, blob 2, tonda 2, stella 2, ovale 1, triangolo 0.
+Tempi per tipo di terreno: strada a 3 archi → triangolo (o blob), a 4 → quadrato, a 5 → pentagono/stella, a 6 → esagono; dentiera (anche sul ghiaccio) → stella (-25% sulla tonda); fango → stella; buche/gradoni → ovale/tonda; rampe → tonda/quadrato.
+
+**Limiti noti:** le differenze fra forme sui terreni "normali" restano ±2–3% (la fisica è caotica: un rimbalzo diverso cambia il tempo), e le nicchie dei terreni a tema pesano circa quanto questo scarto; per questo il vincitore dell'intera gara cambia a ogni piccola modifica dei parametri. La stella perde ancora sulle rampe/buche/gradoni, la tonda quasi non vince mai l'intera gara, il triangolo disegnato a mano è lento sulle rampe (+9%), e tutto è misurato solo in headless.
+Nota: la griglia di partenza è sfalsata di 200 px a testa; chi parte più avanti ha un piccolo vantaggio.
+
+### Fluidità di visualizzazione
+- **Interpolazione degli snapshot** (`interpolateRacers` in `game.js`): prima bici e ruote venivano disegnate con l'ultimo snapshot, che cambiava solo 20 volte al secondo, quindi si vedevano "a scatti" anche su schermi a 60/120 Hz (la telecamera era già morbida, i mezzi no). Ora si tengono gli ultimi 16 snapshot e si disegna un istante nel passato (host 45 ms, client 130 ms) interpolando posizioni e angoli (angoli sul percorso più corto); un salto grande (rimessa in pista) non viene interpolato. Non c'è controllo del giocatore, quindi il ritardo non si nota.
+- **Host**: la fisica gira ogni ~16 ms (prima 50 ms, 3 passi alla volta) e gli snapshot di rete restano a ~20/s.
+- **Taratura in anticipo:** parte appena l'host riceve ogni ruota (`receiveWheel`), durante i 30 s di disegno degli altri; al conto alla rovescia il risultato è già in cache.
+- Non misurabile qui: il Chromium headless senza GPU fa 4–5 fps, quindi la verifica va fatta su dispositivi veri.

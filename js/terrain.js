@@ -21,7 +21,7 @@ const Terrain = (() => {
   };
   const FRICTION = { start: 0.9, hills: 0.9, ice: 0.1, gravel: 0.6, water: 0.95, ramps: 1.1, finish: 0.9 };
   // lunghezza base di ogni zona (px); ogni zona la varia di ±12% in modo deterministico
-  const ZONE_LEN = { start: 1400, hills: 2000, ice: 1800, gravel: 2000, water: 2400, ramps: 2200, finish: 1400 };
+  const ZONE_LEN = { start: 1400, hills: 1750, ice: 1700, gravel: 1750, water: 2400, ramps: 2000, finish: 1400 };
   // quante zone "a tema" ha la pista: sono i tre formati che l'host può scegliere in lobby
   const LENGTHS = { corta: 7, media: 11, lunga: 15 };
 
@@ -126,10 +126,12 @@ const Terrain = (() => {
       }
       case 'mud': { // un'altura fangosa: salita, pianoro, discesa (la presa decide chi sale)
         return p.H * (smooth(u / p.rl) - smooth((u - p.rl - p.pl) / p.rl)); }
+      case 'sand': return 0;
+      case 'rack': { const w = smooth(u / 100) * smooth((L - u) / 100), f = (u / p.per) % 1; return w * p.A * (1 - Math.abs(2 * f - 1)); }   // dentiera: denti a V
       default: return 0;
     }
   }
-  const PATCH_FLAT = { arch: 1, stairs: 1, holes: 1, ripples: 0.7, logs: 0.8, mud: 1 };
+  const PATCH_FLAT = { arch: 1, stairs: 1, holes: 1, ripples: 0.7, logs: 0.8, mud: 1, rack: 0.8, sand: 1 };
   // quanto il tratto "appiattisce" l'onda del bioma sotto di sé (0..1)
   function patchMask(z, x) {
     let m = 0;
@@ -153,26 +155,28 @@ const Terrain = (() => {
   // costruttori dei tipi di patch (lunghezza e parametri); il centro lo sceglie planPatches
   function makePatch(kind, rnd) {
     switch (kind) {
-      case 'arch': return archSpec(3 + Math.floor(rnd() * 3), rnd);
+      case 'arch': return archSpec(3 + Math.floor(rnd() * 4), rnd);
       case 'stairs': { const n = 3 + Math.floor(rnd() * 2), T = 150 + Math.round(rnd() * 15), rw = 30, h = 32 + Math.round(rnd() * 8), P = 150, D = 200; return { kind, len: n * T + rw + P + D, n, T, rw, h, P, D }; }
-      case 'holes': { const k = 3 + Math.floor(rnd() * 2), sp = 340, W = 150 + Math.round(rnd() * 20); return { kind, len: k * sp, k, sp, W, D: 55, e: 30 }; }
+      case 'holes': { const k = 3 + Math.floor(rnd() * 2), sp = 340, W = 140 + Math.round(rnd() * 15); return { kind, len: k * sp, k, sp, W, D: 48, e: 30 }; }
       case 'ripples': { const lam = 100 + Math.round(rnd() * 20); return { kind, len: 8 * lam, lam, A: 17 }; }
       case 'logs': { const k = 3 + Math.floor(rnd() * 2); return { kind, len: k * 320, k, sp: 320, w: 52, H: 34 }; }
+      case 'rack': { const per = 64 + Math.round(rnd() * 12); return { kind, len: 14 * per, per, A: 15 }; }
+      case 'sand': return { kind, len: 880 + Math.round(rnd() * 120) };
       case 'mud': { const rl = 260, pl = 300; return { kind, len: 2 * rl + pl, rl, pl, H: -22 }; }
     }
     return null;
   }
   const PATCH_TABLE = {            // per bioma: [tipo, probabilità] — il resto del tempo la zona resta "pulita"
-    hills:  [['arch', 0.4], ['holes', 0.25], ['mud', 0.15], ['stairs', 0.1]],
-    ice:    [],                      // il ghiaccio agisce su tutta la zona (vedi gripAt): liscia scivola, punte mordono
-    gravel: [['ripples', 0.4], ['stairs', 0.25], ['arch', 0.1]],
+    hills:  [['arch', 0.25], ['holes', 0.3], ['mud', 0.12], ['rack', 0.2], ['sand', 0.2], ['stairs', 0.05]],
+    ice:    [['arch', 0.3], ['rack', 0.3]],   // il ghiaccio agisce su tutta la zona (vedi gripAt); dove c'è un tratto a tema vale quello
+    gravel: [['ripples', 0.22], ['stairs', 0.2], ['rack', 0.3], ['sand', 0.2], ['arch', 0.1]],
     water:  [],                      // laguna: ponti e bacini (nessun terreno speciale)
-    ramps:  [['logs', 0.3], ['mud', 0.35]],
+    ramps:  [['logs', 0.4], ['mud', 0.27], ['sand', 0.15]],
   };
   function planPatches(rnd, force) {
     PATCHES = [];
     // "sapore" della gara: ogni pista accentua alcuni terreni e ne riduce altri, così non vince sempre la stessa forma
-    const flavor = {}; ['arch', 'mud', 'holes', 'stairs', 'ripples', 'logs'].forEach(k => { flavor[k] = 0.2 + 2.1 * rnd() * rnd() + 0.5 * rnd(); });
+    const flavor = {}; ['arch', 'mud', 'holes', 'stairs', 'ripples', 'logs', 'rack', 'sand'].forEach(k => { flavor[k] = 0.2 + 2.1 * rnd() * rnd() + 0.5 * rnd(); });
     ZONES.forEach(z => {
       z.patches = [];
       if (force && force.nopatch) return;
@@ -183,7 +187,7 @@ const Terrain = (() => {
         const spec = typeof kind === 'string' ? makePatch(kind, rnd) : kind;
         if (!spec) return;
         // intervalli liberi: lontano dai bordi della zona e dal vuoto sotto un ponte
-        const lo = z.start + 260, hi = z.end - 260;
+        const lo = z.start + 200, hi = z.end - 200;
         const blocks = z.gap ? [[z.gap.g0 - 220, z.gap.g1 + 220]] : [];
         const free = []; let cur = lo;
         for (const [b0, b1] of blocks) { if (b0 > cur) free.push([cur, Math.min(b0, hi)]); cur = Math.max(cur, b1); }
@@ -395,7 +399,9 @@ const Terrain = (() => {
     get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; }, get LILIES() { return LILIES; },
     get BRIDGES() { return BRIDGES; }, get PATCHES() { return PATCHES; },
     // tipo di presa speciale sotto la ruota: 'mud' (fango), 'ice' (ghiaccio) o null
-    gripAt: x => { const z = zoneAt(x); if (z.key === 'ice') return 'ice'; if (z.patches) for (const p of z.patches) if (x >= p.a && x <= p.b) { if (p.kind === 'mud') return 'mud'; if (p.kind === 'arch' || p.kind === 'ripples') return 'rough'; } return null; },
+    // N lati della strada ad archi sotto la ruota (0 se non è una strada ad archi): serve a chi ha esattamente N punte
+    gripN: x => { const z = zoneAt(x); if (z.patches) for (const p of z.patches) if (p.kind === 'arch' && x >= p.a && x <= p.b) return p.n; return 0; },
+    gripAt: x => { const z = zoneAt(x); if (z.patches) for (const p of z.patches) if (x >= p.a && x <= p.b) { if (p.kind === 'mud') return 'mud'; if (p.kind === 'arch' || p.kind === 'ripples') return 'rough'; if (p.kind === 'rack') return 'rack'; if (p.kind === 'sand') return 'sand'; } return z.key === 'ice' ? 'ice' : null; },
     _archSpec: archSpec,
     patchAt: x => { const z = zoneAt(x); for (const p of z.patches) if (x >= p.a && x <= p.b) return p; return null; },
     RAMP_PERIOD, RAMP_RISE, RAMP_LEAD,
