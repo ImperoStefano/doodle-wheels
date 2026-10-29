@@ -48,6 +48,14 @@ const Sfx = (() => {
   const land = v => { const n = performance.now(); if (n - lastLand < 120 || v < 2.2) return; lastLand = n; const k = Math.min(1, (v - 2) / 9); tone(150, 0.18, 'sine', 0.12 + 0.3 * k, 0, 55); puff('lowpass', 900, 0.7, 0.14, 0.1 + 0.25 * k); };
   const bump = k => { const n = performance.now(); if (n - lastBump < 90) return; lastBump = n; puff('bandpass', 520, 1.2, 0.07, 0.06 + 0.12 * k); };
   const splash = k => { const n = performance.now(); if (n - lastSplash < 170) return; lastSplash = n; puff('bandpass', 1500, 0.9, 0.16, 0.05 + 0.12 * k, 0, 700); };
+  // portali: salto = schizzo d'inchiostro che sale (avanti) o scende (indietro); specchio = nastro al contrario; uscita = campanella
+  const portal = (type, d) => {
+    if (type === 's') { const up = d > 0; puff('bandpass', up ? 500 : 2400, 1.1, 0.34, 0.2, 0, up ? 2400 : 500); tone(up ? 330 : 660, 0.3, 'triangle', 0.2, 0, up ? 880 : 220); tone(up ? 660 : 330, 0.22, 'sine', 0.12, 0.08); }
+    else if (type === 'm') { puff('bandpass', 3200, 1.4, 0.6, 0.22, 0, 260); tone(900, 0.6, 'sawtooth', 0.1, 0, 110); [0, 0.14, 0.28].forEach((t, i) => tone(700 - i * 120, 0.08, 'square', 0.1, t)); }
+    else { tone(880, 0.3, 'triangle', 0.2); tone(1320, 0.42, 'triangle', 0.18, 0.12); tone(1760, 0.3, 'sine', 0.1, 0.2); }
+  };
+  // colpo di uno spigolo della ruota sul terreno: breve e sordo, più forte con la velocità
+  const clack = v => { puff('bandpass', 380 + 260 * v, 1.4, 0.05, 0.05 + 0.1 * v); tone(120 + 60 * v, 0.06, 'sine', 0.05 + 0.08 * v, 0, 70); };
   const redraw = () => { tone(520, 0.1, 'triangle', 0.14); tone(780, 0.14, 'triangle', 0.14, 0.08); };
 
   // ---- rotolamento continuo ----------------------------------------------------------------------------
@@ -62,10 +70,15 @@ const Sfx = (() => {
     s.buffer = noiseBuf; s.loop = true; flt.type = 'lowpass'; flt.frequency.value = 500; g.gain.value = 0; am.gain.value = 1;
     lfo.type = 'square'; lfo.frequency.value = 6; lg.gain.value = 0; lfo.connect(lg); lg.connect(am.gain);
     s.connect(flt); flt.connect(am); am.connect(g); g.connect(master); s.start(); lfo.start();
-    roll = { s, flt, g, lg, lfo, am };
+    // ronzio morbido che sale con la velocità (due oscillatori leggermente scordati)
+    const hum = ctx.createOscillator(), hum2 = ctx.createOscillator(), hg = ctx.createGain(), hf = ctx.createBiquadFilter();
+    hum.type = 'triangle'; hum2.type = 'sine'; hum.frequency.value = 80; hum2.frequency.value = 121; hg.gain.value = 0; hf.type = 'lowpass'; hf.frequency.value = 420;
+    hum.connect(hf); hum2.connect(hf); hf.connect(hg); hg.connect(master); hum.start(); hum2.start();
+    roll = { s, flt, g, lg, lfo, am, hum, hum2, hg, tp: 0, tt: performance.now() };
   }
   // chiamata a ogni fotogramma per la propria bici: speed px/tick, surf = chiave di SURF, air = in aria, per = periodo del ritmo (px)
-  function update(speed, surf, air, per) {
+  // tick: colpi al secondo delle ruote poligonali (0 = ruota tonda, rotolamento liscio)
+  function update(speed, surf, air, per, tick) {
     if (!ctx) return; if (!roll) rollStart(); if (!roll) return;
     const t = ctx.currentTime, p = SURF[surf] || SURF.grass;
     const v = Math.max(0, Math.min(1, speed / 7.5)), on = ok() && !air && speed > 0.4;
@@ -73,9 +86,14 @@ const Sfx = (() => {
     roll.g.gain.setTargetAtTime(on ? p[3] * (0.25 + 0.75 * v) : 0, t, 0.07);
     // modulazione: per i terreni a ritmo la frequenza segue l'avanzamento (un colpo per periodo di terreno)
     const m = p[4], rate = per > 0 ? Math.min(28, speed * 60 / per) : 7 + 14 * v;
+    // ronzio e colpi delle ruote
+    roll.hum.frequency.setTargetAtTime(70 + 120 * v, t, 0.12); roll.hum2.frequency.setTargetAtTime((70 + 120 * v) * 1.5 * 1.004, t, 0.12);
+    roll.hg.gain.setTargetAtTime(on ? 0.028 + 0.05 * v : 0, t, 0.1);
+    const nw = performance.now(), dtm = Math.min(100, nw - roll.tt); roll.tt = nw;
+    if (on && tick > 0.5) { roll.tp += Math.min(18, tick) * dtm / 1000; let n = 0; while (roll.tp >= 1 && n < 3) { roll.tp -= 1; n++; clack(v); } if (roll.tp > 3) roll.tp = 0; } else roll.tp = 0;
     roll.lfo.frequency.setTargetAtTime(Math.max(1, rate), t, 0.05); roll.lg.gain.setTargetAtTime(m * 0.5, t, 0.05); roll.am.gain.setTargetAtTime(1 - m * 0.5, t, 0.05);
   }
-  function silence() { if (roll && ctx) { roll.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); } }
+  function silence() { if (roll && ctx) { roll.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); roll.hg.gain.setTargetAtTime(0, ctx.currentTime, 0.05); } }
 
   // ---- muto -------------------------------------------------------------------------------------------
   function setMuted(m) {
@@ -91,5 +109,5 @@ const Sfx = (() => {
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('button, .btn'); if (t && t.id !== 'btn-sound') { unlock(); click(); } }, true);
     document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) ctx.suspend(); else if (!muted) ctx.resume(); });
   }
-  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, update, silence, setMuted, get muted() { return muted; } };
+  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, portal, update, silence, setMuted, get muted() { return muted; } };
 })();

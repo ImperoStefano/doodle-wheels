@@ -12,7 +12,7 @@
  */
 const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
-  let ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], PATCHES = [];
+  let ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], PATCHES = [], PORTALS = [];
 
   const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps'];
   const ZONE_COLORS = {
@@ -243,6 +243,48 @@ const Terrain = (() => {
     });
   }
 
+
+  // ---- portali (modalità pazza) ----------------------------------------------------------------------------
+  //  shift   anello d'inchiostro: a ogni passaggio ti sposta avanti o indietro di 150–400 px, a caso (lo decide l'host)
+  //  mirror  ti specchia la vista (solo a te) e la bici va davvero all'indietro, come se corresse verso il traguardo ma al contrario
+  //  exit    portale d'uscita, ~650–900 px dietro lo specchio: chi arriva da dietro lo attraversa, rimette tutto com'era
+  // Posizioni deterministiche dal layout (RNG separato: la pista normale non cambia). Mai su ponti/vuoti né su tratti a tema,
+  // e l'intero tratto fra uscita e specchio è libero, così la retromarcia si fa su terreno pulito.
+  function planPortals(keys) {
+    PORTALS = [];
+    const rnd = mulberry32(hashStr(keys.join(',') + '#portali'));
+    const nz = ZONES.length - 2, lo = ZONES[1].start + 900, hi = FINISH_X - 650;
+    const free = (a, b) => {
+      for (const z of ZONES) {
+        if (z.gap && a < z.gap.g1 + 130 && b > z.gap.g0 - 130) return false;
+        for (const p of z.patches || []) if (a < p.b + 90 && b > p.a - 90) return false;
+      }
+      return a >= lo - 700 && b <= FINISH_X - 400;
+    };
+    const taken = [];     // intervalli già occupati da portali
+    const clear = (a, b) => taken.every(t => b < t[0] - 330 || a > t[1] + 330);
+    const spread = (n, validAt, make) => {
+      for (let k = 0; k < n; k++) {
+        const tgt = lo + (hi - lo) * ((k + 0.5) / n) + (rnd() - 0.5) * 500, cands = [];
+        for (let x = lo; x <= hi; x += 40) cands.push(x);
+        cands.sort((a, b) => Math.abs(a - tgt) - Math.abs(b - tgt));
+        for (const x of cands) { const r = validAt(x); if (r && clear(r[0], r[1])) { taken.push(r); make(x, r); break; } }
+      }
+    };
+    const pairs = nz <= 7 ? 1 : nz <= 11 ? 2 : 3, shifts = nz <= 7 ? 2 : nz <= 11 ? 3 : 5;
+    let id = 0;
+    spread(pairs, x => { const R = 650 + Math.round(rnd() * 250); return free(x - R - 70, x + 70) ? [x - R - 70, x + 70, R] : null; },
+      (x, r) => { const R = r[2]; PORTALS.push({ id: id++, kind: 'exit', x: Math.round(x - R) }, { id: id++, kind: 'mirror', x: Math.round(x), exit: id - 2 }); });
+    spread(shifts, x => free(x - 120, x + 120) ? [x - 120, x + 120] : null, x => PORTALS.push({ id: id++, kind: 'shift', x: Math.round(x) }));
+    PORTALS.sort((a, b) => a.x - b.x);
+  }
+  // terreno su cui si può atterrare dopo un salto: non sul vuoto/ponte, non in acqua, dentro la pista
+  function landOk(x) {
+    if (x < TRACK_START + 500 || x > FINISH_X - 300) return false;
+    for (const z of ZONES) if (z.gap && x > z.gap.g0 - 150 && x < z.gap.g1 + 150) return false;
+    return true;
+  }
+
   // ---- costruzione delle zone ---------------------------------------------------------------
   function applyLayout(layoutKeys, force) {
     const keys = (layoutKeys && layoutKeys.length ? layoutKeys : generateRandomLayout()).slice();
@@ -271,6 +313,7 @@ const Terrain = (() => {
 
     if (!(force && force.nogap)) planGaps(rnd);
     planPatches(rnd, force);
+    PORTALS = []; if (force && force.crazy) planPortals(keys);
     FLOWERS = generateFlowers(rnd);
     LILIES = generateLilies();
   }
@@ -441,7 +484,7 @@ const Terrain = (() => {
     LENGTHS,
     get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; },
     get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; }, get LILIES() { return LILIES; },
-    get BRIDGES() { return BRIDGES; }, get PATCHES() { return PATCHES; },
+    get BRIDGES() { return BRIDGES; }, get PATCHES() { return PATCHES; }, get PORTALS() { return PORTALS; }, landOk,
     // tipo di presa speciale sotto la ruota: 'mud' (fango), 'ice' (ghiaccio) o null
     // N lati della strada ad archi sotto la ruota (0 se non è una strada ad archi): serve a chi ha esattamente N punte
     gripN: x => { const z = zoneAt(x); if (z.patches) for (const p of z.patches) if (p.kind === 'arch' && x >= p.a && x <= p.b) return p.n; return 0; },

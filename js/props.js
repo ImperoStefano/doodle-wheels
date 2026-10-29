@@ -347,6 +347,78 @@ const Props = (() => {
     }
   }
 
+
+  // ---- portali (modalità pazza): anelli d'inchiostro; si attraversano una volta sola e poi si dissolvono ----
+  //  salto  = carta chiara con vortice e freccia ↔ · specchio = nero con ⇄ bianco · uscita = anello tratteggiato con freccia a sinistra
+  function drawPortals(ctx, camX, w, gy, t, st, layer) {
+    const P = Terrain.PORTALS; if (!P || !P.length) return;
+    for (let i = 0; i < P.length; i++) {
+      const q = P[i], sx = q.x - camX; if (sx < -110 || sx > w + 110) continue;
+      const g = st.gone[q.id]; let k = 1, d = 0;
+      if (g) { d = (st.now - g) / 700; if (d >= 1) continue; k = 1 - d * d; }
+      portalDraw(ctx, q, sx, gy - Terrain.height(q.x), t, k, d, st, layer);
+    }
+  }
+  function portalDraw(ctx, q, sx, by, t, k, d, st, layer) {
+    const ry = 92 * k, rx = 42 * k, cy = by - 92 * k - 3, seed = q.id * 1.7;
+    const ring = (n, f) => { ctx.beginPath(); for (let j = 0; j <= n; j++) { const a = f + (j / n) * TAU * (f === undefined ? 1 : 1); const wob = 1 + 0.05 * Math.sin(3 * a + t * 2 + seed) + 0.035 * Math.sin(5 * a - t * 3 + seed); const x = sx + Math.cos(a) * rx * wob, y = cy + Math.sin(a) * ry * wob; if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } };
+    const dim = q.kind === 'exit' && !st.mirrored ? 0.38 : 1;
+    ctx.save(); ctx.globalAlpha = dim; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    if (layer === 'back') {
+      // pozza d'inchiostro alla base
+      ctx.fillStyle = 'rgba(12,12,18,0.55)'; ctx.beginPath(); ctx.ellipse(sx, by + 2, 34 * k, 5 * k, 0, 0, TAU); ctx.fill();
+      // riempimento
+      ring(36, 0);
+      ctx.fillStyle = q.kind === 'mirror' ? 'rgba(14,14,22,0.88)' : q.kind === 'shift' ? 'rgba(250,247,238,0.82)' : 'rgba(250,247,238,0.45)'; ctx.fill();
+      ctx.save(); ctx.clip();
+      // vortice a spirale d'inchiostro, come nel riferimento: fasce ondulate piene e sovrapposte che scorrono verso il centro,
+      // una spirale al centro e un'ombra più chiara sul bordo (salto: nero su carta chiara · specchio: chiaro sul nero · uscita: leggero)
+      const dark = q.kind === 'mirror', ex = q.kind === 'exit', N = ex ? 4 : 7, col = dark ? '236,236,252' : '12,12,18';
+      const bands = [];
+      for (let j = 0; j < N; j++) bands.push({ j, f: 1 - ((j + t * 0.4) % N) / N });
+      bands.sort((p, q2) => q2.f - p.f);   // dalle più grandi alle più piccole
+      const blob = (e, ph, amp) => { ctx.beginPath(); for (let m = 0; m <= 30; m++) { const aa = m / 30 * TAU, wob = 1 + amp * Math.sin(3 * aa + t * 1.1 + ph + seed) + amp * 0.6 * Math.sin(5 * aa - t * 1.6 + ph * 1.7) + amp * 0.35 * Math.sin(2 * aa + t * 0.7 - ph); const x = sx + Math.cos(aa) * rx * e * wob, y = cy + Math.sin(aa) * ry * e * wob; if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); };
+      for (const bd of bands) {
+        const e = 0.08 + 1.02 * bd.f, shade = (dark ? (bd.j % 2 ? 0.1 : 0.2) : (bd.j % 2 ? 0.04 : 0.13)) * (ex ? 0.55 : 1) * Math.min(1, bd.f * 3);
+        blob(e, bd.j * 1.9, 0.10); ctx.fillStyle = `rgba(${col},${shade.toFixed(3)})`; ctx.fill();
+        ctx.strokeStyle = `rgba(${col},${(0.55 + 0.4 * bd.f).toFixed(3)})`; ctx.lineWidth = 1.4 + 2.2 * bd.f; ctx.stroke();
+      }
+      if (!ex) {
+        ctx.strokeStyle = `rgba(${col},0.95)`; ctx.lineWidth = 2.6; ctx.beginPath();
+        for (let m = 0; m <= 46; m++) { const u = m / 46, aa = u * 8 + t * 2.2, rr = 0.02 + 0.3 * u; const x = sx + Math.cos(aa) * rx * rr, y = cy + Math.sin(aa) * ry * rr; if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+        ctx.stroke();
+      }
+      ctx.restore();
+      // glifo al centro
+      ctx.strokeStyle = q.kind === 'mirror' ? '#f2f2ff' : '#0c0c12'; ctx.lineWidth = 3.4;
+      const gy0 = cy, a = 9 * k;
+      if (q.kind !== 'exit') { ctx.fillStyle = q.kind === 'mirror' ? 'rgba(14,14,22,0.94)' : 'rgba(250,247,238,0.94)'; ctx.beginPath(); ctx.ellipse(sx, gy0, rx * 0.62, 21 * k, 0, 0, TAU); ctx.fill(); }
+      const arrow = (x0, y0, x1) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); const s = x1 > x0 ? -1 : 1; ctx.moveTo(x1 + s * 6, y0 - 5); ctx.lineTo(x1, y0); ctx.lineTo(x1 + s * 6, y0 + 5); ctx.stroke(); };
+      if (q.kind === 'shift') { arrow(sx, gy0, sx + a); arrow(sx, gy0, sx - a); }
+      else if (q.kind === 'mirror') { arrow(sx - a, gy0 - 8, sx + a); arrow(sx + a, gy0 + 8, sx - a); }
+      else arrow(sx + a, gy0, sx - a);
+    }
+    // anello (nel livello "front" solo la metà destra, così la bici sembra entrare nel portale)
+    const ink = '#0c0c12';
+    ctx.strokeStyle = ink; ctx.lineWidth = layer === 'back' ? 7 * (0.5 + 0.5 * k) : 5.5 * (0.5 + 0.5 * k);
+    if (q.kind === 'exit') ctx.setLineDash([9, 7]);
+    if (layer === 'back') { ring(36, 0); ctx.stroke(); }
+    else { ctx.beginPath(); for (let j = 0; j <= 18; j++) { const a = -Math.PI / 2 + (j / 18) * Math.PI, wob = 1 + 0.05 * Math.sin(3 * a + t * 2 + seed) + 0.035 * Math.sin(5 * a - t * 3 + seed); const x = sx + Math.cos(a) * rx * wob, y = cy + Math.sin(a) * ry * wob; if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.stroke(); }
+    ctx.setLineDash([]);
+    if (layer === 'back') {
+      // sbavatura d'inchiostro attorno al bordo e puntini che girano (come i granelli del riferimento)
+      ctx.fillStyle = 'rgba(12,12,18,0.07)'; ctx.beginPath(); for (let m = 0; m <= 36; m++) { const aa = m / 36 * TAU, wob = 1.16 + 0.07 * Math.sin(4 * aa + t * 1.2 + seed); const x = sx + Math.cos(aa) * rx * wob, y = cy + Math.sin(aa) * ry * wob; if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.fill();
+      ctx.fillStyle = 'rgba(12,12,18,0.7)';
+      for (let m = 0; m < 12; m++) { const aa = m * 0.52 + t * (0.5 + (m % 3) * 0.15) + seed, rr = 1.2 + 0.22 * ((m * 5) % 4) / 3; ctx.beginPath(); ctx.arc(sx + Math.cos(aa) * rx * rr, cy + Math.sin(aa) * ry * rr, 1.2 + (m % 3) * 0.7, 0, TAU); ctx.fill(); }
+      // gocce che colano dal bordo basso
+      ctx.fillStyle = ink;
+      for (let j = 0; j < 3; j++) { const dx = (j - 1) * rx * 0.6, ph = (t * 0.35 + j * 0.37 + seed) % 1, ln = 6 + 14 * ph; ctx.beginPath(); ctx.ellipse(sx + dx, by - 3 + ln * 0.4, 2.2, 3 + ln * 0.35, 0, 0, TAU); ctx.fill(); }
+      // dissolvenza: schizzi che cadono
+      if (d > 0) for (let j = 0; j < 9; j++) { const a = j * 0.7 + seed, rr = 14 + d * 46 * (0.6 + 0.4 * ((j * 7) % 5) / 4); ctx.globalAlpha = 1 - d; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * rr, by - 70 + Math.sin(a) * rr * 1.3 + d * d * 50, 3.2 * (1 - d) + 1, 0, TAU); ctx.fill(); }
+    }
+    ctx.restore();
+  }
+
   // Dentiera: ballast di ghiaia, traversine di legno, rotaia d'acciaio con i denti a V e i bulloni, paraurti a strisce
   function rackRail(ctx, p, camX, x0, x1, H, sub, t) {
     const tap = tapOf(p, 90);
@@ -650,5 +722,5 @@ const Props = (() => {
     });
   }
 
-  return { drawBridges, drawRamps, drawSigns, drawFinish, drawPatches };
+  return { drawBridges, drawRamps, drawSigns, drawFinish, drawPatches, drawPortals };
 })(); // props

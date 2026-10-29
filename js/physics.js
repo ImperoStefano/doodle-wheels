@@ -278,7 +278,7 @@ const Sim = (() => {
     racers[id] = {
       chassis, fw, rw, axF, axR, color, name,
       finished: false, finishTime: null,
-      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0,
+      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, cd: {}, used: {}, pe: 0, pt: '', pd: 0,
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
   }
@@ -488,7 +488,7 @@ const Sim = (() => {
   }
 
   function unstick(r) {
-    const dist = Math.min(HOP_MAX_X, HOP_X * (1 + r.stallStreak));
+    const dist = Math.min(HOP_MAX_X, HOP_X * (1 + r.stallStreak)) * (r.dir || 1);   // in retromarcia il salto è all'indietro
     const cx = r.chassis.position.x + dist, cy = r.chassis.position.y - HOP_Y;
     Matter.Body.setPosition(r.chassis, { x: cx, y: cy });
     Matter.Body.setAngle(r.chassis, 0);            // also rights a flipped bike
@@ -500,8 +500,8 @@ const Sim = (() => {
     }
     r.hops++;
     r.stallStreak++;
-    r.bestX = cx;   // new baseline: only real driving from here counts as progress
-    r.hopBaseX = cx;
+    r.bestX = cx * (r.dir || 1);   // new baseline: only real driving from here counts as progress (in coordinate di avanzamento: dir·x)
+    r.hopBaseX = cx * (r.dir || 1);
   }
 
   // Spinta delle due ruote: tetto di velocità (governor), compensazione di forma, presa su fango/ghiaccio/strade dissestate
@@ -514,11 +514,11 @@ const Sim = (() => {
     const c = r.roll * (Array.isArray(r.cal) ? r.cal[r.secOf ? r.secOf(cx) : (SEC_OF_KEY[Terrain.zoneKeyAt ? Terrain.zoneKeyAt(cx) : ''] || 0)] : (r.cal || 1));
     // la presa sposta anche il tetto di velocità: sul terreno sbagliato la bici non arriva a V_CAP, su quello giusto sì (o poco oltre)
     const capK = Math.min(CAP_GRIP_MAX, (gf + gr) / 2);
-    const gov = r.chassis.velocity.x > V_CAP * capK;
+    const dir = r.dir || 1, gov = dir * r.chassis.velocity.x > V_CAP * capK;
     // tetto di giro a terra: la ruota non gira più di SLIP_MAX volte quanto serve per l'avanzamento (partenza: velocità minima di riferimento)
     const lim = TUNE.slipMax > 0 && r.reff > 0 ? TUNE.slipMax * Math.max(r.chassis.velocity.x, TUNE.slipVmin) / r.reff : undefined;
-    driveWheel(r.fw, gov ? 0 : MOTOR_SPEED * TUNE.speed * ramp * gf * c, r.accelK, lim);
-    driveWheel(r.rw, gov ? 0 : MOTOR_SPEED * TUNE.speed * ramp * gr * c, r.accelK, lim);
+    driveWheel(r.fw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gf * c, r.accelK, lim);
+    driveWheel(r.rw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gr * c, r.accelK, lim);
   }
 
 
@@ -699,16 +699,53 @@ const Sim = (() => {
   function calOf(vertices) { const v = calCache.get(calKey(vertices)); return Array.isArray(v) ? v : [1, 1, 1, 1]; }
 
   // Per-racer logic, runs at the fixed 60Hz step.
+  // Portali (modalità pazza): attraversati lungo x fra due passi. L'host decide tutto, gli altri vedono solo gli effetti.
+  function portalEvent(r, type, dx, id) { r.pe++; r.pt = type; r.pd = dx || 0; r.pi = id; }
+  function teleport(r, dx) {
+    const cx = r.chassis.position.x + dx; let top = 1e9;
+    for (let x = cx - 140; x <= cx + 140; x += 20) top = Math.min(top, GROUND_Y - Terrain.height(x));   // il punto più alto del terreno sotto la bici
+    const dy = (top - 150) - r.chassis.position.y;
+    for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.translate(b, { x: dx, y: dy });
+  }
+  function checkPortals(r, elapsed) {
+    const P = Terrain.PORTALS; if (!P || !P.length) return;
+    const x = r.chassis.position.x, lx = r.lx; r.lx = x;
+    if (r.dir === -1) {   // rete di sicurezza: se la bici ha oltrepassato l'uscita senza "toccarla" (sblocco all'indietro), torna comunque normale
+      for (const q of P) if (q.kind === 'mirror' && r.used[q.id]) { const ex = P.find(e => e.id === q.exit); if (ex && !r.used[ex.id] && x <= ex.x) { r.used[ex.id] = true; r.dir = 1; r.bestX = x; r.hopBaseX = x; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'x', 0, ex.id); return; } }
+    }
+    if (x === lx) return;
+    for (const q of P) {
+      if ((lx - q.x) * (x - q.x) > 0 || (lx === q.x && x === q.x)) continue;
+      if (r.used[q.id]) continue;   // ogni portale si attraversa una volta sola: poi sparisce, l'esito non si può ritirare
+      if (q.kind === 'shift') {
+        let d = 150 + Math.random() * 250; if (Math.random() < 0.5) d = -d;
+        if (!Terrain.landOk(x + d)) d = -d; if (!Terrain.landOk(x + d)) continue;
+        r.used[q.id] = true; teleport(r, d); r.lx = r.chassis.position.x;
+        r.bestX = r.dir * r.chassis.position.x; r.hopBaseX = r.bestX; r.progressAt = elapsed; portalEvent(r, 's', d, q.id);
+      } else if (q.kind === 'mirror') {
+        if (r.dir !== 1) continue;
+        r.used[q.id] = true; r.dir = -1;
+        r.bestX = -x; r.hopBaseX = -x; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'm', 0, q.id);
+      } else if (q.kind === 'exit') {
+        if (r.dir !== -1) continue;
+        r.used[q.id] = true; r.dir = 1;
+        r.bestX = x; r.hopBaseX = x; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'x', 0, q.id);
+      }
+    }
+  }
+
   function stepRacer(r, elapsed) {
     if (r.finished) return;
 
     driveRacer(r, elapsed, true);
+    checkPortals(r, elapsed);
 
-    // progress = furthest x reached; if it hasn't improved enough for STALL_MS, hop
-    if (r.chassis.position.x > r.bestX + STALL_MIN_PROGRESS) {
-      r.bestX = r.chassis.position.x;
+    // progress = furthest x reached IN THE DIRECTION OF TRAVEL (dir·x); if it hasn't improved enough for STALL_MS, hop
+    const dir = r.dir || 1, px = dir * r.chassis.position.x;
+    if (px > r.bestX + STALL_MIN_PROGRESS) {
+      r.bestX = px;
       r.progressAt = elapsed;
-      if (r.chassis.position.x > r.hopBaseX + 250) r.stallStreak = 0; // reset only after real driving
+      if (px > r.hopBaseX + 250) r.stallStreak = 0; // reset only after real driving
     } else if (elapsed - r.progressAt > STALL_MS) {
       unstick(r);
       r.progressAt = elapsed;
@@ -721,7 +758,7 @@ const Sim = (() => {
       });
     }
 
-    if (r.chassis.position.x >= Terrain.FINISH_X) {
+    if (dir === 1 && r.chassis.position.x >= Terrain.FINISH_X) {
       r.finished = true;
       r.finishTime = elapsed;
       if (firstFinishAt === null) firstFinishAt = elapsed;
@@ -759,7 +796,8 @@ const Sim = (() => {
       fwX: r.fw.position.x, fwY: r.fw.position.y, fwAngle: r.fw.angle,
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
-      finished: r.finished, finishTime: r.finishTime
+      finished: r.finished, finishTime: r.finishTime,
+      dir: r.dir || 1, pe: r.pe || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi
     }));
   }
 

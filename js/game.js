@@ -7,7 +7,8 @@
     btnJoin: document.getElementById('btn-join'), menuError: document.getElementById('menu-error'),
     roomCode: document.getElementById('room-code'), playerList: document.getElementById('player-list'),
     btnStartRace: document.getElementById('btn-start-race'), lobbyHint: document.getElementById('lobby-hint'),
-    lenPicker: document.getElementById('len-picker'), lenHint: document.getElementById('len-hint'),
+    lenPicker: document.getElementById('len-picker'), lenHint: document.getElementById('len-hint'), modePicker: document.getElementById('mode-picker'), modeHint: document.getElementById('mode-hint'),
+    raceWrap: document.querySelector('.race-wrap'), portalFlash: document.getElementById('portal-flash'), portalNote: document.getElementById('portal-note'),
     drawTimer: document.getElementById('draw-timer'), drawCanvas: document.getElementById('draw-canvas'),
     btnClear: document.getElementById('btn-clear'), btnSubmitWheel: document.getElementById('btn-submit-wheel'),
     drawWait: document.getElementById('draw-wait'), redrawUi: document.getElementById('redraw-ui'),
@@ -67,7 +68,7 @@
   // pista invece di restare incollati a un fotogramma stretto come su desktop.
   let viewScale = 1, viewW = 0, viewH = 0, minimapMetrics = { w: 0, h: 0 };
   // lunghezza della pista scelta dall'host in lobby, e ultima pista giocata (per "Rigioca stessa pista")
-  let trackLen = 'lunga', currentLayout = null, keepTrack = false;
+  let trackLen = 'lunga', currentLayout = null, keepTrack = false, crazy = false;
   let lastCallSent = false, lastCallEnd = 0;
 
   function showScreen(name) { ['menu', 'lobby', 'draw', 'race', 'results'].forEach(s => els[s].classList.toggle('screen--active', s === name)); }
@@ -99,8 +100,8 @@
       els.playerList.appendChild(li);
     });
     const c = Object.keys(Net.players).length;
-    if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; els.lobbyHint.textContent = ''; els.lenPicker.style.display = 'block'; }
-    else { els.btnStartRace.style.display = 'none'; els.lobbyHint.textContent = I18n.t('lobby.hostcfg'); els.lenPicker.style.display = 'none'; }
+    if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; els.lobbyHint.textContent = ''; els.lenPicker.style.display = els.modePicker.style.display = 'block'; }
+    else { els.btnStartRace.style.display = 'none'; els.lobbyHint.textContent = I18n.t('lobby.hostcfg'); els.lenPicker.style.display = els.modePicker.style.display = 'none'; }
   }
 
   // Scelta lunghezza pista (solo host). Le durate sono quelle misurate in simulazione con ruote diverse.
@@ -116,9 +117,15 @@
     els.lenHint.textContent = I18n.t('len.hint.' + trackLen);
   }));
   els.lenHint.textContent = I18n.t('len.hint.' + trackLen);
+  els.modePicker.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
+    crazy = btn.dataset.mode === 'crazy';
+    els.modePicker.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('seg-btn--on', b === btn));
+    els.modeHint.textContent = I18n.t('mode.hint.' + (crazy ? 'crazy' : 'normal'));
+  }));
+  els.modeHint.textContent = I18n.t('mode.hint.normal');
 
   I18n.onChange(() => {
-    els.lenHint.textContent = I18n.t('len.hint.' + trackLen);
+    els.lenHint.textContent = I18n.t('len.hint.' + trackLen); els.modeHint.textContent = I18n.t('mode.hint.' + (crazy ? 'crazy' : 'normal'));
     if (els.btnRedrawTrigger && els.btnRedrawTrigger.textContent) els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft });
     if (lastCallEnd) updateLastCall();
     try { if (els.lobby.classList.contains('screen--active')) renderPlayerList(); } catch (e) {}
@@ -146,7 +153,7 @@
   Net.on('data', ({ from, data }) => {
     if (data.type === 'goToDraw') enterDrawPhase();
     if (data.type === 'wheel' && Net.isHost) receiveWheel(from, data.vertices);
-    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; Terrain.applyLayout(data.trackLayout); startCountdown(data.startTime); }
+    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; Terrain.applyLayout(data.trackLayout, crazy ? { crazy: true } : undefined); startCountdown(data.startTime); }
     if (data.type === 'snap') applySnapshot(data.racers, data.ts);
     if (data.type === 'results') showResults(data.standings);
     if (data.type === 'lastCall') showLastCall(data.ms);
@@ -211,7 +218,7 @@
       // "Rigioca stessa pista" riusa il percorso appena giocato; altrimenti ne nasce uno nuovo della lunghezza scelta
       const track = (keepTrack && currentLayout) ? currentLayout : Terrain.generateRandomLayout(Terrain.LENGTHS[trackLen] || Terrain.LENGTHS.lunga);
       currentLayout = track; keepTrack = false;
-      Terrain.applyLayout(track); Net.broadcast({ type: 'allReady', wheels, startTime: start, trackLayout: track }); startCountdown(start);
+      Terrain.applyLayout(track, crazy ? { crazy: true } : undefined); Net.broadcast({ type: 'allReady', wheels, startTime: start, trackLayout: track, crazy }); startCountdown(start);
     }
   }
 
@@ -241,7 +248,7 @@
     startRenderLoop();
     Intro.init(); Intro.play(startTime);
 
-    let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false;
+    resetPortals(); let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false; aud.ang = undefined;
     const tick = setInterval(() => {
       const left = startTime - Date.now();
       if (left <= 3000 && Intro.isRunning()) Intro.stop();   // il 3-2-1 non si sovrappone mai all'intro
@@ -315,9 +322,9 @@
         if (dt > 1) {
           const kx = Math.min(rt - b.t, 120) / dt;
           for (const id in b.m) {
-            const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250) { latestRacers[id] = rb; continue; }
+            const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
-            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx,
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
           }
           return;
@@ -328,16 +335,16 @@
     const k = b.t > a.t ? Math.max(0, Math.min(1, (rt - a.t) / (b.t - a.t))) : 1;
     for (const id in b.m) {
       const rb = b.m[id], ra = a.m[id];
-      if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250) { latestRacers[id] = rb; continue; }   // nuovo arrivato o salto (rimessa in pista): niente scivolata
+      if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }   // portale (teletrasporto) o nuovo arrivato o salto (rimessa in pista): niente scivolata
       latestRacers[id] = {
         id, finished: rb.finished, finishTime: rb.finishTime,
-        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi,
         fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
         rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
       };
     }
   }
-  function setupCanvas() { ctx2d = els.raceCanvas.getContext('2d'); minimapCtx = els.minimap.getContext('2d'); resizeCanvas(); }
+  function setupCanvas() { ctx2d = els.raceCanvas.getContext('2d'); installTextFix(ctx2d); minimapCtx = els.minimap.getContext('2d'); resizeCanvas(); }
 
   // Lo zoom guardava solo la larghezza: un telefono ruotato in orizzontale è largo (sopra la
   // soglia, quindi "zoom 1, nessun ritocco") ma bassissimo — bici enormi, HUD che copre tutto,
@@ -405,8 +412,8 @@
     if (!t) return;
     if (!dt) dt = 1 / 60;
     cam.vx += ((t.vx || 0) * 60 - cam.vx) * camK(3, dt);
-    const speed = Math.max(0, Math.min(1, cam.vx / 520));
-    cam.lead += ((0.34 - 0.13 * speed) - cam.lead) * camK(2.5, dt);
+    const speed = Math.min(1, Math.abs(cam.vx) / 520), ld = 0.34 - 0.13 * speed;   // specchiato: la bici va verso sinistra nel mondo (= destra sullo schermo), quindi si guarda davanti a lei
+    cam.lead += ((t.dir === -1 ? 1 - ld : ld) - cam.lead) * camK(2.5, dt);
     smoothCamX += ((t.x - w * cam.lead) - smoothCamX) * camK(5.5, dt);
     // verticale: dove finirebbe la bici sullo schermo con la linea di terra al 80% dell'altezza
     const y0 = (t.y - Sim.GROUND_Y) + h * 0.8, lo = h * 0.30, hi = h * 0.72;
@@ -433,7 +440,45 @@
     const gk = Terrain.gripAt(r.rwX), p = Terrain.patchAt(r.rwX);
     let surf = gk || (zk === 'gravel' ? 'gravel' : zk === 'water' ? 'water' : 'grass');
     if (wet) surf = 'water'; else if (p && (p.kind === 'boulders' || p.kind === 'logs' || p.kind === 'stairs' || p.kind === 'holes' || p.kind === 'whoops')) surf = 'rough';
-    Sfx.update(Math.abs(r.vx), surf, air && !wet, gk === 'rack' && p ? p.per : gk === 'rough' && p && p.S ? p.S : 0);
+    // colpi dei vertici: giri al secondo della ruota posteriore × numero di vertici (solo forme con pochi spigoli; le tonde rotolano lisce)
+    let ticks = 0; const nv = meta && meta.vertices ? meta.vertices.length : 0;
+    if (aud.ang !== undefined && nv >= 3 && nv <= 14) { let d = r.rwAngle - aud.ang; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; ticks = Math.abs(d) / (2 * Math.PI) / (dt / 1000) * nv; }
+    aud.ang = r.rwAngle;
+    Sfx.update(Math.abs(r.vx), surf, air && !wet, gk === 'rack' && p ? p.per : gk === 'rough' && p && p.S ? p.S : 0, ticks);
+  }
+
+  // ---- portali (modalità pazza): effetti solo per la propria bici ----
+  const pst = { gone: {}, mirrored: false, pe: 0, now: 0 };
+  let noteTimer = 0, mirrorF = 1, mirT = 0;   // mirrorF: 1 = normale, -1 = specchiato (si anima in ~0,55 s)
+  // Lo specchio è nel disegno (non in CSS) così le scritte restano leggibili: ogni testo viene raddrizzato attorno al suo punto di ancoraggio.
+  function installTextFix(ctx) {
+    if (ctx.__tfix) return; ctx.__tfix = true;
+    const ft = ctx.fillText.bind(ctx), st = ctx.strokeText.bind(ctx);
+    const wrap = fn => (t, x, y, mw) => {
+      const f = mirrorF; if (f === 1) return fn(t, x, y, mw);
+      if (Math.abs(f) < 0.05) return;
+      ctx.save(); ctx.translate(x, y); ctx.scale(1 / f, 1);
+      if (f < 0) { const a = ctx.textAlign; ctx.textAlign = (a === 'left' || a === 'start') ? 'right' : (a === 'right' || a === 'end') ? 'left' : a; }
+      fn(t, 0, 0, mw); ctx.restore();
+    };
+    ctx.fillText = wrap(ft); ctx.strokeText = wrap(st);
+  }
+  function showNote(key, ms) {
+    const n = els.portalNote; n.textContent = I18n.t(key); n.style.display = 'block'; n.classList.remove('pop'); void n.offsetWidth; n.classList.add('pop');
+    clearTimeout(noteTimer); if (ms) noteTimer = setTimeout(() => { n.style.display = 'none'; }, ms);
+  }
+  function setMirrorView(on) { els.raceWrap.classList.toggle('mirrored', on); }
+  function resetPortals() { pst.gone = {}; pst.mirrored = false; pst.pe = 0; mirrorF = 1; mirT = 0; clearTimeout(noteTimer); els.portalNote.style.display = 'none'; setMirrorView(false); }
+  function portalFx(me, now) {
+    pst.now = now; if (!me || !Terrain.PORTALS.length) return;
+    if (me.pe !== pst.pe) {
+      pst.pe = me.pe; if (me.pi >= 0) pst.gone[me.pi] = now;
+      if (me.pt === 's') { els.portalFlash.classList.remove('go'); void els.portalFlash.offsetWidth; els.portalFlash.classList.add('go'); showNote(me.pd > 0 ? 'crazy.fwd' : 'crazy.back', 1600); }
+      else if (me.pt === 'm') showNote('crazy.mirror', 0);
+      else if (me.pt === 'x') { clearTimeout(noteTimer); els.portalNote.style.display = 'none'; }
+      if (typeof Sfx !== 'undefined') Sfx.portal(me.pt, me.pd);
+    }
+    const mir = me.dir === -1; if (mir !== pst.mirrored) { pst.mirrored = mir; setMirrorView(mir); }
   }
 
   function renderRace(ts) {
@@ -446,6 +491,10 @@
 
     Scenery.update(camX, w, h, groundY, t0);
     Flora.update(SC.dt, camX, w, latestRacers);
+    // specchio (modalità "meno classica"): tutto il mondo si ribalta attorno al centro dello schermo
+    const mdt = mirT ? Math.min(0.1, (t0 - mirT) / 1000) : 0; mirT = t0;
+    const mt = pst.mirrored ? -1 : 1; if (mirrorF !== mt) { mirrorF = mirrorF < mt ? Math.min(mt, mirrorF + mdt * 3.6) : Math.max(mt, mirrorF - mdt * 3.6); }
+    const mirrored = mirrorF !== 1; if (mirrored) { ctx2d.save(); ctx2d.translate(w / 2, 0); ctx2d.scale(mirrorF, 1); ctx2d.translate(-w / 2, 0); }
     Scenery.drawBackdrop(ctx2d);
 
     // Spruzzi delle ruote (ghiaccio, ghiaia, acqua)
@@ -468,6 +517,8 @@
     Flora.drawLilies(ctx2d, camX, w, groundY, SC);
     Flora.draw(ctx2d, camX, w, groundY, SC);
 
+    portalFx(me, t0);
+    if (Terrain.PORTALS.length) Props.drawPortals(ctx2d, camX, w, groundY, t0 / 1000, pst, 'back');
     Object.entries(latestRacers).forEach(([id, r]) => {
       const meta = raceMeta[id]; if (!meta) return;
       const cy = (y) => y - Sim.GROUND_Y + groundY, cx = r.x - camX;
@@ -488,10 +539,12 @@
       }
     });
 
+    if (Terrain.PORTALS.length) Props.drawPortals(ctx2d, camX, w, groundY, t0 / 1000, pst, 'front');
     if (me && typeof Sfx !== 'undefined') raceAudio(me, raceMeta[Net.myId], t0);
     Scenery.drawWater(ctx2d, surfBuf, n, SURF_STEP);
     Scenery.drawFront(ctx2d);
 
+    if (mirrored) ctx2d.restore();
     if (t0 - hudAt > 120) { hudAt = t0; updateHud(); updateLastCall(); }
     drawMinimap();
     if (Perf.on) Perf.frame(ts, performance.now() - t0);
@@ -584,7 +637,7 @@
     });
   }
 
-  function stopRaceLoops() { if (typeof Sfx !== 'undefined') Sfx.silence(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; }
+  function stopRaceLoops() { if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; }
   function showResults(st) { stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
   els.btnRematch.addEventListener('click', () => { if (Net.isHost) { wheels = {}; keepTrack = true; Net.broadcast({ type: 'restartToDraw' }); enterDrawPhase(); } });
   els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
