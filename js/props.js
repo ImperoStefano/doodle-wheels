@@ -174,6 +174,12 @@ const Props = (() => {
       else if (p.kind === 'rack') rackRail(ctx, p, camX, x0, x1, H, sub, t);
       else if (p.kind === 'mud') mudBog(ctx, p, camX, x0, x1, H, sub, t);
       else if (p.kind === 'sand') sandDune(ctx, p, camX, x0, x1, H, sub, t);
+      else if (p.kind === 'boulders') boulderRocks(ctx, p, camX, x0, x1, H, sub, t);
+      else if (p.kind === 'whoops') whoopsMounds(ctx, p, camX, x0, x1, H, sub, t);
+      else if (p.kind === 'ridges') iceRidges(ctx, p, camX, x0, x1, H, sub, t);
+      else if (p.kind === 'bowl') bowlDip(ctx, p, camX, x0, x1, H, sub, t);
+      else if (p.kind === 'jump') inkJump(ctx, p, camX, x0, x1, H, sub, t);
+      else if (p.kind === 'drop') inkDrop(ctx, p, camX, x0, x1, H, sub, t);
     }
   }
   // ---- utilità comuni dei terreni: strati spessi con gradiente ed estremità che si assottigliano --------------
@@ -195,6 +201,152 @@ const Props = (() => {
     for (let x = x0; x <= x1 + 0.1; x += step) { const y = H(x) + yF(x); if (first) { ctx.moveTo(x - camX, y); first = false; } else ctx.lineTo(x - camX, y); }
   }
 
+  // ---- nuovi ostacoli integrati nei biomi (solo profilo: nessun corpo fisico in più, quindi costo di disegno minimo) ----
+  // Massi: tondeggianti, di varie dimensioni; muschio nelle colline, ruggine nella ghiaia, alghe nella laguna, polvere nelle rampe.
+  function boulderRocks(ctx, p, camX, x0, x1, H, sub, t) {
+    const pal = p.zkey === 'gravel' ? { a: '#b3a79b', b: '#8d8176', c: '#5f554c', cap: '#b9763a' } : p.zkey === 'water' ? { a: '#9fb0b3', b: '#74878b', c: '#4b5c60', cap: '#4f9a73' } : p.zkey === 'ramps' ? { a: '#d6b78c', b: '#b58f62', c: '#7d5d3a', cap: '#c9923f' } : { a: '#b8b8ac', b: '#8f8f84', c: '#5c5c52', cap: '#6f9f45' };
+    for (let j = 0; j < p.rocks.length; j++) {
+      const q = p.rocks[j], cx = p.a + q.c; if (cx + q.w < x0 || cx - q.w > x1) continue;
+      const l = Math.max(cx - q.w, x0), r = Math.min(cx + q.w, x1), hc = H(cx), X = cx - camX;
+      ctx.fillStyle = 'rgba(25,20,12,0.28)'; ctx.beginPath(); ctx.ellipse(X + 6, H(cx) + q.H * 0.0 + 3, q.w * 1.05, 6, 0, 0, TAU); ctx.fill();   // ombra a terra
+      const base = H(cx) + q.H + 6; fillSlab(ctx, camX, l, r, H, () => -1.5, x => base - H(x), [[0, pal.a], [0.5, pal.b], [0.85, pal.c], [1, pal.c + '00']], 4);
+      // luce a sinistra, ombra a destra
+      ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.beginPath(); ctx.ellipse(X - q.w * 0.3, hc - q.H * 0.55 + 2, q.w * 0.3, q.H * 0.2, -0.5, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(20,18,12,0.2)'; ctx.beginPath(); ctx.ellipse(X + q.w * 0.45, hc - q.H * 0.2, q.w * 0.3, q.H * 0.35, 0.4, 0, TAU); ctx.fill();
+      // crepe e macchie
+      ctx.strokeStyle = 'rgba(30,24,16,0.55)'; ctx.lineWidth = 1.3; ctx.beginPath();
+      ctx.moveTo(X - q.w * 0.1, hc - q.H * 0.8); ctx.lineTo(X - q.w * 0.02, hc - q.H * 0.5); ctx.lineTo(X - q.w * 0.18, hc - q.H * 0.3);
+      ctx.moveTo(X + q.w * 0.3, hc - q.H * 0.45); ctx.lineTo(X + q.w * 0.4, hc - q.H * 0.2); ctx.stroke();
+      // bordo superiore con tratto scuro e muschio / calotta colorata
+      lineOff(ctx, camX, l, r, H, () => -1.5, 3); ctx.strokeStyle = 'rgba(30,24,16,0.65)'; ctx.lineWidth = 2.2; ctx.stroke();
+      ctx.fillStyle = pal.cap; ctx.beginPath(); ctx.ellipse(X - q.w * 0.12, hc - q.H - 0.5, q.w * 0.32, 4.2, 0, Math.PI, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(X + q.w * 0.22, hc - q.H * 0.9, q.w * 0.14, 2.6, 0, Math.PI, TAU); ctx.fill();
+      if (p.zkey === 'ramps') { const ph = (t * 0.6 + j * 0.31) % 1; ctx.fillStyle = `rgba(214,182,130,${0.35 * (1 - ph)})`; ctx.beginPath(); ctx.arc(X + q.w * 0.8, hc - ph * 16, 4 + ph * 8, 0, TAU); ctx.fill(); }
+    }
+  }
+
+  // Dossi: serie di gobbe di terra battuta con erba sul dorso e solchi di pneumatici, polvere sulle cime
+  function whoopsMounds(ctx, p, camX, x0, x1, H, sub, t) {
+    const dry = p.zkey === 'ramps' || p.zkey === 'gravel';
+    const soil = dry ? [['#d2a46a', 0], ['#a9783f', 0.5], ['#6e4a26', 1]] : [['#a8774a', 0], ['#7d5230', 0.5], ['#4f321c', 1]];
+    for (let j = 0; j < p.hs.length; j++) {
+      const q = p.hs[j], a = p.a + q.s, b = a + q.l; if (b < x0 || a > x1) continue;
+      const l = Math.max(a, x0), r = Math.min(b, x1);
+      const base = Math.max(H(a), H(b)) + 8; fillSlab(ctx, camX, l, r, H, () => -2, x => base - H(x), [[0, soil[0][0]], [0.5, soil[1][0]], [0.85, soil[2][0]], [1, soil[2][0] + '00']], 5);
+      // erba / sterpaglia sul dorso e solchi
+      lineOff(ctx, camX, l, r, H, () => -2.5, 4); ctx.strokeStyle = dry ? '#c9a24a' : '#5faa44'; ctx.lineWidth = 3.5; ctx.stroke();
+      lineOff(ctx, camX, l, r, H, () => 6, 4); ctx.strokeStyle = 'rgba(40,24,10,0.35)'; ctx.lineWidth = 2; ctx.stroke();
+      lineOff(ctx, camX, l, r, H, () => -5, 4); ctx.strokeStyle = 'rgba(255,240,200,0.5)'; ctx.lineWidth = 1.2; ctx.stroke();
+      // polvere che si alza dalla cima
+      const cx = (a + b) / 2, ph = (t * 0.5 + j * 0.27) % 1; ctx.fillStyle = `rgba(222,196,150,${0.38 * (1 - ph)})`;
+      ctx.beginPath(); ctx.arc(cx - camX + Math.sin(j) * 8, H(cx) - q.A - ph * 14 - 3, 4 + 7 * ph, 0, TAU); ctx.fill();
+    }
+  }
+
+  // Creste di pressione sul ghiaccio: schegge cristalline azzurre con riflessi e luccichio
+  function iceRidges(ctx, p, camX, x0, x1, H, sub, t) {
+    for (let j = 0; j < p.rocks.length; j++) {
+      const q = p.rocks[j], cx = p.a + q.c; if (cx + q.w < x0 || cx - q.w > x1) continue;
+      const l = Math.max(cx - q.w, x0), r = Math.min(cx + q.w, x1), X = cx - camX, hc = H(cx);
+      const base = hc + q.H + 6; fillSlab(ctx, camX, l, r, H, () => -1.5, x => base - H(x), [[0, '#f2fbff'], [0.5, '#a9d4ee'], [0.85, '#5f95bb'], [1, '#5f95bb00']], 3);
+      // spigolo luminoso e ombra interna
+      ctx.fillStyle = 'rgba(70,120,160,0.38)'; ctx.beginPath(); ctx.moveTo(X, hc - 2); ctx.lineTo(X + q.w * 0.95, H(cx + q.w * 0.95)); ctx.lineTo(X + q.w * 0.3, H(cx + q.w * 0.3) + 8); ctx.closePath(); ctx.fill();
+      lineOff(ctx, camX, l, r, H, () => -1.5, 3); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2.4; ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.moveTo(X - 3, hc + 4); ctx.lineTo(X + 2, hc + 14); ctx.moveTo(X + 7, hc + 6); ctx.lineTo(X + 11, hc + 12); ctx.stroke();
+      const tw = 0.5 + 0.5 * Math.sin(t * 3 + j * 1.7); ctx.strokeStyle = `rgba(255,255,255,${0.35 + 0.6 * tw})`; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(X - 5, hc - 4); ctx.lineTo(X + 5, hc - 4); ctx.moveTo(X, hc - 9); ctx.lineTo(X, hc + 1); ctx.stroke();   // scintilla
+    }
+  }
+
+  // Conca: avvallamento di terra scura con riva erbosa, ciottoli e una pozza sul fondo
+  function bowlDip(ctx, p, camX, x0, x1, H, sub, t) {
+    const a = p.a + p.s, b = a + p.L; if (b < x0 || a > x1) return;
+    const l = Math.max(a - 30, x0), r = Math.min(b + 30, x1), tp = x => sm01((x - (a - 30)) / 60) * sm01(((b + 30) - x) / 60);
+    const dry = p.zkey === 'gravel';
+    fillSlab(ctx, camX, l, r, H, () => -2, x => 18 * tp(x) + 8, dry ? [[0, '#c9b190'], [0.5, '#a58a68'], [0.85, '#6c5942'], [1, '#6c594200']] : [[0, '#8a6038'], [0.5, '#5f3d20'], [0.85, '#34200e'], [1, '#34200e00']], 5);
+    lineOff(ctx, camX, l, r, H, () => -2.5, 4); ctx.strokeStyle = dry ? '#d7c3a0' : '#5aa142'; ctx.lineWidth = 3.4; ctx.stroke();
+    // ciottoli sul fondo
+    ctx.fillStyle = 'rgba(190,170,140,0.8)';
+    for (let k = 0; k < 9; k++) { const wx = a + 40 + ((k * 53) % Math.max(1, p.L - 80)); if (wx < x0 || wx > x1) continue; ctx.beginPath(); ctx.ellipse(wx - camX, H(wx) + 4 + (k % 3) * 3, 3 + k % 3, 2, 0, 0, TAU); ctx.fill(); }
+    // pozza sul punto più basso
+    const cx = a + p.L / 2, y = H(cx) + 3, X = cx - camX;
+    if (cx > x0 - 80 && cx < x1 + 80) {
+      ctx.fillStyle = 'rgba(30,22,12,0.5)'; ctx.beginPath(); ctx.ellipse(X, y, p.L * 0.17, 6, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(140,190,222,0.78)'; ctx.beginPath(); ctx.ellipse(X, y - 0.5, p.L * 0.15, 4.4, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.ellipse(X - p.L * 0.05, y - 1.8, p.L * 0.05, 1.3, 0, 0, TAU); ctx.fill();
+      const ph = (t * 0.6) % 1; ctx.strokeStyle = `rgba(255,255,255,${0.6 * (1 - ph)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(X + 10, y, 5 + p.L * 0.1 * ph, 1 + 2.2 * ph, 0, 0, TAU); ctx.stroke();
+    }
+  }
+
+
+  // ---- inchiostro: il fossato del trampolino e il gradino in discesa sono macchie e pennellate di inchiostro nero ----
+  const hz = n => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+  // pennellata nera lungo la strada tra a e b: spessore variabile, setole chiare, riflesso
+  function inkBand(ctx, camX, a, b, x0, x1, H, thick, seed, opt) {
+    opt = opt || {}; const l = Math.max(a, x0), r = Math.min(b, x1); if (r <= l) return;
+    const tp = x => sm01((x - a) / 40) * sm01((b - x) / 40);
+    const th = x => thick * (0.78 + 0.22 * Math.sin(x * 0.045 + seed)) * (0.35 + 0.65 * tp(x));
+    fillSlab(ctx, camX, l, r, H, () => -3, x => th(x), [[0, '#1b1b22'], [0.55, '#0c0c12'], [1, '#0c0c12']], 4);
+    // setole: sottili strisce di carta che affiorano dentro la pennellata
+    ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(70,70,92,0.55)'; ctx.lineWidth = 1.1;
+    for (let k = 0; k < 3; k++) { lineOff(ctx, camX, l, r, H, x => 2 + k * (thick / 4.2) * (0.35 + 0.65 * tp(x)) + 1.2 * Math.sin(x * 0.07 + k + seed), 5); ctx.stroke(); }
+    // riflesso lucido sul bordo alto
+    lineOff(ctx, camX, l, r, H, x => -1.4, 5); ctx.strokeStyle = 'rgba(150,150,190,0.55)'; ctx.lineWidth = 1.6; ctx.stroke();
+    if (opt.drips) {   // gocce che colano dal bordo
+      for (let k = 0; k < opt.drips; k++) {
+        const wx = a + 20 + hz(seed + k * 3.1) * Math.max(10, b - a - 40); if (wx < x0 || wx > x1) continue; const y = H(wx) + th(wx), ln = 6 + hz(seed + k * 7.7) * 14;
+        ctx.strokeStyle = '#0c0c12'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(wx - camX, y - 2); ctx.lineTo(wx - camX, y + ln); ctx.stroke();
+        ctx.fillStyle = '#0c0c12'; ctx.beginPath(); ctx.ellipse(wx - camX, y + ln + 1, 3.4, 4.4, 0, 0, TAU); ctx.fill();
+      }
+    }
+  }
+  // schizzi d'inchiostro (gocce sparse) attorno a un punto
+  function inkSplat(ctx, camX, x0, x1, H, cx, n, spread, seed) {
+    ctx.fillStyle = '#0c0c12';
+    for (let k = 0; k < n; k++) {
+      const wx = cx + (hz(seed + k * 2.3) - 0.5) * 2 * spread; if (wx < x0 - 8 || wx > x1 + 8) continue;
+      const up = hz(seed + k * 5.9), r = 1.4 + hz(seed + k * 9.1) * 3.4, y = H(wx) - 3 - up * up * 34;
+      ctx.beginPath(); ctx.ellipse(wx - camX, y, r, r * (0.8 + 0.3 * hz(seed + k)), 0, 0, TAU); ctx.fill();
+      if (r > 3) { ctx.fillStyle = 'rgba(150,150,190,0.7)'; ctx.beginPath(); ctx.arc(wx - camX - r * 0.3, y - r * 0.3, r * 0.25, 0, TAU); ctx.fill(); ctx.fillStyle = '#0c0c12'; }
+    }
+  }
+  function inkJump(ctx, p, camX, x0, x1, H, sub, t) {
+    const wood = p.zkey === 'ramps';
+    // trampolino: assi di legno (o lastre) sopra la salita
+    const ka = p.a + p.s + 10, kb = p.a + p.u1 + 4;
+    if (kb >= x0 && ka <= x1) {
+      const l = Math.max(ka, x0), r = Math.min(kb, x1), tp = x => sm01((x - ka) / 36) * sm01((kb - x) / 14);
+      fillSlab(ctx, camX, l, r, H, () => -5, x => 4 + 7 * tp(x), wood ? [[0, '#d9a766'], [0.5, '#b17d3f'], [1, '#6e4a22']] : [[0, '#bdb5a8'], [0.5, '#8d857a'], [1, '#5a544c']], 4);
+      ctx.strokeStyle = wood ? 'rgba(80,50,20,0.55)' : 'rgba(60,56,50,0.5)'; ctx.lineWidth = 1.2;
+      for (let wx = ka + 14; wx < kb - 4; wx += 22) { if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.beginPath(); ctx.moveTo(wx - camX, y - 4); ctx.lineTo(wx - camX, y + 9); ctx.stroke(); }
+      lineOff(ctx, camX, l, r, H, () => -5, 5); ctx.strokeStyle = wood ? '#f0cf98' : '#dcd6cb'; ctx.lineWidth = 2; ctx.stroke();
+      // strisce nere di pennello sul labbro (avviso)
+      for (let k = 0; k < 3; k++) { const wx = kb - 10 - k * 11; if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.strokeStyle = '#0c0c12'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(wx - camX - 3, y - 5); ctx.lineTo(wx - camX + 3, y + 5); ctx.stroke(); }
+    }
+    // la macchia: copre il fossato (pareti e fondo)
+    const a = p.a + p.u1 - 4, b = p.a + p.u2 + p.rr * 0.62;
+    inkBand(ctx, camX, a, b, x0, x1, H, 30, p.a * 0.01, { drips: 5 });
+    // pozza che ondeggia appena
+    const cx = p.a + p.u1 + p.ex + p.pw / 2; if (cx > x0 - 90 && cx < x1 + 90) {
+      const y = H(cx) + 2, X = cx - camX, ph = (t * 0.5) % 1;
+      ctx.strokeStyle = `rgba(190,190,230,${0.45 * (1 - ph)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(X, y, 10 + p.pw * 0.3 * ph, 1.5 + 2.5 * ph, 0, 0, TAU); ctx.stroke();
+    }
+    inkSplat(ctx, camX, x0, x1, H, p.a + p.u1 + p.ex + p.pw / 2, 14, p.pw * 0.75, p.a * 0.013);
+  }
+  function inkDrop(ctx, p, camX, x0, x1, H, sub, t) {
+    // la discesa è una larga pennellata nera con le gocce che colano; il piano più basso porta qualche schizzo
+    const a = p.a + p.s - 8, b = p.a + p.s + p.ex + 26;
+    inkBand(ctx, camX, a, b, x0, x1, H, 24, p.a * 0.01, { drips: 4 });
+    const a2 = p.a + p.s2 - 10, b2 = p.a + p.s2 + p.rr * 0.5;
+    inkBand(ctx, camX, a2, b2, x0, x1, H, 11, p.a * 0.017 + 2, {});
+    inkSplat(ctx, camX, x0, x1, H, p.a + p.s + p.ex + 60, 10, 90, p.a * 0.011);
+    // cartello a pennello: freccia verso il basso
+    const wx = p.a + p.s - 34; if (wx > x0 - 20 && wx < x1 + 20) {
+      const y = H(wx), X = wx - camX; ctx.strokeStyle = '#0c0c12'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(X, y - 4); ctx.lineTo(X, y - 38); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(X, y - 14); ctx.lineTo(X - 9, y - 26); ctx.moveTo(X, y - 14); ctx.lineTo(X + 9, y - 26); ctx.stroke();
+    }
+  }
+
   // Dentiera: ballast di ghiaia, traversine di legno, rotaia d'acciaio con i denti a V e i bulloni, paraurti a strisce
   function rackRail(ctx, p, camX, x0, x1, H, sub, t) {
     const tap = tapOf(p, 90);
@@ -210,10 +362,10 @@ const Props = (() => {
       ctx.strokeStyle = 'rgba(30,18,8,0.5)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 3, y + 4); ctx.lineTo(x - 3, y + 15); ctx.moveTo(x + 2, y + 5); ctx.lineTo(x + 2, y + 14); ctx.stroke();
     }
     // rotaia: ombra, corpo con gradiente, riflesso
-    lineOff(ctx, camX, x0, x1, H, () => 3, 3); ctx.strokeStyle = 'rgba(15,18,26,0.7)'; ctx.lineWidth = 17; ctx.stroke();
-    lineOff(ctx, camX, x0, x1, H, () => 1, 3); ctx.strokeStyle = '#59647a'; ctx.lineWidth = 13; ctx.stroke();
-    lineOff(ctx, camX, x0, x1, H, () => -1, 3); ctx.strokeStyle = '#a3afc2'; ctx.lineWidth = 8; ctx.stroke();
-    lineOff(ctx, camX, x0, x1, H, () => -3.5, 3); ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2; ctx.stroke();
+    lineOff(ctx, camX, x0, x1, H, () => 3, 6); ctx.strokeStyle = 'rgba(15,18,26,0.7)'; ctx.lineWidth = 17; ctx.stroke();
+    lineOff(ctx, camX, x0, x1, H, () => 1, 6); ctx.strokeStyle = '#59647a'; ctx.lineWidth = 13; ctx.stroke();
+    lineOff(ctx, camX, x0, x1, H, () => -1, 6); ctx.strokeStyle = '#a3afc2'; ctx.lineWidth = 8; ctx.stroke();
+    lineOff(ctx, camX, x0, x1, H, () => -3.5, 6); ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2; ctx.stroke();
     // denti: tacche nette sui picchi/valli + bulloni
     const j0 = Math.floor((x0 - p.a) / p.per), j1 = Math.ceil((x1 - p.a) / p.per);
     for (let k = j0; k <= j1; k++) {
@@ -238,11 +390,11 @@ const Props = (() => {
   // Strada selciata ad archi: fascia di pietra arenaria con filari di ciottoli sfalsati, chiavi di volta e muschio nelle cuspidi
   function archRoad(ctx, p, camX, x0, x1, H, sub) {
     const tap = tapOf(p, 80);
-    fillSlab(ctx, camX, x0, x1, H, () => -3, x => 28 * tap(x), [[0, '#e3d3ab'], [0.55, '#c8b283'], [1, '#9b8559']]);
+    fillSlab(ctx, camX, x0, x1, H, () => -3, x => 28 * tap(x), [[0, '#e3d3ab'], [0.55, '#c8b283'], [1, '#9b8559']], 8);
     ctx.lineWidth = 1.4;
     const rows = [6, 13, 20], cobW = p.S / 3;
     rows.forEach((off, r) => {
-      lineOff(ctx, camX, x0, x1, H, x => off * tap(x), 4); ctx.strokeStyle = 'rgba(88,68,38,0.7)'; ctx.stroke();
+      lineOff(ctx, camX, x0, x1, H, x => off * tap(x), 8); ctx.strokeStyle = 'rgba(88,68,38,0.7)'; ctx.stroke();
       ctx.beginPath();
       const k0 = Math.floor((x0 - p.a) / cobW) - 1, k1 = Math.ceil((x1 - p.a) / cobW);
       for (let k = k0; k <= k1; k++) {
@@ -252,8 +404,8 @@ const Props = (() => {
       ctx.stroke();
     });
     // luce sul bordo alto e ombra sotto
-    lineOff(ctx, camX, x0, x1, H, () => -3.5, 4); ctx.strokeStyle = 'rgba(255,251,236,0.8)'; ctx.lineWidth = 2; ctx.stroke();
-    lineOff(ctx, camX, x0, x1, H, x => 28 * tap(x) + 0.5, 6); ctx.strokeStyle = 'rgba(50,34,16,0.4)'; ctx.lineWidth = 2.5; ctx.stroke();
+    lineOff(ctx, camX, x0, x1, H, () => -3.5, 8); ctx.strokeStyle = 'rgba(255,251,236,0.8)'; ctx.lineWidth = 2; ctx.stroke();
+    lineOff(ctx, camX, x0, x1, H, x => 28 * tap(x) + 0.5, 8); ctx.strokeStyle = 'rgba(50,34,16,0.4)'; ctx.lineWidth = 2.5; ctx.stroke();
     // chiavi di volta nelle cuspidi + muschio
     const c0 = Math.ceil((x0 - p.a) / p.S), c1 = Math.floor((x1 - p.a) / p.S);
     for (let k = c0; k <= c1; k++) {

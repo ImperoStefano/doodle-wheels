@@ -224,6 +224,20 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 .intro-on #orientation-warning { display: none !important; }
 
 /* selettore lingua */
-.lang-toggle { position: fixed; top: calc(8px + env(safe-area-inset-top, 0px)); right: calc(8px + env(safe-area-inset-right, 0px)); z-index: 2500; display: flex; border: 2px solid var(--ink); border-radius: 999px; overflow: hidden; background: #fff; box-shadow: 0 3px 10px rgba(16,42,67,0.18); }
-.lang-btn { font: 700 0.78rem 'Space Grotesk', sans-serif; padding: 5px 11px; border: 0; background: transparent; color: var(--ink); cursor: pointer; }
-.lang-btn--on { background: var(--ink); color: #fff; }
+/* controlli in alto a destra (IT / EN / audio): macchie e pennellate d'inchiostro nero, come il pennello dell'intro */
+.lang-toggle, .sound-btn { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); z-index: 2500; isolation: isolate; border: 0; background: transparent; box-shadow: none; padding: 0; }
+.lang-toggle { right: calc(14px + env(safe-area-inset-right, 0px)); display: flex; gap: 2px; padding: 3px 4px; }
+.lang-toggle::before, .sound-btn::before { content: ''; position: absolute; z-index: -1; background: #0c0c12; filter: url(#dw-ink); pointer-events: none; }
+.lang-toggle::before { inset: -5px -9px -5px -8px; border-radius: 22px 8px 24px 10px / 12px 20px 9px 18px; }
+.lang-toggle::after, .sound-btn::after { content: ''; position: absolute; z-index: -1; background: #0c0c12; width: 5px; height: 11px; border-radius: 40% 40% 50% 50% / 25% 25% 75% 75%; pointer-events: none; }
+.lang-toggle::after { left: 64%; bottom: -13px; }
+.lang-btn { font: 700 0.78rem 'Space Grotesk', sans-serif; padding: 3px 10px; border: 0; border-radius: 12px 6px 12px 7px; background: transparent; color: #9a9aae; cursor: pointer; letter-spacing: 0.04em; }
+.lang-btn--on { background: rgba(255,255,255,0.16); color: #fff; box-shadow: inset 0 -2px 0 #fff; }
+.sound-btn { right: calc(124px + env(safe-area-inset-right, 0px)); width: 34px; height: 30px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #fff; }
+.sound-btn::before { inset: -5px -5px -4px -4px; border-radius: 52% 48% 55% 45% / 55% 50% 50% 45%; }
+.sound-btn::after { left: 22%; bottom: -12px; width: 4px; height: 9px; }
+.sound-btn svg { display: block; }
+.sound-btn .s-off { display: none; }
+.sound-btn.muted .s-on { display: none; }
+.sound-btn.muted .s-off { display: block; opacity: 0.6; }
+

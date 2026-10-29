@@ -24,6 +24,42 @@
   const preRaceDrawer = createWheelDrawer(els.drawCanvas); preRaceDrawer.init();
   const inRaceDrawer = createWheelDrawer(els.redrawCanvas); inRaceDrawer.init();
 
+  // Misure di fluidità (solo con ?perf=1 nell'indirizzo): fps, fotogrammi lunghi, costo del passo fisico, età degli snapshot.
+  // Esporta anche window.__perf per gli script di prova. Spento: un solo controllo per fotogramma.
+  const Perf = (() => {
+    const on = /[?&]perf=1/.test(location.search); if (!on) return { on: false, frame() {}, tick() {}, snap() {} };
+    const F = [], T = [], D = { long50: 0, long100: 0, frames: 0, tickMax: 0, snapGapMax: 0, lastSnap: 0 }; let last = 0, el = null, nextUi = 0;
+    const q = (a, p) => { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
+    return {
+      on, D,
+      frame(ts, cost) {
+        if (last) { const d = ts - last; if (d < 1000) { F.push(d); if (F.length > 240) F.shift(); D.frames++; if (d > 50) D.long50++; if (d > 100) D.long100++; } } last = ts;
+        if (cost !== undefined) { T.push(cost); if (T.length > 240) T.shift(); }
+        if (ts < nextUi) return; nextUi = ts + 500;
+        if (!el) { el = document.createElement('div'); el.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;background:rgba(0,0,0,.72);color:#9f9;font:11px/1.35 monospace;padding:5px 7px;border-radius:6px;pointer-events:none;white-space:pre'; document.body.appendChild(el); }
+        const avg = F.length ? F.reduce((a, b) => a + b, 0) / F.length : 0;
+        el.textContent = `fps ${avg ? (1000 / avg).toFixed(0) : '-'}  p95 ${q(F, 0.95).toFixed(0)}ms  max ${Math.max(0, ...F).toFixed(0)}ms\n>50ms: ${D.long50}  >100ms: ${D.long100}  su ${D.frames}\ndisegno ${q(T, 0.5).toFixed(1)}ms (p95 ${q(T, 0.95).toFixed(1)})  fisica max ${D.tickMax.toFixed(1)}ms\nsnapshot: buco max ${D.snapGapMax.toFixed(0)}ms`;
+      },
+      tick(ms) { if (ms > D.tickMax) D.tickMax = ms; },
+      snap(now) { if (D.lastSnap) { const g = now - D.lastSnap; if (g > D.snapGapMax) D.snapGapMax = g; } D.lastSnap = now; },
+    };
+  })();
+  if (Perf.on) window.__perf = Perf;
+  // Timer della fisica dell'host: un Worker non viene rallentato dal browser quando la scheda va in secondo piano
+  // (i setInterval sul thread principale scendono a 1 Hz e bloccherebbero la gara per tutti). Fallback: setInterval.
+  const Ticker = (() => {
+    const SRC = 'let id=0;onmessage=e=>{clearInterval(id);if(e.data!=="stop")id=setInterval(()=>postMessage(0),e.data);};';
+    return {
+      start(fn, ms) {
+        try {
+          const url = URL.createObjectURL(new Blob([SRC], { type: 'application/javascript' })), w = new Worker(url); URL.revokeObjectURL(url);
+          let last = 0; w.onmessage = () => { const n = performance.now(); if (n - last < ms * 0.5) return; last = n; fn(); };   // niente raffiche dopo un blocco
+          w.postMessage(ms); return { w };
+        } catch (e) { return setInterval(fn, ms); }
+      },
+      stop(h) { if (!h) return; if (h.w) { try { h.w.postMessage('stop'); h.w.terminate(); } catch (e) {} } else clearInterval(h); }
+    };
+  })();
   let myVertices = null, wheels = {}, drawTimerHandle = null, latestRacers = {}, raceMeta = {}, raceLoopHandle = null, snapshotLoopHandle = null;
   let ctx2d = null, minimapCtx = null, smoothCamX = 0, particles = [], myRedrawsLeft = 2;
   // viewW/viewH: dimensioni del mondo visibili sullo schermo, in "unità logiche" (indipendenti
@@ -36,7 +72,7 @@
 
   function showScreen(name) { ['menu', 'lobby', 'draw', 'race', 'results'].forEach(s => els[s].classList.toggle('screen--active', s === name)); }
 
-  els.btnHost.addEventListener('click', () => { const name = els.name.value.trim(); if (name) Net.hostGame(name); else showMenuError(I18n.t('menu.err.name')); });
+  els.btnHost.addEventListener('click', () => { const name = els.name.value.trim(); if (name) { Net.hostGame(name); try { Sim.warmCalibration && Sim.warmCalibration(); } catch (e) {} } else showMenuError(I18n.t('menu.err.name')); });
   els.btnJoin.addEventListener('click', () => {
     const name = els.name.value.trim(), code = els.code.value.trim();
     if (!name || code.length !== 4) return showMenuError(I18n.t('menu.err.namecode')); Net.joinGame(code, name);
@@ -100,7 +136,7 @@
   els.btnCancelRedraw.addEventListener('click', () => els.redrawModal.style.display = 'none');
   els.btnSubmitRedraw.addEventListener('click', () => {
     if (!inRaceDrawer.isValid()) return;
-    const v = inRaceDrawer.getNormalizedVertices(80); els.redrawModal.style.display = 'none'; myRedrawsLeft--;
+    const v = inRaceDrawer.getNormalizedVertices(80); els.redrawModal.style.display = 'none'; myRedrawsLeft--; if (typeof Sfx !== 'undefined') Sfx.redraw();
     els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft });
     if (myRedrawsLeft <= 0) els.redrawUi.style.display = 'none';
     if (Net.isHost) { Sim.updateRacerWheel(Net.myId, v); raceMeta[Net.myId].vertices = v; Net.broadcast({ type: 'wheelUpdated', id: Net.myId, vertices: v }); }
@@ -111,7 +147,7 @@
     if (data.type === 'goToDraw') enterDrawPhase();
     if (data.type === 'wheel' && Net.isHost) receiveWheel(from, data.vertices);
     if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; Terrain.applyLayout(data.trackLayout); startCountdown(data.startTime); }
-    if (data.type === 'snap') applySnapshot(data.racers);
+    if (data.type === 'snap') applySnapshot(data.racers, data.ts);
     if (data.type === 'results') showResults(data.standings);
     if (data.type === 'lastCall') showLastCall(data.ms);
     if (data.type === 'restartToDraw') enterDrawPhase();
@@ -182,7 +218,7 @@
   // Durante il conto alla rovescia le bici stanno ferme in griglia (stesse posizioni di partenza
   // della fisica), così si vede già il mondo e chi c'è in gara; il primo snapshot le sostituisce.
   function placeGrid() {
-    latestRacers = {}; snapBuf.length = 0;
+    latestRacers = {}; snapBuf.length = 0; snapOff = null;
     Object.keys(raceMeta).forEach((id, i) => {
       const x = 60 + i * 200, y = Sim.GROUND_Y - Terrain.height(x) - 70;
       latestRacers[id] = { id, x, y, angle: 0, fwX: x + 90, fwY: y, fwAngle: 0, rwX: x - 90, rwY: y, rwAngle: 0, vx: 0, finished: false, finishTime: null };
@@ -196,7 +232,7 @@
     showScreen('race'); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'block';
     raceMeta = {}; Object.values(Net.players).forEach(p => raceMeta[p.id] = { color: p.color, name: p.name, vertices: wheels[p.id] || preRaceDrawer.fallbackCircle() });
     // l'host tara in anticipo ogni ruota (a fette, durante l'intro): così su terreno normale vanno tutte alla pari
-    if (Net.isHost) Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {}));
+    if (Net.isHost) { Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {})); Sim.prepareAsync(); }   // mondo fisico costruito a fette durante l'intro
     hideLastCall(); lastCallSent = false;
     Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X); Flora.setTrack(); Scenery.setQuality(0); Flora.setQuality(0); qSlow = 0;
     Scenery.warmup();
@@ -205,9 +241,12 @@
     startRenderLoop();
     Intro.init(); Intro.play(startTime);
 
+    let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false;
     const tick = setInterval(() => {
       const left = startTime - Date.now();
       if (left <= 3000 && Intro.isRunning()) Intro.stop();   // il 3-2-1 non si sovrappone mai all'intro
+      const cd = left > 3000 ? -1 : left > 2000 ? 3 : left > 1000 ? 2 : left > 0 ? 1 : 0;
+      if (cd !== lastCd) { lastCd = cd; if (cd >= 0 && typeof Sfx !== 'undefined') Sfx.beep(cd === 0 ? 0 : cd); }
       if (left > 3000) els.countdown.textContent = ''; else if (left > 2000) els.countdown.textContent = '3'; else if (left > 1000) els.countdown.textContent = '2'; else if (left > 0) els.countdown.textContent = '1';
       else { els.countdown.textContent = I18n.t('race.go'); clearInterval(tick); setTimeout(() => els.countdown.textContent = '', 700); Scenery.announce(performance.now());
              if (Net.isHost) beginRace(); }
@@ -217,17 +256,17 @@
   function startRenderLoop() { if (!raceLoopHandle) raceLoopHandle = requestAnimationFrame(renderRace); }
 
   function beginRace() {
-    Sim.init(); let i = 0; Object.entries(raceMeta).forEach(([id, m]) => Sim.addRacer(id, m.vertices, m.color, m.name, i++));
+    Sim.ensureWorld(); let i = 0; Object.entries(raceMeta).forEach(([id, m]) => Sim.addRacer(id, m.vertices, m.color, m.name, i++));
     Sim.start(); let last = performance.now();
     let lastSend = 0;
-    snapshotLoopHandle = setInterval(() => {
+    snapshotLoopHandle = Ticker.start(() => {
       const now = performance.now(), dt = Math.min(now - last, 100); last = now;
-      Sim.tick(dt); const snap = Sim.snapshot(); applySnapshot(snap);
-      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap }); }
+      const pt = Perf.on ? performance.now() : 0; Sim.tick(dt); const snap = Sim.snapshot(); applySnapshot(snap); if (Perf.on) Perf.tick(performance.now() - pt);
+      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now }); }
       // primo traguardo: gli altri hanno un tempo limitato, e lo sanno
       const gl = Sim.graceLeft();
       if (gl !== null && !lastCallSent) { lastCallSent = true; Net.broadcast({ type: 'lastCall', ms: gl }); showLastCall(gl); }
-      if (Sim.allFinished() || Sim.isTimedOut()) { clearInterval(snapshotLoopHandle); const s = Sim.standings(); Net.broadcast({ type: 'results', standings: s }); showResults(s); }
+      if (Sim.allFinished() || Sim.isTimedOut()) { Ticker.stop(snapshotLoopHandle); snapshotLoopHandle = null; const s = Sim.standings(); Net.broadcast({ type: 'results', standings: s }); showResults(s); }
     }, 16);
     startRenderLoop();
   }
@@ -245,16 +284,46 @@
   // nel passato (INTERP_MS) interpolando fra i due che lo racchiudono: nessun controllo da inseguire, quindi il ritardo è invisibile.
   const snapBuf = [];
   const INTERP_HOST_MS = 45, INTERP_CLIENT_MS = 130;
-  function applySnapshot(racers) {
+  // Tempo di riproduzione: sul client gli snapshot arrivano a raffiche (rete, riordino, pause del thread), quindi datarli
+  // con l'istante di ARRIVO fa muovere le bici a scatti anche se l'host li ha prodotti a ritmo costante. L'host li timbra
+  // (ts, il suo orologio) e il client li colloca sul proprio orologio con lo scarto minimo osservato (latenza minima),
+  // che risale piano per seguire la deriva degli orologi: lo spaziamento resta quello dell'host.
+  let snapOff = null;
+  function applySnapshot(racers, ts) {
     const m = {}; racers.forEach(r => { m[r.id] = r; latestRacers[r.id] = r; });
-    snapBuf.push({ t: performance.now(), m }); if (snapBuf.length > 16) snapBuf.shift();
+    const arr = performance.now(); let t = arr;
+    if (!Net.isHost && typeof ts === 'number') {
+      const off = arr - ts;
+      snapOff = snapOff === null ? off : Math.min(off, snapOff + 0.4);
+      t = ts + snapOff;
+      const last = snapBuf.length ? snapBuf[snapBuf.length - 1].t : -1e9;
+      if (t <= last) t = last + 1;                      // ordine garantito
+    }
+    if (Perf.on && !Net.isHost) Perf.snap(arr);
+    snapBuf.push({ t, m }); if (snapBuf.length > 16) snapBuf.shift();
   }
   const angLerp = (a, b, k) => { let d = b - a; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return a + d * k; };
   function interpolateRacers(now) {
     const n = snapBuf.length; if (!n) return;
     const rt = now - (Net.isHost ? INTERP_HOST_MS : INTERP_CLIENT_MS);
     let a = snapBuf[0], b = snapBuf[0];
-    if (rt >= snapBuf[n - 1].t) { a = b = snapBuf[n - 1]; }
+    if (rt >= snapBuf[n - 1].t) {
+      a = b = snapBuf[n - 1];
+      // snapshot in ritardo: invece di fermare le bici si prosegue sulla velocità dell'ultimo intervallo (al massimo 120 ms)
+      if (n >= 2 && rt - b.t > 0 && rt - b.t < 400) {
+        const p = snapBuf[n - 2], dt = b.t - p.t;
+        if (dt > 1) {
+          const kx = Math.min(rt - b.t, 120) / dt;
+          for (const id in b.m) {
+            const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250) { latestRacers[id] = rb; continue; }
+            const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx,
+              fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
+          }
+          return;
+        }
+      }
+    }
     else if (rt > snapBuf[0].t) { for (let i = n - 1; i > 0; i--) if (snapBuf[i - 1].t <= rt) { a = snapBuf[i - 1]; b = snapBuf[i]; break; } }
     const k = b.t > a.t ? Math.max(0, Math.min(1, (rt - a.t) / (b.t - a.t))) : 1;
     for (const id in b.m) {
@@ -347,6 +416,26 @@
     cam.dy += (want - cam.dy) * camK(3, dt);
   }
 
+  // ---- suoni della propria bici: rotolamento per superficie, atterraggi, schizzi (nessun dato in più sulla rete) ----
+  const aud = { air: false, vy: 0, y: null, t: 0, fin: false, wet: false };
+  function wheelR(meta) { if (!meta) return 20; if (meta.R) return meta.R; let m = 20; try { m = Math.max(...meta.vertices.map(v => Array.isArray(v) ? Math.hypot(v[0], v[1]) : Math.hypot(v.x, v.y))); } catch (e) {} return meta.R = Math.max(14, Math.min(60, m)); }
+  function raceAudio(r, meta, now) {
+    if (r.finished) { if (!aud.fin) { aud.fin = true; Sfx.silence(); let pl = 1; for (const id in latestRacers) { const o = latestRacers[id]; if (id !== r.id && o.finished && o.finishTime <= r.finishTime) pl++; } Sfx.finish(pl); } return; }
+    const dt = aud.t ? Math.max(1, now - aud.t) : 16; aud.t = now;
+    const R = wheelR(meta), gr = Sim.GROUND_Y - Terrain.height(r.rwX) - r.rwY, gf = Sim.GROUND_Y - Terrain.height(r.fwX) - r.fwY;
+    const air = Math.min(gr, gf) - R > 12, vy = aud.y === null ? 0 : (r.y - aud.y) / (dt / 16.67);
+    aud.y = r.y;
+    if (aud.air && !air) Sfx.land(Math.max(aud.vy, vy));
+    aud.air = air; aud.vy = vy;
+    const zk = Terrain.zoneKeyAt(r.rwX), wet = zk === 'water' && Terrain.isWater(r.rwX);
+    if (wet && !aud.wet) Sfx.splash(Math.min(1, Math.abs(r.vx) / 8));
+    aud.wet = wet;
+    const gk = Terrain.gripAt(r.rwX), p = Terrain.patchAt(r.rwX);
+    let surf = gk || (zk === 'gravel' ? 'gravel' : zk === 'water' ? 'water' : 'grass');
+    if (wet) surf = 'water'; else if (p && (p.kind === 'boulders' || p.kind === 'logs' || p.kind === 'stairs' || p.kind === 'holes' || p.kind === 'whoops')) surf = 'rough';
+    Sfx.update(Math.abs(r.vx), surf, air && !wet, gk === 'rack' && p ? p.per : gk === 'rough' && p && p.S ? p.S : 0);
+  }
+
   function renderRace(ts) {
     const t0 = performance.now();
     interpolateRacers(t0);
@@ -399,11 +488,13 @@
       }
     });
 
+    if (me && typeof Sfx !== 'undefined') raceAudio(me, raceMeta[Net.myId], t0);
     Scenery.drawWater(ctx2d, surfBuf, n, SURF_STEP);
     Scenery.drawFront(ctx2d);
 
     if (t0 - hudAt > 120) { hudAt = t0; updateHud(); updateLastCall(); }
     drawMinimap();
+    if (Perf.on) Perf.frame(ts, performance.now() - t0);
     qualityGuard(ts, performance.now() - t0);
     raceLoopHandle = requestAnimationFrame(renderRace);
   }
@@ -493,9 +584,9 @@
     });
   }
 
-  function stopRaceLoops() { if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) clearInterval(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; }
-  function showResults(st) { stopRaceLoops(); releaseWakeLock(); els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
+  function stopRaceLoops() { if (typeof Sfx !== 'undefined') Sfx.silence(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; }
+  function showResults(st) { stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
   els.btnRematch.addEventListener('click', () => { if (Net.isHost) { wheels = {}; keepTrack = true; Net.broadcast({ type: 'restartToDraw' }); enterDrawPhase(); } });
   els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
-  I18n.init();
+  I18n.init(); if (typeof Sfx !== 'undefined') Sfx.init();
 })();

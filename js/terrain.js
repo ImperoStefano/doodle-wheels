@@ -121,17 +121,40 @@ const Terrain = (() => {
       }
       case 'ripples': { const w = smooth(u / 120) * smooth((L - u) / 120); return w * p.A * (0.5 - 0.5 * Math.cos(2 * Math.PI * u / p.lam)); }
       case 'logs': {
-        for (let j = 0; j < p.k; j++) { const d = Math.abs(u - (j + 0.5) * p.sp) / p.w; if (d < 1) return p.H * Math.pow(1 - d * d, 0.6); }
+        for (let j = 0; j < p.k; j++) { const d = Math.abs(u - (j + 0.5) * p.sp) / p.w; if (d < 1) return p.H * Math.pow(0.5 + 0.5 * Math.cos(Math.PI * d), 0.75); }
         return 0;
       }
       case 'mud': { // un'altura fangosa: salita, pianoro, discesa (la presa decide chi sale)
         return p.H * (smooth(u / p.rl) - smooth((u - p.rl - p.pl) / p.rl)); }
       case 'sand': return 0;
+      case 'boulders': { // massi tondeggianti di varie dimensioni, spaziati a caso: chi ha le ruote grandi/tonde li sale meglio
+        let best = 0;
+        for (const q of p.rocks) { const d = Math.abs(u - q.c) / q.w; if (d < 1) { const v = q.H * Math.pow(0.5 + 0.5 * Math.cos(Math.PI * d), 0.7); if (v > best) best = v; } }
+        return best;
+      }
+      case 'whoops': { // serie di dossi stile motocross: ritmo irregolare, ogni dosso è un piccolo trampolino
+        for (const q of p.hs) { const v = (u - q.s) / q.l; if (v >= 0 && v <= 1) { const s = Math.sin(Math.PI * v); return q.A * s * s; } }
+        return 0;
+      }
+      case 'ridges': { // creste di pressione sul ghiaccio: spigolose, strette
+        let best = 0;
+        for (const q of p.rocks) { const d = Math.abs(u - q.c) / q.w; if (d < 1) { const v = q.H * Math.pow(1 - d, 1.25); if (v > best) best = v; } }
+        return best;
+      }
+      case 'bowl': { // conca: si entra veloci, si scende, si risale (la velocità accumulata decide)
+        const v = (u - p.s) / p.L; return v >= 0 && v <= 1 ? -p.D * (0.5 - 0.5 * Math.cos(2 * Math.PI * v)) : 0;
+      }
+      case 'jump': { // trampolino, fossato, risalita: chi arriva veloce lo salta, chi arriva piano ci scende dentro e deve risalire
+        return p.H * smooth((u - p.s) / p.rl) - (p.H + p.D) * smooth((u - p.u1) / p.ex) + p.D * smooth((u - p.u2) / p.rr);
+      }
+      case 'drop': { // gradino in discesa, lungo tratto più basso, poi una salita larga: la discesa dà velocità, la risalita la chiede
+        return -p.D * smooth((u - p.s) / p.ex) + p.D * smooth((u - p.s2) / p.rr);
+      }
       case 'rack': { const w = smooth(u / 100) * smooth((L - u) / 100), f = (u / p.per) % 1; return w * p.A * (1 - Math.abs(2 * f - 1)); }   // dentiera: denti a V
       default: return 0;
     }
   }
-  const PATCH_FLAT = { arch: 1, stairs: 1, holes: 1, ripples: 0.7, logs: 0.8, mud: 1, rack: 0.8, sand: 1 };
+  const PATCH_FLAT = { arch: 1, stairs: 1, holes: 1, ripples: 0.7, logs: 0.8, mud: 1, rack: 0.8, sand: 1, boulders: 1, whoops: 0.8, ridges: 1, bowl: 1, jump: 1, drop: 1 };
   // quanto il tratto "appiattisce" l'onda del bioma sotto di sé (0..1)
   function patchMask(z, x) {
     let m = 0;
@@ -162,6 +185,12 @@ const Terrain = (() => {
       case 'logs': { const k = 3 + Math.floor(rnd() * 2); return { kind, len: k * 320, k, sp: 320, w: 52, H: 34 }; }
       case 'rack': { const per = 64 + Math.round(rnd() * 12); return { kind, len: 14 * per, per, A: 15 }; }
       case 'sand': return { kind, len: 880 + Math.round(rnd() * 120) };
+      case 'boulders': { const k = 2 + Math.floor(rnd() * 2), sp = 270, rocks = []; for (let j = 0; j < k; j++) rocks.push({ c: Math.round((j + 0.5) * sp + (rnd() - 0.5) * 70), w: Math.round(72 + rnd() * 30), H: Math.round(28 + rnd() * 28) }); return { kind, len: k * sp, rocks }; }
+      case 'whoops': { const n = 4 + Math.floor(rnd() * 2), hs = []; let s = 40; for (let j = 0; j < n; j++) { const l = Math.round(150 + rnd() * 60), A = Math.round(28 + rnd() * 18); hs.push({ s, l, A }); s += l + Math.round(30 + rnd() * 30); } return { kind, len: s + 20, hs }; }
+      case 'ridges': { const k = 3 + Math.floor(rnd() * 2), sp = Math.round(210 + rnd() * 30), rocks = []; for (let j = 0; j < k; j++) rocks.push({ c: Math.round((j + 0.5) * sp), w: 46, H: Math.round(26 + rnd() * 10) }); return { kind, len: k * sp, rocks }; }
+      case 'bowl': { const L = 440 + Math.round(rnd() * 80), D = 60 + Math.round(rnd() * 20); return { kind, len: L + 160, s: 80, L, D }; }
+      case 'jump': { const H = 34 + Math.round(rnd() * 10), D = 38 + Math.round(rnd() * 8), pw = 120 + Math.round(rnd() * 30), s = 60, rl = 150, u1 = s + rl + 10, ex = 85, u2 = u1 + ex + pw, rr = 110; return { kind, len: u2 + rr + 70, H, D, pw, s, rl, u1, ex, u2, rr }; }
+      case 'drop': { const D = 46 + Math.round(rnd() * 16), s = 70, ex = 120, pl = 200 + Math.round(rnd() * 60), s2 = s + ex + pl, rr = 240; return { kind, len: s2 + rr + 70, D, s, ex, s2, rr }; }
       case 'mud': { const rl = 260, pl = 300; return { kind, len: 2 * rl + pl, rl, pl, H: -22 }; }
     }
     return null;
@@ -173,28 +202,41 @@ const Terrain = (() => {
     water:  [],                      // laguna: ponti e bacini (nessun terreno speciale)
     ramps:  [['logs', 0.4], ['mud', 0.27], ['sand', 0.15]],
   };
+  // seconda scelta (più leggera): ostacoli corti, integrati nel bioma, che si aggiungono al terreno a tema se c'è posto
+  const LIGHT = { boulders: 1, whoops: 1, ridges: 1, bowl: 1, jump: 1, drop: 1 };
+  const PATCH_EXTRA = {
+    hills:  [['boulders', 0.5], ['drop', 0.4], ['bowl', 0.3]],
+    gravel: [['boulders', 0.5], ['jump', 0.3], ['drop', 0.25], ['bowl', 0.25]],
+    ramps:  [['whoops', 0.5], ['jump', 0.35], ['boulders', 0.2]],
+    ice:    [['ridges', 0.65]],
+    water:  [['boulders', 0.35], ['whoops', 0.3]],   // laguna: massi sulla riva e dossi di sabbia fra un bacino e l'altro
+  };
   function planPatches(rnd, force) {
     PATCHES = [];
     // "sapore" della gara: ogni pista accentua alcuni terreni e ne riduce altri, così non vince sempre la stessa forma
-    const flavor = {}; ['arch', 'mud', 'holes', 'stairs', 'ripples', 'logs', 'rack', 'sand'].forEach(k => { flavor[k] = 0.2 + 2.1 * rnd() * rnd() + 0.5 * rnd(); });
+    const flavor = {}; ['arch', 'mud', 'holes', 'stairs', 'ripples', 'logs', 'rack', 'sand', 'boulders', 'whoops', 'ridges', 'bowl', 'jump', 'drop'].forEach(k => { flavor[k] = 0.2 + 2.1 * rnd() * rnd() + 0.5 * rnd(); });
     ZONES.forEach(z => {
       z.patches = [];
-      if (force && force.nopatch) return;
+      if (force && (force.nopatch || (force.only && !force[z.index]))) return;
       const forced = force && force[z.index];
       const tbl = PATCH_TABLE[z.key];
-      const picks = forced ? forced : (tbl ? (() => { const r = rnd(); let acc = 0; for (const [k, pr] of tbl) { acc += Math.min(0.95, pr * flavor[k]); if (r < acc) return [k]; } return []; })() : []);
+      const pick = t2 => { const r0 = rnd(); let acc = 0; for (const [k, pr] of t2) { acc += Math.min(0.95, pr * flavor[k]); if (r0 < acc) return [k]; } return []; };
+      let picks = forced ? forced : (tbl ? pick(tbl) : []);
+      if (!forced && PATCH_EXTRA[z.key]) picks = picks.concat(pick(PATCH_EXTRA[z.key]));
       picks.forEach(kind => {
         const spec = typeof kind === 'string' ? makePatch(kind, rnd) : kind;
         if (!spec) return;
-        // intervalli liberi: lontano dai bordi della zona e dal vuoto sotto un ponte
-        const lo = z.start + 200, hi = z.end - 200;
-        const blocks = z.gap ? [[z.gap.g0 - 220, z.gap.g1 + 220]] : [];
+        // intervalli liberi: lontano dai bordi della zona, dal vuoto sotto un ponte e dagli altri tratti già piazzati
+        const light = LIGHT[spec.kind], m0 = light ? 110 : 200, m1 = light ? 150 : 220, m2 = light ? 110 : 170;   // ostacoli corti: margini più stretti, così trovano posto anche accanto a un terreno a tema
+        const lo = z.start + m0, hi = z.end - m0;
+        const blocks = (z.gap ? [[z.gap.g0 - m1, z.gap.g1 + m1]] : []).concat(z.patches.map(q => [q.a - m2, q.b + m2])).sort((a, b) => a[0] - b[0]);
         const free = []; let cur = lo;
         for (const [b0, b1] of blocks) { if (b0 > cur) free.push([cur, Math.min(b0, hi)]); cur = Math.max(cur, b1); }
         if (hi > cur) free.push([cur, hi]);
         free.sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
         const slot = free.find(f => f[1] - f[0] >= spec.len); if (!slot) return;
-        const a = Math.round(slot[0] + (slot[1] - slot[0] - spec.len) * (forced ? 0.5 : 0.25 + rnd() * 0.5));
+        const frac = forced ? 0.5 : (picks.length > 1 && !z.patches.length) ? (rnd() < 0.5 ? 0.03 : 0.97) : 0.25 + rnd() * 0.5;   // con un ostacolo in più in arrivo, il primo si sposta verso un'estremità per lasciare posto
+        const a = Math.round(slot[0] + (slot[1] - slot[0] - spec.len) * frac);
         const pt = Object.assign({}, spec, { a, b: a + spec.len, zone: z.index, zkey: z.key });
         z.patches.push(pt); PATCHES.push(pt);
       });
@@ -205,7 +247,7 @@ const Terrain = (() => {
   function applyLayout(layoutKeys, force) {
     const keys = (layoutKeys && layoutKeys.length ? layoutKeys : generateRandomLayout()).slice();
     const rnd = mulberry32(hashStr(keys.join(',')));
-    ZONES = []; BRIDGES = [];
+    ZONES = []; BRIDGES = []; lastZ = 0;
     let x = TRACK_START, level = 0;
 
     const LEVEL_DELTA = { hills: [-90, 110], gravel: [-50, 70], ramps: [-30, 30], water: [-20, 20], ice: [-25, 25] };
@@ -266,6 +308,7 @@ const Terrain = (() => {
   function zoneAt(x) {
     const n = ZONES.length;
     if (!n) return null;
+    if (lastZ >= n) lastZ = 0;   // dopo un layout più corto l'indice in cache può non esistere più
     let z = ZONES[lastZ];
     if (x >= z.start && x < z.end) return z;
     if (x < ZONES[0].start) return (lastZ = 0, ZONES[0]);
@@ -345,6 +388,7 @@ const Terrain = (() => {
       const place = (px, species, scale) => {
         if (z.gap && px > z.gap.g0 - 120 && px < z.gap.g1 + 120) return false;   // niente fiori sul ponte
         if (z.patches && z.patches.some(p => px > p.a - 90 && px < p.b + 90)) return false;   // né sui terreni a tema
+        if (Math.abs(height(px + 10) - height(px - 10)) > 11) return false;   // né su pendenze forti (>~28°): il fiore sembrerebbe sospeso
         flowers.push({
           x: Math.round(px),
           r: 9 + pseudo(px) * 6,

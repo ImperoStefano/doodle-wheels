@@ -53,7 +53,7 @@ const Sim = (() => {
   // than a bike + its wheels, so neighbouring wheels spawned overlapping and were violently ejected.
   let racerGroup = 0;
 
-  function init() {
+  function initBase() {
     if (typeof decomp !== 'undefined' && Matter.Common.setDecomp) {
       Matter.Common.setDecomp(decomp);
     }
@@ -65,9 +65,8 @@ const Sim = (() => {
     engine.velocityIterations = 20;
 
     racerGroup = Matter.Body.nextGroup(true);
-    Matter.World.add(world, buildGround());
-    Matter.World.add(world, buildWalls());
-    Matter.World.add(world, buildFlowers());
+  }
+  function resetRaceState() {
     racers = {};
     running = false;
     timedOut = false;
@@ -75,14 +74,42 @@ const Sim = (() => {
     firstFinishAt = null;
     timeoutMs = raceTimeoutMs();
   }
+  function init() {
+    prepToken++; prepared = false;
+    initBase();
+    Matter.World.add(world, buildGround());
+    Matter.World.add(world, buildWalls());
+    Matter.World.add(world, buildFlowers());
+    resetRaceState();
+  }
+  // Costruzione del mondo "a fette" (≈4 ms alla volta) durante l'intro: su una pista lunga sono ~1100 corpi statici
+  // (≈100 ms su un PC, mezzo secondo su un telefono lento) e farli tutti al "VIA" è un freeze visibile.
+  // beginRace chiama ensureWorld(): se la preparazione è finita la usa, altrimenti la scarta e costruisce di colpo.
+  let prepared = false, prepToken = 0;
+  function prepareAsync(cb) {
+    const tok = ++prepToken; prepared = false; initBase();
+    let x = Terrain.TRACK_START; const END = Terrain.TRACK_END, CH = 400;
+    const step = () => {
+      if (tok !== prepToken) return;                      // annullata (init sincrono nel frattempo)
+      const t0 = Date.now(); const bodies = [];
+      while (x < END && Date.now() - t0 < 4) { bodies.push(...buildGround(x, Math.min(x + CH, END))); x += CH; }
+      if (bodies.length) Matter.World.add(world, bodies);
+      if (x < END) { setTimeout(step, 0); return; }
+      Matter.World.add(world, buildWalls()); Matter.World.add(world, buildFlowers());
+      resetRaceState(); prepared = true; if (cb) cb();
+    };
+    step();
+  }
+  function ensureWorld() { if (prepared) { prepared = false; prepToken++; return false; } init(); return true; }
 
   // Ground = one convex quad per 40px column whose TOP EDGE is exactly the terrain line.
   // (Rotated rectangles offset vertically leave small steps at the joints between segments
   // with different slopes; a triangle's corner catches on those steps and digs in.)
-  function buildGround() {
+  function buildGround(xa, xb) {
     const segW = 20;
     const bodies = [];
-    for (let x = Terrain.TRACK_START; x < Terrain.TRACK_END; x += segW) {
+    if (xa === undefined) { xa = Terrain.TRACK_START; xb = Terrain.TRACK_END; }
+    for (let x = xa; x < xb; x += segW) {
       const x2 = x + segW;
       const y1 = GROUND_Y - Terrain.height(x);
       const y2 = GROUND_Y - Terrain.height(x2);
@@ -610,13 +637,63 @@ const Sim = (() => {
   }
   function drain(gen) { for (;;) { const r = gen.next(); if (r.done) return r.value; } }
 
+  // Pool di worker per la taratura (solo nel browser): niente blocchi del thread principale. Se il worker non parte
+  // (file mancante, rete, browser vecchio) si ricade sul calcolo a fette sul thread principale.
+  const calPool = { workers: [], pending: new Map(), nextId: 1, state: 'idle' };
+  function calPoolInit() {
+    if (calPool.state !== 'idle') return;
+    calPool.state = 'off';
+    try {
+      if (typeof Worker === 'undefined' || typeof document === 'undefined') return;
+      const abs = s => new URL(s, document.baseURI).href;
+      const sc = sel => { const e = document.querySelector(sel); return e ? e.src : null; };
+      const urls = { init: true, matter: sc('script[src*="matter"]'), decomp: sc('script[src*="decomp"]'), physics: sc('script[src*="js/physics.js"]') };
+      if (!urls.matter || !urls.physics) return;
+      const wsrc = abs('js/calworker.js' + ((urls.physics.match(/\?.*$/) || [''])[0]));
+      const n = Math.max(1, Math.min(3, ((navigator.hardwareConcurrency || 2) - 1)));
+      calPool.state = 'starting'; let ok = 0, dead = 0;
+      const fail = () => { if (calPool.state === 'off') return; if (++dead >= n) { calPool.state = 'off'; calPool.workers.forEach(w => { try { w.w.terminate(); } catch (e) {} }); calPool.workers = []; const jobs = [...calPool.pending.values()].concat(calQueue.splice(0)); calPool.pending.clear(); jobs.forEach(j => j.fail()); } };
+      for (let i = 0; i < n; i++) {
+        const w = new Worker(wsrc), rec = { w, ready: false, busy: 0 };
+        const timer = setTimeout(() => { if (!rec.ready) { try { w.terminate(); } catch (e) {} fail(); } }, 6000);
+        w.onmessage = ev => {
+          const m = ev.data;
+          if (m.ready === true) { rec.ready = true; clearTimeout(timer); if (++ok === 1) calPool.state = 'on'; calPoolPump(); return; }
+          if (m.ready === false) { clearTimeout(timer); fail(); return; }
+          const job = calPool.pending.get(m.id); if (!job) return; calPool.pending.delete(m.id); rec.busy--;
+          if (m.cal) job.done(m.cal); else job.fail();
+          calPoolPump();
+        };
+        w.onerror = () => { clearTimeout(timer); fail(); };
+        w.postMessage(Object.assign({}, urls, { physics: urls.physics, matter: abs(urls.matter), decomp: urls.decomp ? abs(urls.decomp) : null }));
+        calPool.workers.push(rec);
+      }
+    } catch (e) { calPool.state = 'off'; }
+  }
+  const calQueue = [];
+  function calPoolPump() {
+    while (calQueue.length) {
+      const rec = calPool.workers.filter(w => w.ready).sort((a, b) => a.busy - b.busy)[0];
+      if (!rec || rec.busy >= 1) return;
+      const job = calQueue.shift(); job.id = calPool.nextId++; calPool.pending.set(job.id, job); rec.busy++;
+      rec.w.postMessage({ id: job.id, vertices: job.vertices });
+    }
+  }
+  function calViaPool(vertices, done, fallback) {
+    calPoolInit();
+    if (calPool.state === 'off') return false;
+    calQueue.push({ vertices, done, fail: () => fallback() }); calPoolPump(); return true;
+  }
+
   // Taratura di una forma: usa la cache; cb(cal). Se già pronta risponde subito.
   function calibrate(vertices, cb) {
     if (!vertices || vertices.length < 3) { cb([1, 1, 1, 1]); return; }
     const key = calKey(vertices);
     if (calCache.has(key)) { const v = calCache.get(key); if (Array.isArray(v)) { cb(v); return; } v.push(cb); return; }
     const waiting = [cb]; calCache.set(key, waiting);
-    runSliced(calibrateGen(vertices), val => { calCache.set(key, val); waiting.forEach(f => f(val)); if (calCache.size > 60) calCache.delete(calCache.keys().next().value); });
+    const done = val => { calCache.set(key, val); waiting.forEach(f => f(val)); if (calCache.size > 60) calCache.delete(calCache.keys().next().value); };
+    const local = () => runSliced(calibrateGen(vertices), done);
+    if (!calViaPool(vertices, done, local)) local();
   }
   function calibrateSync(vertices) { const key = calKey(vertices); const v = calCache.get(key); if (Array.isArray(v)) return v; const val = drain(calibrateGen(vertices)); calCache.set(key, val); return val; }
   function calOf(vertices) { const v = calCache.get(calKey(vertices)); return Array.isArray(v) ? v : [1, 1, 1, 1]; }
@@ -714,7 +791,7 @@ const Sim = (() => {
   }
 
   return {
-    init, addRacer, updateRacerWheel, start, tick, calibrate, calibrateSync, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
+    init, addRacer, updateRacerWheel, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
     snapshot, allFinished, isTimedOut, standings, GROUND_Y,
     get FINISH_X() { return Terrain.FINISH_X; },
     // ms rimasti agli altri dopo che il primo ha tagliato il traguardo (null = nessuno è arrivato)

@@ -3,8 +3,10 @@
 // nero "a setole" che si asciuga a strisce) compare la gara con le bici in griglia. Solo grafica locale:
 // fisica e rete non c'entrano. Un tocco la salta.
 const Intro = (() => {
-  const DUR = 4750;                                  // durata totale (ms); il 3-2-1 parte dopo
-  const LEAD = 400, LANE = 1300, PAUSE = 150;
+  // LANE = tempo per attraversare lo schermo con una passata (ms): più alto = avatar e pennello più lenti.
+  // Era 1300 (durata totale 4750 ms); provato: 2500 va bene, 4500 è troppo lento.
+  const LEAD = 400, LANE = 2500, PAUSE = 150;
+  const DUR = LEAD + 3 * LANE + 2 * PAUSE + 150;      // durata totale (ms); il 3-2-1 parte dopo
   const LANES = [0.29, 0.53, 0.78];                  // altezza della punta (frazione di H)
   const BANDS = [0.58, 0.40, 0.52];                  // spessore della pennellata per corsia (frazione di H)
   const INK = '#0b0b0d';
@@ -21,7 +23,7 @@ const Intro = (() => {
   for (let i = 1; i <= 3; i++) ['av', 'br'].forEach(k => { const im = new Image(); im.onload = () => ready++; im.src = `img/${k}${i}.png?v=20261022b`; imgs[k].push(im); });
 
   let cv = null, ctx = null, paper = null, pctx = null, W = 0, H = 0, dpr = 1, s = 1;
-  let killer = 0, fixedT = null, raf = 0, t0 = 0, running = false, lastT = 0, chunks = [], drops = [], lastCh = null;
+  let killer = 0, fixedT = null, raf = 0, t0 = 0, running = false, lastT = 0, chunks = [], drops = [], lastCh = null, lastLane = -2;
   const R = Array.from({ length: 12 }, (_, i) => (Math.sin(i * 12.9898) * 43758.5453) % 1), rnd = i => Math.abs(R[i % 12]);
 
   const enabled = () => { try { return localStorage.getItem('dw_intro') !== 'off'; } catch (e) { return true; } };
@@ -151,6 +153,7 @@ const Intro = (() => {
     ctx.drawImage(paper, 0, 0);
     drawInk(T);
     const q = state(T);
+    if (q.lane !== lastLane) { lastLane = q.lane; if (q.walking && typeof Sfx !== 'undefined' && fixedT === null) Sfx.swoosh(LANE * 0.9); }
     if (q.walking && ready >= 6) drawFigure(q, T);
     if (T >= DUR) return stop();
     raf = requestAnimationFrame(frame);
@@ -163,7 +166,7 @@ const Intro = (() => {
     cv.width = W; cv.height = H; ctx = cv.getContext('2d');
     s = Math.min(0.000452 * H, 0.95 * W / 890);          // avatar ~37% dell'altezza (o 95% della larghezza in verticale)
     paper = paper || document.createElement('canvas'); pctx = paper.getContext('2d');
-    buildPaper(); chunks = []; drops = []; lastCh = null; lastT = 0;
+    buildPaper(); chunks = []; drops = []; lastCh = null; lastT = 0; lastLane = -2;
     t0 = startTime - 3500 - DUR;                              // finisce 0,5 s prima del "3"
     cv.style.display = 'block'; host.classList.add('intro-on'); running = true;
     clearTimeout(killer); killer = setTimeout(stop, Math.max(0, DUR - (Date.now() - t0)) + 60);
