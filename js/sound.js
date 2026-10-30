@@ -56,6 +56,8 @@ const Sfx = (() => {
   };
   // colpo di uno spigolo della ruota sul terreno: breve e sordo, più forte con la velocità
   const clack = v => { puff('bandpass', 380 + 260 * v, 1.4, 0.05, 0.05 + 0.1 * v); tone(120 + 60 * v, 0.06, 'sine', 0.05 + 0.08 * v, 0, 70); };
+  // uscita da un salto: il "pop" dell'anello che si apre + schizzo
+  const portalOut = d => { tone(d > 0 ? 520 : 400, 0.14, 'sine', 0.22, 0, d > 0 ? 1040 : 800); puff('bandpass', 1800, 1, 0.18, 0.14, 0, 600); tone(1500, 0.1, 'triangle', 0.08, 0.06); };
   const redraw = () => { tone(520, 0.1, 'triangle', 0.14); tone(780, 0.14, 'triangle', 0.14, 0.08); };
 
   // ---- rotolamento continuo ----------------------------------------------------------------------------
@@ -109,5 +111,5 @@ const Sfx = (() => {
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('button, .btn'); if (t && t.id !== 'btn-sound') { unlock(); click(); } }, true);
     document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) ctx.suspend(); else if (!muted) ctx.resume(); });
   }
-  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, portal, update, silence, setMuted, get muted() { return muted; } };
+  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, portal, portalOut, update, silence, setMuted, get muted() { return muted; } };
 })();

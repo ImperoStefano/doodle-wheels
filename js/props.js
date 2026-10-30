@@ -362,7 +362,7 @@ const Props = (() => {
   function portalDraw(ctx, q, sx, by, t, k, d, st, layer) {
     const ry = 92 * k, rx = 42 * k, cy = by - 92 * k - 3, seed = q.id * 1.7;
     const ring = (n, f) => { ctx.beginPath(); for (let j = 0; j <= n; j++) { const a = f + (j / n) * TAU * (f === undefined ? 1 : 1); const wob = 1 + 0.05 * Math.sin(3 * a + t * 2 + seed) + 0.035 * Math.sin(5 * a - t * 3 + seed); const x = sx + Math.cos(a) * rx * wob, y = cy + Math.sin(a) * ry * wob; if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } };
-    const dim = q.kind === 'exit' && !st.mirrored ? 0.38 : 1;
+    const dim = q.kind === 'exit' && !(st.mirrored && st.myExit === q.id) ? 0.38 : 1;   // solo la propria uscita è in evidenza
     ctx.save(); ctx.globalAlpha = dim; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     if (layer === 'back') {
       // pozza d'inchiostro alla base
@@ -722,5 +722,5 @@ const Props = (() => {
     });
   }
 
-  return { drawBridges, drawRamps, drawSigns, drawFinish, drawPatches, drawPortals };
+  return { drawBridges, drawRamps, drawSigns, drawFinish, drawPatches, drawPortals, portalDraw };
 })(); // props

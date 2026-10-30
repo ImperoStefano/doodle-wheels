@@ -47,6 +47,8 @@ const Sim = (() => {
   const MAX_SINK = 2;         // px a wheel corner may dip below the ground line before it's lifted out
   const SUBSTEPS = 2;         // physics sub-steps per 60Hz step: softer landings, less corner digging
 
+  const IMMUNE_MS = 2500;   // dopo un salto (o l'uscita dallo specchio) la bici non attiva portali per un po': chi è in testa non viene rimbalzato di continuo
+  let portalUsed = {};   // portali già attraversati da qualcuno: spariscono per tutti (chi arriva per primo li consuma)
   let engine, world, racers = {}, running = false, timedOut = false, startedAt = 0, accumulator = 0, firstFinishAt = null, timeoutMs = 180000;
   // ONE shared negative group for every racer: bikes pass through each other (ghost racing) but all
   // collide with the ground (group 0). With a group per racer the grid spacing (200px) is smaller
@@ -67,7 +69,7 @@ const Sim = (() => {
     racerGroup = Matter.Body.nextGroup(true);
   }
   function resetRaceState() {
-    racers = {};
+    racers = {}; portalUsed = {};
     running = false;
     timedOut = false;
     accumulator = 0;
@@ -257,7 +259,7 @@ const Sim = (() => {
   }
 
   function addRacer(id, vertices, color, name, startIndex) {
-    const startX = 60 + startIndex * 200;
+    const startX = 60;   // partenza identica per tutti (le bici non si urtano: gruppo di collisione condiviso), nessun vantaggio di posizione; startIndex non conta più
     const group = racerGroup;
     const wOpt = wheelOptions(group);
 
@@ -278,7 +280,7 @@ const Sim = (() => {
     racers[id] = {
       chassis, fw, rw, axF, axR, color, name,
       finished: false, finishTime: null,
-      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, cd: {}, used: {}, pe: 0, pt: '', pd: 0,
+      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, pe: 0, pt: '', pd: 0,
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
   }
@@ -710,25 +712,28 @@ const Sim = (() => {
   function checkPortals(r, elapsed) {
     const P = Terrain.PORTALS; if (!P || !P.length) return;
     const x = r.chassis.position.x, lx = r.lx; r.lx = x;
-    if (r.dir === -1) {   // rete di sicurezza: se la bici ha oltrepassato l'uscita senza "toccarla" (sblocco all'indietro), torna comunque normale
-      for (const q of P) if (q.kind === 'mirror' && r.used[q.id]) { const ex = P.find(e => e.id === q.exit); if (ex && !r.used[ex.id] && x <= ex.x) { r.used[ex.id] = true; r.dir = 1; r.bestX = x; r.hopBaseX = x; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'x', 0, ex.id); return; } }
+    if (r.dir === -1) {   // rete di sicurezza: se la bici ha oltrepassato la SUA uscita senza "toccarla" (sblocco all'indietro), torna comunque normale
+      const ex = P.find(e => e.id === r.exitId);
+      if (ex && x <= ex.x) { portalUsed[ex.id] = true; r.exitId = -1; r.dir = 1; r.immuneUntil = elapsed + IMMUNE_MS; r.bestX = x; r.hopBaseX = x; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'x', 0, ex.id); return; }
     }
     if (x === lx) return;
     for (const q of P) {
+      if (portalUsed[q.id]) continue;   // già consumato: da chiunque, spariscono per tutti
+      if (q.kind !== 'exit' && elapsed < r.immuneUntil) continue;   // immune: ci passa attraverso, il portale resta per gli altri
       if ((lx - q.x) * (x - q.x) > 0 || (lx === q.x && x === q.x)) continue;
-      if (r.used[q.id]) continue;   // ogni portale si attraversa una volta sola: poi sparisce, l'esito non si può ritirare
       if (q.kind === 'shift') {
         let d = 150 + Math.random() * 250; if (Math.random() < 0.5) d = -d;
         if (!Terrain.landOk(x + d)) d = -d; if (!Terrain.landOk(x + d)) continue;
-        r.used[q.id] = true; teleport(r, d); r.lx = r.chassis.position.x;
+        portalUsed[q.id] = true; teleport(r, d); r.lx = r.chassis.position.x;
+        r.immuneUntil = elapsed + IMMUNE_MS;
         r.bestX = r.dir * r.chassis.position.x; r.hopBaseX = r.bestX; r.progressAt = elapsed; portalEvent(r, 's', d, q.id);
       } else if (q.kind === 'mirror') {
         if (r.dir !== 1) continue;
-        r.used[q.id] = true; r.dir = -1;
+        portalUsed[q.id] = true; r.dir = -1; r.exitId = q.exit;   // l'uscita è solo di chi ha preso questo specchio
         r.bestX = -x; r.hopBaseX = -x; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'm', 0, q.id);
       } else if (q.kind === 'exit') {
-        if (r.dir !== -1) continue;
-        r.used[q.id] = true; r.dir = 1;
+        if (r.dir !== -1 || r.exitId !== q.id) continue;
+        portalUsed[q.id] = true; r.exitId = -1; r.dir = 1; r.immuneUntil = elapsed + IMMUNE_MS;
         r.bestX = x; r.hopBaseX = x; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'x', 0, q.id);
       }
     }
@@ -773,7 +778,8 @@ const Sim = (() => {
     const elapsed = performance.now() - startedAt;
 
     while (accumulator >= FIXED_DT) {
-      for (const r of Object.values(racers)) {
+      const order = Object.values(racers); for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const tmp = order[i]; order[i] = order[j]; order[j] = tmp; }   // ordine casuale: se due bici toccano un portale nello stesso passo, non vince sempre la stessa
+      for (const r of order) {
         stepRacer(r, elapsed);
         if (!r.finished) assist(r);
       }
@@ -797,7 +803,7 @@ const Sim = (() => {
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
       finished: r.finished, finishTime: r.finishTime,
-      dir: r.dir || 1, pe: r.pe || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi
+      dir: r.dir || 1, pe: r.pe || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
   }
 
@@ -830,7 +836,7 @@ const Sim = (() => {
 
   return {
     init, addRacer, updateRacerWheel, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
-    snapshot, allFinished, isTimedOut, standings, GROUND_Y,
+    snapshot, allFinished, isTimedOut, standings, GROUND_Y, usedPortals: () => Object.keys(portalUsed).map(Number),
     get FINISH_X() { return Terrain.FINISH_X; },
     // ms rimasti agli altri dopo che il primo ha tagliato il traguardo (null = nessuno è arrivato)
     graceLeft() { if (firstFinishAt === null || !running) return null; return Math.max(0, GRACE_BASE_MS + firstFinishAt * GRACE_FRAC - (performance.now() - startedAt - firstFinishAt)); },

@@ -250,7 +250,7 @@ const Terrain = (() => {
   //  exit    portale d'uscita, ~650–900 px dietro lo specchio: chi arriva da dietro lo attraversa, rimette tutto com'era
   // Posizioni deterministiche dal layout (RNG separato: la pista normale non cambia). Mai su ponti/vuoti né su tratti a tema,
   // e l'intero tratto fra uscita e specchio è libero, così la retromarcia si fa su terreno pulito.
-  function planPortals(keys) {
+  function planPortals(keys, np) {
     PORTALS = [];
     const rnd = mulberry32(hashStr(keys.join(',') + '#portali'));
     const nz = ZONES.length - 2, lo = ZONES[1].start + 900, hi = FINISH_X - 650;
@@ -262,7 +262,7 @@ const Terrain = (() => {
       return a >= lo - 700 && b <= FINISH_X - 400;
     };
     const taken = [];     // intervalli già occupati da portali
-    const clear = (a, b) => taken.every(t => b < t[0] - 330 || a > t[1] + 330);
+    const clear = (a, b) => taken.every(t => b < t[0] - 200 || a > t[1] + 200);
     const spread = (n, validAt, make) => {
       for (let k = 0; k < n; k++) {
         const tgt = lo + (hi - lo) * ((k + 0.5) / n) + (rnd() - 0.5) * 500, cands = [];
@@ -271,7 +271,10 @@ const Terrain = (() => {
         for (const x of cands) { const r = validAt(x); if (r && clear(r[0], r[1])) { taken.push(r); make(x, r); break; } }
       }
     };
-    const pairs = nz <= 7 ? 1 : nz <= 11 ? 2 : 3, shifts = nz <= 7 ? 2 : nz <= 11 ? 3 : 5;
+    // quanti portali: calibrati per 5 giocatori e in proporzione al numero di giocatori (il primo che passa consuma il portale, quindi
+    // con pochi giocatori ognuno ne incontrerebbe troppi): non più di quanti ne servano. Minimo 1 coppia e 2 salti.
+    const f = Math.max(0.2, Math.min(1, (np || 5) / 5));
+    const pairs = Math.max(1, Math.round((nz <= 7 ? 3 : nz <= 11 ? 4 : 6) * f)), shifts = Math.max(2, Math.round((nz <= 7 ? 7 : nz <= 11 ? 11 : 16) * f));
     let id = 0;
     spread(pairs, x => { const R = 650 + Math.round(rnd() * 250); return free(x - R - 70, x + 70) ? [x - R - 70, x + 70, R] : null; },
       (x, r) => { const R = r[2]; PORTALS.push({ id: id++, kind: 'exit', x: Math.round(x - R) }, { id: id++, kind: 'mirror', x: Math.round(x), exit: id - 2 }); });
@@ -313,7 +316,7 @@ const Terrain = (() => {
 
     if (!(force && force.nogap)) planGaps(rnd);
     planPatches(rnd, force);
-    PORTALS = []; if (force && force.crazy) planPortals(keys);
+    PORTALS = []; if (force && force.crazy) planPortals(keys, force.np);
     FLOWERS = generateFlowers(rnd);
     LILIES = generateLilies();
   }

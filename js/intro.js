@@ -5,7 +5,7 @@
 const Intro = (() => {
   // LANE = tempo per attraversare lo schermo con una passata (ms): più alto = avatar e pennello più lenti.
   // Era 1300 (durata totale 4750 ms); provato: 2500 va bene, 4500 è troppo lento.
-  const LEAD = 400, LANE = 2500, PAUSE = 150;
+  const LEAD = 400, LANE = 1900, PAUSE = 150;
   const DUR = LEAD + 3 * LANE + 2 * PAUSE + 150;      // durata totale (ms); il 3-2-1 parte dopo
   const LANES = [0.29, 0.53, 0.78];                  // altezza della punta (frazione di H)
   const BANDS = [0.58, 0.40, 0.52];                  // spessore della pennellata per corsia (frazione di H)

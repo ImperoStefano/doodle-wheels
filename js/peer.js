@@ -154,6 +154,10 @@ const Net = (() => {
   function handleData(fromId, data) {
     if (isHost) {
       if (data.type === 'join') {
+        if (!players[fromId] && Object.keys(players).length >= MAX_PLAYERS) {   // due connessioni aperte insieme non possono superare il massimo
+          const c = connections[fromId]; if (c) { try { c.send({ type: 'full' }); } catch (e) {} setTimeout(() => { try { c.close(); } catch (e) {} }, 200); delete connections[fromId]; }
+          return;
+        }
         players[fromId] = { id: fromId, name: (data.name || '???').slice(0, 14), color: nextColor(), isHost: false };
         emit('playersChanged', { ...players });
         broadcast({ type: 'players', players });

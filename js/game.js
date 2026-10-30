@@ -153,8 +153,8 @@
   Net.on('data', ({ from, data }) => {
     if (data.type === 'goToDraw') enterDrawPhase();
     if (data.type === 'wheel' && Net.isHost) receiveWheel(from, data.vertices);
-    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; Terrain.applyLayout(data.trackLayout, crazy ? { crazy: true } : undefined); startCountdown(data.startTime); }
-    if (data.type === 'snap') applySnapshot(data.racers, data.ts);
+    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; Terrain.applyLayout(data.trackLayout, crazy ? { crazy: true, np: data.np } : undefined); startCountdown(data.startTime); }
+    if (data.type === 'snap') { if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); }
     if (data.type === 'results') showResults(data.standings);
     if (data.type === 'lastCall') showLastCall(data.ms);
     if (data.type === 'restartToDraw') enterDrawPhase();
@@ -218,7 +218,7 @@
       // "Rigioca stessa pista" riusa il percorso appena giocato; altrimenti ne nasce uno nuovo della lunghezza scelta
       const track = (keepTrack && currentLayout) ? currentLayout : Terrain.generateRandomLayout(Terrain.LENGTHS[trackLen] || Terrain.LENGTHS.lunga);
       currentLayout = track; keepTrack = false;
-      Terrain.applyLayout(track, crazy ? { crazy: true } : undefined); Net.broadcast({ type: 'allReady', wheels, startTime: start, trackLayout: track, crazy }); startCountdown(start);
+      const np = ids.length; Terrain.applyLayout(track, crazy ? { crazy: true, np } : undefined); Net.broadcast({ type: 'allReady', wheels, startTime: start, trackLayout: track, crazy, np }); startCountdown(start);
     }
   }
 
@@ -227,7 +227,7 @@
   function placeGrid() {
     latestRacers = {}; snapBuf.length = 0; snapOff = null;
     Object.keys(raceMeta).forEach((id, i) => {
-      const x = 60 + i * 200, y = Sim.GROUND_Y - Terrain.height(x) - 70;
+      const x = 60, y = Sim.GROUND_Y - Terrain.height(x) - 70;   // stesso punto di partenza per tutti (come nella fisica)
       latestRacers[id] = { id, x, y, angle: 0, fwX: x + 90, fwY: y, fwAngle: 0, rwX: x - 90, rwY: y, rwAngle: 0, vx: 0, finished: false, finishTime: null };
     });
   }
@@ -268,8 +268,8 @@
     let lastSend = 0;
     snapshotLoopHandle = Ticker.start(() => {
       const now = performance.now(), dt = Math.min(now - last, 100); last = now;
-      const pt = Perf.on ? performance.now() : 0; Sim.tick(dt); const snap = Sim.snapshot(); applySnapshot(snap); if (Perf.on) Perf.tick(performance.now() - pt);
-      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now }); }
+      const pt = Perf.on ? performance.now() : 0; Sim.tick(dt); const snap = Sim.snapshot(), pu = Sim.usedPortals(); syncUsed(pu); applySnapshot(snap); if (Perf.on) Perf.tick(performance.now() - pt);
+      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now, pu }); }
       // primo traguardo: gli altri hanno un tempo limitato, e lo sanno
       const gl = Sim.graceLeft();
       if (gl !== null && !lastCallSent) { lastCallSent = true; Net.broadcast({ type: 'lastCall', ms: gl }); showLastCall(gl); }
@@ -324,7 +324,7 @@
           for (const id in b.m) {
             const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
-            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi,
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
           }
           return;
@@ -338,7 +338,7 @@
       if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }   // portale (teletrasporto) o nuovo arrivato o salto (rimessa in pista): niente scivolata
       latestRacers[id] = {
         id, finished: rb.finished, finishTime: rb.finishTime,
-        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im,
         fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
         rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
       };
@@ -447,8 +447,26 @@
     Sfx.update(Math.abs(r.vx), surf, air && !wet, gk === 'rack' && p ? p.per : gk === 'rough' && p && p.S ? p.S : 0, ticks);
   }
 
+  // alone luminoso della bici immune ai portali (dopo un salto): nel colore del giocatore, pulsa e si spegne negli ultimi 600 ms
+  function drawGlow(ctx, x, y, color, im, now, top) {
+    const a = Math.min(1, im / 600), pul = 0.85 + 0.15 * Math.sin(now / 110), R = 165 * pul, rgb = hexRgb(color);
+    ctx.save();
+    const gr = ctx.createRadialGradient(x, y, 20, x, y, R);
+    gr.addColorStop(0, `rgba(255,255,255,${(0.7 * a).toFixed(3)})`); gr.addColorStop(0.45, `rgba(${rgb},${(0.42 * a).toFixed(3)})`); gr.addColorStop(1, `rgba(${rgb},0)`);
+    if (!top) { ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return; }
+    // anello tratteggiato (bianco sotto, colore sopra: si legge su ogni sfondo)
+    ctx.lineCap = 'round'; ctx.setLineDash([9, 11]); ctx.lineDashOffset = -now / 35;
+    for (const [col, w] of [[`rgba(255,255,255,${(0.95 * a).toFixed(3)})`, 6], [`rgba(${rgb},${a.toFixed(3)})`, 3]]) { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.ellipse(x, y, 122 * pul, 82 * pul, 0, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.setLineDash([]);
+    // scintille che salgono
+    for (let k = 0; k < 9; k++) { const t = now / 560 + k * 0.7, rr = 78 + 36 * Math.sin(t * 1.7 + k), px = x + Math.cos(t) * rr * 1.35, py = y + Math.sin(t) * rr * 0.82 - ((now / 22 + k * 11) % 36) * 0.5, s = 2.2 + (k % 3);
+      ctx.fillStyle = `rgba(255,255,255,${(0.95 * a).toFixed(3)})`; ctx.beginPath(); ctx.arc(px, py, s + 1.6, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = `rgba(${rgb},${a.toFixed(3)})`; ctx.beginPath(); ctx.arc(px, py, s, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+  function hexRgb(h) { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); if (!m) return '255,255,255'; const n = parseInt(m[1], 16); return ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255); }
   // ---- portali (modalità pazza): effetti solo per la propria bici ----
-  const pst = { gone: {}, mirrored: false, pe: 0, now: 0 };
+  const pst = { gone: {}, mirrored: false, myExit: -1, pe: 0, now: 0 }, arrAt = {}, peSeen = {};
+  const easeOutBack = u => { const c = 1.9; return 1 + (c + 1) * Math.pow(u - 1, 3) + c * Math.pow(u - 1, 2); };
   let noteTimer = 0, mirrorF = 1, mirT = 0;   // mirrorF: 1 = normale, -1 = specchiato (si anima in ~0,55 s)
   // Lo specchio è nel disegno (non in CSS) così le scritte restano leggibili: ogni testo viene raddrizzato attorno al suo punto di ancoraggio.
   function installTextFix(ctx) {
@@ -463,24 +481,39 @@
     };
     ctx.fillText = wrap(ft); ctx.strokeText = wrap(st);
   }
-  function showNote(key, ms) {
-    const n = els.portalNote; n.textContent = I18n.t(key); n.style.display = 'block'; n.classList.remove('pop'); void n.offsetWidth; n.classList.add('pop');
+  function showNote(key, ms, extra) {
+    const n = els.portalNote; n.textContent = I18n.t(key) + (extra ? ' ' + extra : ''); n.style.display = 'block'; n.classList.remove('pop'); void n.offsetWidth; n.classList.add('pop');
     clearTimeout(noteTimer); if (ms) noteTimer = setTimeout(() => { n.style.display = 'none'; }, ms);
   }
   function setMirrorView(on) { els.raceWrap.classList.toggle('mirrored', on); }
-  function resetPortals() { pst.gone = {}; pst.mirrored = false; pst.pe = 0; mirrorF = 1; mirT = 0; clearTimeout(noteTimer); els.portalNote.style.display = 'none'; setMirrorView(false); }
+  // portali consumati da qualcuno (lo dice l'host in ogni snapshot): spariscono per tutti, con la dissolvenza a schizzi
+  function syncUsed(pu) { const n = performance.now(); for (let i = 0; i < pu.length; i++) if (!pst.gone[pu[i]]) pst.gone[pu[i]] = n; }
+  function resetPortals() { for (const k in arrAt) delete arrAt[k]; for (const k in peSeen) delete peSeen[k]; pst.gone = {}; pst.mirrored = false; pst.myExit = -1; pst.pe = 0; mirrorF = 1; mirT = 0; clearTimeout(noteTimer); els.portalNote.style.display = 'none'; setMirrorView(false); }
+  // anello d'arrivo: dove la bici riappare dopo un salto. Si apre veloce, resta un attimo e si dissolve in schizzi (come i portali usati).
+  const ARR_Q = { id: 9000, kind: 'shift', x: 0 };
+  function drawArrivals(ctx, camX, w, gy, now, layer) {
+    for (const id in arrAt) {
+      const a = arrAt[id], tt = now - a.t0; if (tt > 1900) { delete arrAt[id]; continue; }
+      const sx = a.x - camX; if (sx < -120 || sx > w + 120) continue;
+      const k = Math.min(1, easeOutBack(Math.min(1, tt / 380))), d = Math.max(0, (tt - 1000) / 900);
+      Props.portalDraw(ctx, ARR_Q, sx, gy - Terrain.height(a.x), now / 1000, Math.max(0.01, k * (1 - d * d)), d, pst, layer);
+    }
+  }
   function portalFx(me, now) {
-    pst.now = now; if (!me || !Terrain.PORTALS.length) return;
+    pst.now = now; if (!Terrain.PORTALS.length) return;
+    for (const id in latestRacers) { const r = latestRacers[id]; if (r.pe === undefined) continue; if (r.pe !== (peSeen[id] || 0)) { peSeen[id] = r.pe; if (r.pt === 's') arrAt[id] = { t0: now, x: r.x, from: r.x - r.pd, mine: id === Net.myId }; } }
+    if (!me) return;
     if (me.pe !== pst.pe) {
       pst.pe = me.pe; if (me.pi >= 0) pst.gone[me.pi] = now;
-      if (me.pt === 's') { els.portalFlash.classList.remove('go'); void els.portalFlash.offsetWidth; els.portalFlash.classList.add('go'); showNote(me.pd > 0 ? 'crazy.fwd' : 'crazy.back', 1600); }
-      else if (me.pt === 'm') showNote('crazy.mirror', 0);
+      if (me.pt === 's') { els.portalFlash.classList.remove('go'); void els.portalFlash.offsetWidth; els.portalFlash.classList.add('go'); showNote(me.pd > 0 ? 'crazy.fwd' : 'crazy.back', 1800, (me.pd > 0 ? '+' : '−') + Math.round(Math.abs(me.pd))); }
+      else if (me.pt === 'm') { const mp = Terrain.PORTALS.find(p => p.id === me.pi); pst.myExit = mp ? mp.exit : -1; showNote('crazy.mirror', 0); }
       else if (me.pt === 'x') { clearTimeout(noteTimer); els.portalNote.style.display = 'none'; }
-      if (typeof Sfx !== 'undefined') Sfx.portal(me.pt, me.pd);
+      if (typeof Sfx !== 'undefined') { Sfx.portal(me.pt, me.pd); if (me.pt === 's') setTimeout(() => { try { Sfx.portalOut(me.pd); } catch (e) {} }, 330); }
     }
     const mir = me.dir === -1; if (mir !== pst.mirrored) { pst.mirrored = mir; setMirrorView(mir); }
   }
 
+  window.__dw = { racers: () => latestRacers, portals: () => pst };   // solo per i test
   function renderRace(ts) {
     const t0 = performance.now();
     interpolateRacers(t0);
@@ -518,15 +551,22 @@
     Flora.draw(ctx2d, camX, w, groundY, SC);
 
     portalFx(me, t0);
-    if (Terrain.PORTALS.length) Props.drawPortals(ctx2d, camX, w, groundY, t0 / 1000, pst, 'back');
-    Object.entries(latestRacers).forEach(([id, r]) => {
+    if (Terrain.PORTALS.length) { Props.drawPortals(ctx2d, camX, w, groundY, t0 / 1000, pst, 'back'); drawArrivals(ctx2d, camX, w, groundY, t0, 'back'); }
+    // la propria bici per ultima: alla partenza (stesso punto per tutti) resta sopra le altre
+    Object.entries(latestRacers).sort((a, b) => (a[0] === Net.myId) - (b[0] === Net.myId)).forEach(([id, r]) => {
       const meta = raceMeta[id]; if (!meta) return;
       const cy = (y) => y - Sim.GROUND_Y + groundY, cx = r.x - camX;
       if (cx < -250 || cx > w + 250) return;
+      let sc = 1; const ar = arrAt[id];
+      if (ar) { const tt = t0 - ar.t0; sc = tt < 130 ? 0.001 : Math.max(0.001, Math.min(1.15, easeOutBack(Math.min(1, (tt - 130) / 420)))); }
+      if (sc !== 1) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(sc, sc); ctx2d.translate(-cx, -cy(r.y)); }
+      if (r.im > 0) drawGlow(ctx2d, cx, cy(r.y), meta.color, r.im, t0);
       drawBike(cx, cy(r.y), r.angle, meta.color);
       drawWheel(r.rwX - camX, cy(r.rwY), r.rwAngle, meta.vertices, meta.color, id === Net.myId);
       drawWheel(r.fwX - camX, cy(r.fwY), r.fwAngle, meta.vertices, meta.color, id === Net.myId);
       drawRider(cx, cy(r.y), r.angle, meta.color, meta.name, id === Net.myId);
+      if (r.im > 0) drawGlow(ctx2d, cx, cy(r.y), meta.color, r.im, t0, true);
+      if (sc !== 1) ctx2d.restore();
 
       const zk = Terrain.zoneKeyAt(r.x);
       const wet = zk === 'water' && Terrain.isWater(r.x);
@@ -539,7 +579,7 @@
       }
     });
 
-    if (Terrain.PORTALS.length) Props.drawPortals(ctx2d, camX, w, groundY, t0 / 1000, pst, 'front');
+    if (Terrain.PORTALS.length) { Props.drawPortals(ctx2d, camX, w, groundY, t0 / 1000, pst, 'front'); drawArrivals(ctx2d, camX, w, groundY, t0, 'front'); }
     if (me && typeof Sfx !== 'undefined') raceAudio(me, raceMeta[Net.myId], t0);
     Scenery.drawWater(ctx2d, surfBuf, n, SURF_STEP);
     Scenery.drawFront(ctx2d);

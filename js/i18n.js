@@ -3,7 +3,7 @@
 const I18n = (() => {
   const D = {
     it: {
-      'menu.sub': 'Disegna la tua ruota e affronta ostacoli dinamici.<br>Sfida fino a 4 amici in tempo reale.',
+      'menu.sub': 'Disegna la tua ruota e affronta ostacoli dinamici.<br>Sfida fino a 4 amici in tempo reale (5 giocatori in tutto).',
       'menu.name': 'Il tuo nome', 'menu.name.ph': 'Inserisci il nome...', 'menu.host': 'Crea Nuova Gara',
       'menu.code.ph': 'CODICE', 'menu.join': 'Unisciti',
       'menu.err.name': 'Nome richiesto.', 'menu.err.namecode': 'Nome e codice (4 lettere) richiesti.', 'menu.err.net': 'Errore di rete.',
@@ -26,7 +26,7 @@ const I18n = (() => {
       'doc.title': 'Doodle Wheels — corsa online',
     },
     en: {
-      'menu.sub': 'Draw your wheel and take on dynamic obstacles.<br>Challenge up to 4 friends in real time.',
+      'menu.sub': 'Draw your wheel and take on dynamic obstacles.<br>Challenge up to 4 friends in real time (5 players in total).',
       'menu.name': 'Your name', 'menu.name.ph': 'Enter your name...', 'menu.host': 'Create New Race',
       'menu.code.ph': 'CODE', 'menu.join': 'Join',
       'menu.err.name': 'Name required.', 'menu.err.namecode': 'Name and code (4 letters) required.', 'menu.err.net': 'Network error.',
