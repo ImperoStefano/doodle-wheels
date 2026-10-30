@@ -190,3 +190,9 @@ Nota: la griglia di partenza non è più sfalsata (vedi «Partenza uguale per tu
 - **Host**: la fisica gira ogni ~16 ms (prima 50 ms, 3 passi alla volta) e gli snapshot di rete restano a ~20/s.
 - **Taratura in anticipo:** parte appena l'host riceve ogni ruota (`receiveWheel`), durante i 30 s di disegno degli altri; al conto alla rovescia il risultato è già in cache.
 - Non misurabile qui: il Chromium headless senza GPU fa 4–5 fps, quindi la verifica va fatta su dispositivi veri.
+
+## Quindicesimo giro: scia a pennello e tracciato finale
+
+- Dietro ogni bici (in entrambe le gare, costante `TRAIL_CLASSIC` in `js/game.js`) c'è una **pennellata piena** nel colore del giocatore: nasce da una macchia più scura, ha righe chiare di carta che affiorano, la coda si sfilaccia in setole e lascia schizzi. Si spezza quando la bici attraversa un portale che la sposta.
+- Nella schermata dei risultati il canvas `#results-trace` mostra il **tracciato finale**: foglio a quadretti, profilo morbido della pista, portali, bandierina e la corsa di ognuno come pennellata, con archi tratteggiati per i salti.
+- Verificato solo in Chromium headless (nessun telefono reale).

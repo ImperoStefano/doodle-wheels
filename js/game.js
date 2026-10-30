@@ -8,7 +8,7 @@
     roomCode: document.getElementById('room-code'), playerList: document.getElementById('player-list'),
     btnStartRace: document.getElementById('btn-start-race'), lobbyHint: document.getElementById('lobby-hint'),
     lenPicker: document.getElementById('len-picker'), lenHint: document.getElementById('len-hint'), modePicker: document.getElementById('mode-picker'), modeHint: document.getElementById('mode-hint'),
-    raceWrap: document.querySelector('.race-wrap'), portalFlash: document.getElementById('portal-flash'), portalNote: document.getElementById('portal-note'),
+    raceWrap: document.querySelector('.race-wrap'), resultsTrace: document.getElementById('results-trace'), portalFlash: document.getElementById('portal-flash'), portalNote: document.getElementById('portal-note'),
     drawTimer: document.getElementById('draw-timer'), drawCanvas: document.getElementById('draw-canvas'),
     btnClear: document.getElementById('btn-clear'), btnSubmitWheel: document.getElementById('btn-submit-wheel'),
     drawWait: document.getElementById('draw-wait'), redrawUi: document.getElementById('redraw-ui'),
@@ -248,7 +248,7 @@
     startRenderLoop();
     Intro.init(); Intro.play(startTime);
 
-    resetPortals(); let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false; aud.ang = undefined;
+    resetPortals(); resetTrails(); let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false; aud.ang = undefined;
     const tick = setInterval(() => {
       const left = startTime - Date.now();
       if (left <= 3000 && Intro.isRunning()) Intro.stop();   // il 3-2-1 non si sovrappone mai all'intro
@@ -447,6 +447,140 @@
     Sfx.update(Math.abs(r.vx), surf, air && !wet, gk === 'rack' && p ? p.per : gk === 'rough' && p && p.S ? p.S : 0, ticks);
   }
 
+  // ---- scia a pennello e tracciato finale ----------------------------------------------------------------
+  // Ogni bici lascia una pennellata a setole secche (come il pennello dell'intro): densa vicino alla ruota, sempre più rada e
+  // puntinata verso la coda. È solo disegno: parte dagli snapshot già ricevuti (nessun dato in più in rete).
+  // TRAIL_CLASSIC = false per averla solo nella "gara meno classica".
+  const TRAIL_CLASSIC = true, TRAIL_PTS = 84, TRAIL_STEP = 11, BRISTLES = 7;
+  const trails = {};
+  const hsh = (a, b) => { const v = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453; return v - Math.floor(v); };
+  function trailOn() { return TRAIL_CLASSIC || crazy; }
+  function resetTrails() { for (const k in trails) delete trails[k]; }
+  function trailSample(r) {
+    if (!trailOn()) return;
+    let T = trails[r.id]; if (!T) T = trails[r.id] = { p: [], last: null, full: [], lastFull: null, n: 0, pe: r.pe || 0 };
+    const x = r.rwX, y = r.rwY, jump = (r.pe || 0) !== T.pe && r.pt === 's'; T.pe = r.pe || 0;
+    const push = (px, py, br) => {
+      T.p.push([px, py, br ? 1 : 0, T.n++]); if (T.p.length > TRAIL_PTS) T.p.shift();
+      const lf = T.lastFull;
+      if (!lf || br || Math.hypot(px - lf[0], py - lf[1]) >= 34) { T.full.push([Math.round(px), Math.round(py), br || !lf ? 1 : 0]); T.lastFull = [px, py]; }
+    };
+    if (!T.last || jump) push(x, y, true);
+    else {
+      const dx = x - T.last[0], dy = y - T.last[1], d = Math.hypot(dx, dy);
+      if (d < TRAIL_STEP) return;
+      const m = Math.min(40, Math.floor(d / TRAIL_STEP));   // con pochi fotogrammi al secondo si riempie il tratto: densità uniforme
+      for (let i = 1; i <= m; i++) push(T.last[0] + dx * i / m, T.last[1] + dy * i / m, false);
+    }
+    T.last = [x, y];
+  }
+  const mixRgb = (rgb, k) => rgb.split(',').map(v => Math.round(+v * k)).join(',');
+  // scia a pennellata piena, come il riferimento: una fascia larga e satura nel colore del giocatore, più scura e "pozzata" dove nasce,
+  // con righe chiare di carta che affiorano, la coda che si sfilaccia in setole e schizzi/gocce sparsi
+  function drawTrail(ctx, camX, groundY, id, color) {
+    const T = trails[id]; if (!T || T.p.length < 4) return;
+    const P = T.p, n = P.length, rgb = hexRgb(color), deep = mixRgb(rgb, 0.55), light = rgb.split(',').map(v => Math.round(+v + (255 - +v) * 0.62)).join(','), off = groundY - Sim.GROUND_Y;
+    const S = []; for (let i = 0; i < n; i++) { let sx = 0, sy = 0, c = 0; for (let j = Math.max(0, i - 3); j <= Math.min(n - 1, i + 3); j++) { if (P[j][2] && j > i) break; sx += P[j][0]; sy += P[j][1]; c++; } S.push([sx / c - camX, sy / c + off - 2]); }
+    const W = i => { const age = (n - 1 - i) / (n - 1); return 34 * (0.55 + 0.45 * Math.sin(Math.min(1, age * 5 + 0.2) * Math.PI / 2)) * (1 - 0.72 * Math.pow(age, 1.6)) * (1 + 0.07 * Math.sin(P[i][3] * 0.33)); };
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // 1) corpo pieno (poligono) dalla zona piena alla testa, spezzato ai salti
+    const i0 = Math.max(0, n - 1 - Math.floor(n * 0.62)); let seg = [];
+    const flush = () => {
+      if (seg.length > 2) {
+        ctx.beginPath(); for (let k = 0; k < seg.length; k++) { const i = seg[k]; ctx.lineTo(S[i][0], S[i][1] - W(i) / 2); }
+        for (let k = seg.length - 1; k >= 0; k--) { const i = seg[k]; ctx.lineTo(S[i][0], S[i][1] + W(i) / 2 + 1.5 * Math.sin(P[i][3] * 0.8)); }
+        ctx.closePath();
+        const x0 = S[seg[0]][0], x1 = S[seg[seg.length - 1]][0], gr = ctx.createLinearGradient(x0, 0, x1 === x0 ? x0 + 1 : x1, 0);
+        gr.addColorStop(0, `rgba(${rgb},0)`); gr.addColorStop(0.18, `rgba(${rgb},0.9)`); gr.addColorStop(0.7, `rgba(${rgb},0.97)`); gr.addColorStop(1, `rgba(${deep},1)`);
+        ctx.fillStyle = gr; ctx.fill();
+      }
+      seg = [];
+    };
+    for (let i = i0; i < n; i++) { if (P[i][2] && seg.length) flush(); seg.push(i); }
+    flush();
+    // 2) coda sfilacciata: setole spesse che si diradano
+    const NB = 11;
+    for (let b = 0; b < NB; b++) {
+      const lane = (b - (NB - 1) / 2) / ((NB - 1) / 2), al = Math.abs(lane), seed = hsh(b, id.length * 3.1), dry = 0.1 + 0.5 * seed;
+      ctx.strokeStyle = b % 3 === 1 ? `rgba(${deep},0.95)` : `rgba(${rgb},0.95)`; ctx.lineWidth = 3.4 + 1.6 * (1 - al);
+      ctx.beginPath(); let pen = false;
+      for (let i = 0; i <= Math.min(n - 1, i0 + 6); i++) {
+        const age = (n - 1 - i) / (n - 1); if (P[i][2]) pen = false;
+        const keep = hsh(Math.floor(P[i][3] / 2) * 0.91 + b * 1.7, b * 0.31 + 0.7) > (age - 0.38) * (1.5 + dry) - 0.1;
+        if (!keep) { pen = false; continue; }
+        const x = S[i][0], y = S[i][1] + lane * W(Math.min(n - 1, i + 8)) * 0.5 + 1.8 * Math.sin(P[i][3] * 0.5 + b);
+        if (!pen) { ctx.moveTo(x, y); pen = true; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // 3) righe chiare (carta che affiora) lungo la pennellata: tratti lunghi
+    ctx.lineWidth = 1.5;
+    for (let b = 0; b < 9; b++) {
+      const lane = (hsh(b, id.length) - 0.5) * 1.7;
+      ctx.strokeStyle = `rgba(${light},${(0.35 + 0.35 * hsh(b, 4.4)).toFixed(2)})`; ctx.beginPath(); let pen = false;
+      for (let i = Math.max(1, i0); i < n; i++) {
+        if (P[i][2]) pen = false; const run = Math.floor(P[i][3] / (7 + 5 * hsh(b, 8.2))) + b * 13;
+        if (hsh(run, b + 0.3) > 0.42) { pen = false; continue; }
+        const x = S[i][0], y = S[i][1] + lane * W(i) * 0.5 + 0.9 * Math.sin(P[i][3] * 0.6 + b);
+        if (!pen) { ctx.moveTo(x, y); pen = true; } else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // 4) inizio della pennellata (se la scia è ancora corta): macchia scura e "flick" di setole all'indietro
+    if (T.p[0][3] === 0) { const x = S[0][0], y = S[0][1];
+      ctx.fillStyle = `rgba(${deep},1)`; ctx.beginPath(); ctx.ellipse(x, y, 13, 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = `rgba(${deep},0.9)`; for (let k = 0; k < 5; k++) { const a = Math.PI + (hsh(k, 2.2) - 0.5) * 1.1, l = 18 + 40 * hsh(k, 5.5), dyk = (hsh(k, 7.7) - 0.5) * 16; ctx.lineWidth = 0.9 + hsh(k, 1.1); ctx.beginPath(); ctx.moveTo(x - 6, y + dyk); ctx.lineTo(x - 6 + Math.cos(a) * l, y + Math.sin(a) * l + dyk); ctx.stroke(); } }
+    // 5) schizzi e gocce sparsi lungo la pennellata
+    for (let i = n - 2, c = 0; i > 0 && c < 14; i -= 2) { const q = P[i], r1 = hsh(q[3], 9.1); if (r1 > 0.5) continue; const age = (n - 1 - i) / n, up = hsh(q[3], 2.7) > 0.5 ? -1 : 1, rr = (1 + 3.6 * hsh(q[3], 5.3)) * (1 - 0.5 * age);
+      ctx.fillStyle = `rgba(${r1 < 0.25 ? deep : rgb},0.92)`; ctx.beginPath(); ctx.ellipse(S[i][0] + (hsh(q[3], 1.3) - 0.5) * 22, S[i][1] + up * (W(i) * 0.5 + 6 + 40 * hsh(q[3], 6.6) * hsh(q[3], 6.6)), rr * 1.25, rr, 0, 0, Math.PI * 2); ctx.fill(); c++; }
+    ctx.restore();
+  }
+  // tracciato finale: foglio a quadretti, colline a matita, la corsa di ognuno a pennellate, salti tratteggiati, bandiera al traguardo
+  function drawFinalTrace(standings) {
+    const cv = els.resultsTrace; if (!cv) return;
+    const ids = Object.keys(trails).filter(id => trails[id].full.length > 1);
+    if (!trailOn() || !ids.length) { cv.style.display = 'none'; return; }
+    cv.style.display = 'block';
+    const W = cv.width, H = cv.height, g = cv.getContext('2d'), x0 = Terrain.TRACK_START + 200, x1 = Terrain.FINISH_X + 120, sx = (W - 52) / (x1 - x0);
+    g.clearRect(0, 0, W, H); g.fillStyle = '#f0f4f8'; g.fillRect(0, 0, W, H); g.fillStyle = '#d9e2ec';
+    for (let x = 0; x < W; x += 24) g.fillRect(x, 0, 1.5, H); for (let y = 0; y < H; y += 24) g.fillRect(0, y, W, 1.5);
+    // profilo liscio (quota di riva delle zone, senza ostacoli): colline di matita con riempimento leggero
+    const prof = []; let lo = 1e9, hi = -1e9;
+    for (let x = x0; x <= x1; x += 40) { const h = Terrain.baseHeight(x); prof.push([x, h]); lo = Math.min(lo, h); hi = Math.max(hi, h); }
+    for (let r = 0; r < 3; r++) for (let i = 1; i < prof.length - 1; i++) prof[i][1] = (prof[i - 1][1] + prof[i][1] * 2 + prof[i + 1][1]) / 4;
+    const span = Math.max(140, hi - lo), sy = (H - 130) / span, baseY = H - 46 + lo * sy;
+    const X = x => 26 + (x - x0) * sx, Yh = h => baseY - h * sy;
+    g.beginPath(); prof.forEach(([x, h], i) => { if (i) g.lineTo(X(x), Yh(h)); else g.moveTo(X(x), Yh(h)); }); g.lineTo(X(x1), H); g.lineTo(X(x0), H); g.closePath();
+    g.fillStyle = 'rgba(16,42,67,0.07)'; g.fill();
+    g.strokeStyle = 'rgba(16,42,67,0.55)'; g.lineWidth = 2.2; g.lineJoin = 'round'; g.beginPath(); prof.forEach(([x, h], i) => { if (i) g.lineTo(X(x), Yh(h)); else g.moveTo(X(x), Yh(h)); }); g.stroke();
+    // portali (anelli d'inchiostro): neri gli specchi, tratteggiati le uscite
+    (Terrain.PORTALS || []).forEach(p => { if (p.x < x0 || p.x > x1) return; const gx = X(p.x), gy = Yh(Terrain.baseHeight(p.x)) - 9; g.strokeStyle = p.kind === 'shift' ? 'rgba(16,42,67,0.75)' : '#0c0c12'; g.lineWidth = p.kind === 'mirror' ? 3.2 : 2; g.setLineDash(p.kind === 'exit' ? [3, 3] : []); g.beginPath(); g.ellipse(gx, gy, 3.6, 10, 0, 0, Math.PI * 2); g.stroke(); });
+    g.setLineDash([]);
+    // traguardo: bandierina
+    const fx = X(Terrain.FINISH_X), fy = Yh(Terrain.baseHeight(Terrain.FINISH_X));
+    g.strokeStyle = '#0c0c12'; g.lineWidth = 2.4; g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx, fy - 30); g.stroke(); g.fillStyle = '#0c0c12'; g.beginPath(); g.moveTo(fx, fy - 30); g.lineTo(fx + 16, fy - 24); g.lineTo(fx, fy - 18); g.closePath(); g.fill();
+    // la corsa di ognuno
+    const alt = q => Yh((Sim.GROUND_Y - q[1]) - 36);   // quota della ruota → quota del terreno sotto di lei
+    ids.forEach((id, k) => {
+      const meta = raceMeta[id]; if (!meta) return; const F = trails[id].full, rgb = hexRgb(meta.color), ink = mixRgb(rgb, 0.35), dy = (k - (ids.length - 1) / 2) * 3.4;
+      // smussa un poco la quota (media mobile) così non segue ogni sobbalzo
+      const Y = F.map((q, i) => { let s = 0, c = 0; for (let j = Math.max(0, i - 3); j <= Math.min(F.length - 1, i + 3); j++) { if (j > i && F[j][2]) break; if (j < i && F[j + 1] && F[j + 1][2] && j + 1 <= i) continue; s += alt(F[j]); c++; } return s / c + dy; });
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      const stroke = (col, w, dyb) => { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); let pen = false; for (let i = 0; i < F.length; i++) { const xx = X(F[i][0]), yy = Y[i] + dyb; if (F[i][2]) pen = false; if (!pen) { g.moveTo(xx, yy); pen = true; } else g.lineTo(xx, yy); } g.stroke(); };
+      stroke(`rgba(${rgb},0.95)`, 10, 0);                       // corpo della pennellata piena
+      stroke(`rgba(${ink},0.55)`, 3, 1.2);                     // ombra sul lato basso
+      for (let b = 0; b < 3; b++) stroke(`rgba(255,255,255,${0.45 - b * 0.1})`, 1.1, (b - 1) * 2.4 - 0.6);   // righe di carta che affiorano
+      // salti: arco tratteggiato fra la fine di un tratto e l'inizio del successivo
+      g.setLineDash([2, 5]); g.strokeStyle = `rgba(${rgb},0.95)`; g.lineWidth = 2;
+      for (let i = 1; i < F.length; i++) if (F[i][2]) { const ax = X(F[i - 1][0]), ay = Y[i - 1], bx = X(F[i][0]), by = Y[i]; g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo((ax + bx) / 2, Math.min(ay, by) - 14, bx, by); g.stroke(); }
+      g.setLineDash([]);
+      // macchia scura di partenza e qualche schizzo lungo il percorso
+      { const x = X(F[0][0]), y = Y[0]; g.fillStyle = `rgba(${ink},0.95)`; g.beginPath(); g.ellipse(x, y, 8, 8.5, 0, 0, Math.PI * 2); g.fill();
+        for (let i = 6; i < F.length; i += 9) { const h = hsh(F[i][3] || i, 3.3); if (h > 0.45) continue; g.fillStyle = `rgba(${rgb},0.9)`; g.beginPath(); g.arc(X(F[i][0]) + (h - 0.2) * 10, Y[i] + (hsh(i, 1.9) > 0.5 ? -1 : 1) * (9 + 9 * h), 1.2 + 1.8 * h, 0, Math.PI * 2); g.fill(); } }
+      const e = F.length - 1; g.fillStyle = meta.color; g.strokeStyle = '#0c0c12'; g.lineWidth = 2; g.beginPath(); g.arc(X(F[e][0]), Y[e], 5.5, 0, Math.PI * 2); g.fill(); g.stroke();
+    });
+  }
+
   // alone luminoso della bici immune ai portali (dopo un salto): nel colore del giocatore, pulsa e si spegne negli ultimi 600 ms
   function drawGlow(ctx, x, y, color, im, now, top) {
     const a = Math.min(1, im / 600), pul = 0.85 + 0.15 * Math.sin(now / 110), R = 165 * pul, rgb = hexRgb(color);
@@ -551,6 +685,7 @@
     Flora.draw(ctx2d, camX, w, groundY, SC);
 
     portalFx(me, t0);
+    if (trailOn()) { for (const id in latestRacers) trailSample(latestRacers[id]); for (const id in latestRacers) if (raceMeta[id]) drawTrail(ctx2d, camX, groundY, id, raceMeta[id].color); }
     if (Terrain.PORTALS.length) { Props.drawPortals(ctx2d, camX, w, groundY, t0 / 1000, pst, 'back'); drawArrivals(ctx2d, camX, w, groundY, t0, 'back'); }
     // la propria bici per ultima: alla partenza (stesso punto per tutti) resta sopra le altre
     Object.entries(latestRacers).sort((a, b) => (a[0] === Net.myId) - (b[0] === Net.myId)).forEach(([id, r]) => {
@@ -678,7 +813,7 @@
   }
 
   function stopRaceLoops() { if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; }
-  function showResults(st) { stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
+  function showResults(st) { stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
   els.btnRematch.addEventListener('click', () => { if (Net.isHost) { wheels = {}; keepTrack = true; Net.broadcast({ type: 'restartToDraw' }); enterDrawPhase(); } });
   els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
   I18n.init(); if (typeof Sfx !== 'undefined') Sfx.init();
