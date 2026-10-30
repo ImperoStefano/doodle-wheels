@@ -265,3 +265,5 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 .results-list li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 2px solid var(--ink); border-radius: 12px; background: #fff; font-weight: 700; }
 .results-list .results-rank { font-family: 'Kalam', cursive; font-size: 1.05rem; min-width: 2.2em; }
 .results-list .results-time { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.btn--share { width: 100%; margin-top: 12px; font-size: 0.95rem; padding: 10px 14px; }

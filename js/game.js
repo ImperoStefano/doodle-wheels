@@ -78,7 +78,25 @@
     const name = els.name.value.trim(), code = els.code.value.trim();
     if (!name || code.length !== 4) return showMenuError(I18n.t('menu.err.namecode')); Net.joinGame(code, name);
   });
-  function showMenuError(msg) { els.menuError.textContent = msg; }
+  function showMenuError(msg) { els.menuError.style.color = ''; els.menuError.textContent = msg; }
+
+  // ---- invio del link: condivisione nativa (telefono) o copia negli appunti ----
+  function gameUrl(code) { const u = new URL(location.href); u.search = ''; u.hash = ''; if (code) u.searchParams.set('c', code); return u.toString(); }
+  function flashLabel(btn, key) { const old = btn.textContent; btn.textContent = I18n.t(key); btn.disabled = true; setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 1800); }
+  async function shareLink(btn, code) {
+    const url = gameUrl(code), text = I18n.t(code ? 'share.codeText' : 'share.text') + (code ? ' ' + code : '');
+    try { if (navigator.share) { await navigator.share({ title: 'Doodle Wheels', text, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    try { await navigator.clipboard.writeText(text + '\n' + url); flashLabel(btn, 'share.copied'); return; } catch (e) {}
+    try { const ta = document.createElement('textarea'); ta.value = text + '\n' + url; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); flashLabel(btn, 'share.copied'); }
+    catch (e) { window.prompt('Link', url); }
+  }
+  els.btnShare = document.getElementById('btn-share'); els.btnInvite = document.getElementById('btn-invite');
+  if (els.btnShare) els.btnShare.addEventListener('click', () => shareLink(els.btnShare, ''));
+  if (els.btnInvite) els.btnInvite.addEventListener('click', () => shareLink(els.btnInvite, els.roomCode.textContent.trim()));
+  function applyInvite() {
+  try { const c = (new URLSearchParams(location.search).get('c') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); if (c.length === 4) { els.code.value = c; els.menuError.textContent = I18n.t('share.fromLink'); els.menuError.style.color = '#627d98'; setTimeout(() => els.name.focus(), 50); } } catch (e) {}
+  }
+  // aperto da un invito (?c=CODICE): il codice è già compilato
 
   Net.on('error', err => showMenuError(err.message || I18n.t('menu.err.net')));
   Net.on('hostLeft', () => { alert(I18n.t('race.hostleft')); location.reload(); });
@@ -832,5 +850,5 @@
   function showResults(st) { stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
   els.btnRematch.addEventListener('click', () => { if (Net.isHost) { wheels = {}; keepTrack = true; Net.broadcast({ type: 'restartToDraw' }); enterDrawPhase(); } });
   els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
-  I18n.init(); if (typeof Sfx !== 'undefined') Sfx.init();
+  I18n.init(); applyInvite(); if (typeof Sfx !== 'undefined') Sfx.init();
 })();

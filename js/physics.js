@@ -155,7 +155,7 @@ const Sim = (() => {
   function buildFlowers() {
     return (Terrain.FLOWERS || []).map(f => {
       const groundY = GROUND_Y - Terrain.height(f.x);
-      const body = Matter.Bodies.circle(f.x, groundY - f.r * FLOWER_POKE, f.r, {
+      const body = Matter.Bodies.circle(f.x, groundY + f.r * (1 - FLOWER_POKE), f.r, {   // centro sotto la riva: sporge solo FLOWER_POKE·r
         isStatic: true,
         friction: Terrain.frictionAt ? Terrain.frictionAt(f.x) : 0.8,
         restitution: 0.15,
@@ -480,6 +480,20 @@ const Sim = (() => {
         const sink = v.y - (GROUND_Y - H(v.x));
         if (sink > worst) worst = sink;
         if (-sink < gap) gap = -sink;
+      }
+      // una ruota poligonale che poggia su uno spigolo (non su un vertice) su una salita ha i vertici "in aria" anche se tocca:
+      // si controllano anche punti lungo gli spigoli, altrimenti il motore la crede sospesa e non spinge (il fagiolo si piantava così)
+      const vs = p.vertices;
+      for (let i = 0; i < vs.length; i++) {
+        const a = vs[i], c = vs[(i + 1) % vs.length], len = Math.abs(c.x - a.x);
+        if (len < 9) continue;
+        const m = len > 24 ? 3 : 1;
+        for (let k = 1; k <= m; k++) {
+          const t = k / (m + 1), px = a.x + (c.x - a.x) * t, py = a.y + (c.y - a.y) * t;
+          if (!hfn && (px < Terrain.TRACK_START || px > Terrain.TRACK_END)) continue;
+          const sk = py - (GROUND_Y - H(px));
+          if (-sk < gap) gap = -sk;
+        }
       }
     }
     wheel.gapNow = gap > 1e8 ? undefined : gap;

@@ -198,3 +198,11 @@ Nota: la griglia di partenza non è più sfalsata (vedi «Partenza uguale per tu
 - Verificato solo in Chromium headless (nessun telefono reale).
 
 Tracciato finale (rifinito): le linee sono quelle vere della gara ma ammorbidite (niente tremolio dei sobbalzi) e appoggiate alla collina; con più giocatori ogni corsia è leggermente sfalsata, con bordo chiaro, l'ultimo sotto e il primo sopra, e all'arrivo c'è il numero di posizione. I portali (anelli neri, tratteggiati le uscite) sono disegnati sopra le linee con un alone chiaro. Il canvas è a doppia risoluzione.
+
+## Sedicesimo giro: equità (fiori e contatto a terra) e tasto "Invia link"
+
+- **Fiorellini**: il corpo fisico era posizionato col segno sbagliato (sporgeva 1,55·r invece di 0,55·r, cioè 14–23 px invece di 5–8). Le ruote piatte (fagiolo, ovale) ci si appoggiavano sopra restando sospese. Corretto in `buildFlowers` (`js/physics.js`).
+- **Contatto a terra**: `antiSink` ora controlla anche punti lungo gli spigoli della ruota (non solo i vertici), così una ruota poligonale che poggia su uno spigolo in salita non viene creduta "in aria" (il motore non spinge in aria).
+- Misure headless (8 layout, 12 forme): il fagiolo passa da +15,7% a +11,2% di ritardo medio e le vittorie si distribuiscono fra più forme (prima la stella a 8 punte ne vinceva 6 su 8, ora 3); su colline senza ostacoli il fagiolo non si pianta più (23,9 s → 18,1 s, tonda 17,2 s). Bot su 100 gare: nessun salto di recupero, nessun capovolgimento, tutte finite.
+- Strumenti: `stall.js`, `stall2.js`, `stall4.js`, `stall5.js` (dove e perché una forma si ferma).
+- **Invia link**: nel menu il tasto "Invia il link del gioco" (condivisione nativa su telefono, altrimenti copia negli appunti); in lobby "Invia invito" manda il link con `?c=CODICE`, e chi lo apre trova il codice già compilato (deve solo mettere il nome e premere Unisciti).
