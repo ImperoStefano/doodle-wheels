@@ -196,3 +196,5 @@ Nota: la griglia di partenza non è più sfalsata (vedi «Partenza uguale per tu
 - Dietro ogni bici (in entrambe le gare, costante `TRAIL_CLASSIC` in `js/game.js`) c'è una **pennellata piena** nel colore del giocatore: nasce da una macchia più scura, ha righe chiare di carta che affiorano, la coda si sfilaccia in setole e lascia schizzi. Si spezza quando la bici attraversa un portale che la sposta.
 - Nella schermata dei risultati il canvas `#results-trace` mostra il **tracciato finale**: foglio a quadretti, profilo morbido della pista, portali, bandierina e la corsa di ognuno come pennellata, con archi tratteggiati per i salti.
 - Verificato solo in Chromium headless (nessun telefono reale).
+
+Tracciato finale (rifinito): le linee sono quelle vere della gara ma ammorbidite (niente tremolio dei sobbalzi) e appoggiate alla collina; con più giocatori ogni corsia è leggermente sfalsata, con bordo chiaro, l'ultimo sotto e il primo sopra, e all'arrivo c'è il numero di posizione. I portali (anelli neri, tratteggiati le uscite) sono disegnati sopra le linee con un alone chiaro. Il canvas è a doppia risoluzione.

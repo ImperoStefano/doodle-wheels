@@ -259,3 +259,9 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 
 /* tracciato finale: foglio a quadretti con la corsa di ognuno a pennellate */
 .results-trace { display: block; width: 100%; height: auto; margin: 4px 0 14px; border: 2px solid var(--ink); border-radius: 12px; background: #f0f4f8; box-shadow: 2px 3px 0 var(--ink); }
+
+/* classifica finale */
+.results-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.results-list li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 2px solid var(--ink); border-radius: 12px; background: #fff; font-weight: 700; }
+.results-list .results-rank { font-family: 'Kalam', cursive; font-size: 1.05rem; min-width: 2.2em; }
+.results-list .results-time { margin-left: auto; font-variant-numeric: tabular-nums; }
