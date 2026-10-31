@@ -228,3 +228,12 @@ Rifinitura "Invita": su telefono resta una macchia d'inchiostro in alto (icona c
 - **Orizzontale con barre del browser** (altezza ≤ 480 px): riquadro compatto (senza barra di avanzamento, minimappa e righe più piccole, pulsante "Cambia forma" più basso e piccolo).
 - **Schermo intero**: dove il browser lo permette (Android, iPad) c'è un tasto a macchia che lo attiva e prova a bloccare l'orizzontale; Safari su iPhone non lo consente a una pagina. (L'installazione "Aggiungi alla schermata Home" con manifest e suggerimento nel menu è stata provata e poi tolta su richiesta.)
 - Corretto un refuso nel numero di versione del CSS (`style.css?v=`), che poteva lasciare in cache vecchi stili.
+
+Pulsante audio a tre stati (tocchi successivi): musica ed effetti → solo effetti (musica spenta; icona con un'onda sola) → muto (icona barrata); un avviso a schermo dice quale è attivo e la scelta resta salvata. Per togliere solo la musica (l'arpeggio di kalimba) basta un tocco.
+
+## Ventesimo giro: la canzone al posto della musica generativa
+
+- La musica generativa (arpeggio di kalimba/marimba, pad, basso) è stata tolta. Al suo posto c'è la canzone dell'autore: `audio/canzone.mp3` (2:50, 128 kbps stereo, 2,7 MB, normalizzata a −16,5 LUFS con −9 dB di guadagno lineare, senza compressione; l'originale era a −7,1 LUFS con picchi a 0 dBFS).
+- Si ascolta in streaming con un elemento `<audio>` collegato al bus della musica (niente decodifica in memoria), in loop, parte al primo tocco, ha due livelli (calma nei menu, un po' più bassa in gara per farsi sentire gli effetti), e si ferma in "solo effetti", in muto e quando la scheda va in background. Il pulsante audio a tre stati resta com'è.
+- Per cambiare canzone basta sostituire `audio/canzone.mp3` (stesso nome); i livelli sono le costanti `MUSIC` in `js/sound.js`.
+- Gli effetti con note "di legno" (clic dei pulsanti, conto alla rovescia, arrivo, portali) restano.

@@ -91,6 +91,7 @@
     try { const ta = document.createElement('textarea'); ta.value = text + '\n' + url; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); if (ok) { shareToast(key); return; } } catch (e) {}
     window.prompt('Link', url);
   }
+  window.addEventListener('dw-sound-mode', e => shareToast('sound.' + e.detail));
   els.btnShare = document.getElementById('btn-share');
   // dal menu: link del gioco; in lobby: invito con il codice della gara
   if (els.btnShare) els.btnShare.addEventListener('click', () => shareLink(els.lobby.classList.contains('screen--active') ? els.roomCode.textContent.trim() : ''));

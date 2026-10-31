@@ -239,7 +239,9 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 .sound-btn::before { inset: -5px -5px -4px -4px; border-radius: 52% 48% 55% 45% / 55% 50% 50% 45%; }
 .sound-btn::after { left: 22%; bottom: -12px; width: 4px; height: 9px; }
 .sound-btn svg { display: block; }
-.sound-btn .s-off { display: none; }
+.sound-btn .s-off, .sound-btn .s-fx { display: none; }
+.sound-btn.fx .s-on { display: none; }
+.sound-btn.fx .s-fx { display: block; }
 .sound-btn.muted .s-on { display: none; }
 .sound-btn.muted .s-off { display: block; opacity: 0.6; }
 

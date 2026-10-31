@@ -1,13 +1,13 @@
-// Audio sintetizzato con WebAudio: nessun file da scaricare, nessuna licenza. Un solo contesto, un solo "rotolamento" continuo
-// che segue velocità e superficie, brevi note "di legno" (kalimba/marimba) per gli eventi e una musica di sottofondo generativa
-// (pentatonica, pad + basso morbido + arpeggio), calma nei menu e un po' più mossa in gara.
+// Audio con WebAudio: effetti sintetizzati (nessun file, nessuna licenza) + la canzone del gioco (audio/canzone.mp3, in streaming).
+// Un solo contesto, un solo "rotolamento" continuo che segue velocità e superficie, brevi note "di legno" per gli eventi,
+// la canzone in sottofondo (un po' più bassa in gara).
 // Tutto passa da un filtro che taglia gli acuti e da un riverbero leggero: niente onde quadre o a dente di sega, niente fruscii aspri.
 // Parte solo dopo il primo tocco (regola dei browser mobili) e si spegne col pulsante audio; la scelta resta salvata (localStorage).
 const Sfx = (() => {
   const KEY = 'dw_sound';
-  let ctx = null, master = null, sfxBus = null, musBus = null, rev = null, noiseBuf = null, muted = false, roll = null, lastSplash = 0, lastBump = 0, lastLand = 0, lastClick = 0;
-  try { muted = localStorage.getItem(KEY) === 'off'; } catch (e) {}
-  const MASTER = 0.5, MUSIC = { calm: 0.5, drive: 0.4 };
+  let ctx = null, master = null, sfxBus = null, musBus = null, rev = null, noiseBuf = null, muted = false, mode = 'all', roll = null, lastSplash = 0, lastBump = 0, lastLand = 0, lastClick = 0;
+  try { const v = localStorage.getItem(KEY); mode = v === 'off' ? 'off' : v === 'fx' ? 'fx' : 'all'; muted = mode === 'off'; } catch (e) {}
+  const MASTER = 0.5, MUSIC = { calm: 0.5, drive: 0.34 }, SONG_SRC = 'audio/canzone.mp3';   // la canzone è normalizzata a −16,5 LUFS: con master 0,5 e questi guadagni esce a circa −28 / −32 LUFS, sotto gli effetti forti
   const now = () => performance.now();
 
   function ensure() {
@@ -26,12 +26,12 @@ const Sfx = (() => {
     sfxBus = ctx.createGain(); sfxBus.gain.value = 1; soft.connect(sfxBus); sfxBus.connect(master); const sr = ctx.createGain(); sr.gain.value = 0.18; sfxBus.connect(sr); sr.connect(rev);
     sfxBus.__in = soft;
     // musica: bus proprio (il livello cambia con l'umore), un po' più riverbero
-    musBus = ctx.createGain(); musBus.gain.value = MUSIC.calm; musBus.connect(master); const mr = ctx.createGain(); mr.gain.value = 0.5; musBus.connect(mr); mr.connect(rev);
+    musBus = ctx.createGain(); musBus.gain.value = mode === 'all' ? MUSIC.calm : 0; musBus.connect(master);
     const n = ctx.sampleRate * 2; noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate); const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     return ctx;
   }
-  function unlock() { const c = ensure(); if (c && c.state === 'suspended') c.resume(); if (c && !muted) musicStart(); }
+  function unlock() { const c = ensure(); if (c && c.state === 'suspended') c.resume(); if (c && mode === 'all') musicStart(); }
   const ok = () => ctx && !muted && ctx.state === 'running';
   const out = () => sfxBus.__in;
 
@@ -125,99 +125,40 @@ const Sfx = (() => {
   }
   function silence() { if (roll && ctx) { roll.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); roll.hg.gain.setTargetAtTime(0, ctx.currentTime, 0.05); } }
 
-  // ---- musica generativa ---------------------------------------------------------------------------------
-  // Do maggiore pentatonico, 88 bpm. Quattro battute per progressione (accordi di una battuta), scelte a caso fra alcune
-  // progressioni facili da ascoltare; l'arpeggio sceglie note vicine alla precedente e sugli accenti cade sull'accordo.
-  const BPM = 88, STEP = 60 / BPM / 2;   // passo = un ottavo
-  const PROGS = [   // [radice MIDI, minore?]
-    [[48, 0], [45, 1], [41, 0], [43, 0]],
-    [[41, 0], [43, 0], [40, 1], [45, 1]],
-    [[48, 0], [43, 0], [45, 1], [41, 0]],
-    [[45, 1], [41, 0], [48, 0], [43, 0]],
-  ];
-  const PENTA = [0, 2, 4, 7, 9];
-  const POOL = []; for (let o = 60; o <= 84; o += 12) PENTA.forEach(d => POOL.push(o + d)); POOL.sort((a, b) => a - b);
-  const DENS = { calm: [0.95, 0.22, 0.5, 0.3, 0.8, 0.22, 0.5, 0.3], drive: [0.95, 0.35, 0.65, 0.4, 0.85, 0.35, 0.65, 0.45] };
-  const mus = { on: false, timer: 0, next: 0, step: 0, bar: 0, prog: PROGS[0], pi: 0, last: 72, mood: 'calm', pat: 0 };
-  function kal(m, t, vol) {   // kalimba: sinusoide + "tine" metallico breve
-    const f = hz(m), o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g1 = ctx.createGain(), g2 = ctx.createGain();
-    o1.type = 'sine'; o2.type = 'sine'; o1.frequency.value = f; o2.frequency.value = f * 5.4;
-    g1.gain.setValueAtTime(0.0001, t); g1.gain.exponentialRampToValueAtTime(vol, t + 0.005); g1.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
-    g2.gain.setValueAtTime(0.0001, t); g2.gain.exponentialRampToValueAtTime(vol * 0.1, t + 0.003); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
-    o1.connect(g1); o2.connect(g2); g1.connect(musBus); g2.connect(musBus); o1.start(t); o2.start(t); o1.stop(t + 1.3); o2.stop(t + 1.3);
-  }
-  function padNote(m, t, dur, vol) {
-    const o = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter();
-    o.type = 'triangle'; o2.type = 'sine'; o.frequency.value = hz(m); o2.frequency.value = hz(m) * 1.004; f.type = 'lowpass'; f.frequency.value = 760; f.Q.value = 0.3;
-    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vol, t + 0.7); g.gain.setValueAtTime(vol, t + dur - 0.2); g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.9);
-    o.connect(f); o2.connect(f); f.connect(g); g.connect(musBus); o.start(t); o2.start(t); o.stop(t + dur + 1); o2.stop(t + dur + 1);
-  }
-  function bassNote(m, t, vol, len) {
-    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine'; o.frequency.value = hz(m);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    o.connect(g); g.connect(musBus); o.start(t); o.stop(t + len + 0.05);
-  }
-  function thump(t, vol) {
-    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(105, t); o.frequency.exponentialRampToValueAtTime(46, t + 0.14);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-    o.connect(g); g.connect(musBus); o.start(t); o.stop(t + 0.22);
-  }
-  function brush(t, vol) {
-    const s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(); s.buffer = noiseBuf; s.loop = true; f.type = 'bandpass'; f.frequency.value = 4200; f.Q.value = 0.8;
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
-    s.connect(f); f.connect(g); g.connect(musBus); s.start(t, Math.random() * 1.5); s.stop(t + 0.1);
-  }
-  function chordTones(root, minor) { return [root, root + (minor ? 3 : 4), root + 7]; }
-  function playStep(t) {
-    const s = mus.step % 8, drive = mus.mood === 'drive';
-    if (s === 0) {
-      if (mus.bar % 4 === 0) { let p; do { p = Math.floor(Math.random() * PROGS.length); } while (PROGS[p] === mus.prog && PROGS.length > 1); mus.prog = PROGS[p]; mus.pat = Math.floor(Math.random() * 3); }
-      mus.pi = mus.bar % 4;
-      const [root, minor] = mus.prog[mus.pi], ct = chordTones(root, minor), len = STEP * 8;
-      ct.forEach(m => padNote(m + 12, t, len, 0.02));
-    }
-    const [root, minor] = mus.prog[mus.pi], ct = chordTones(root, minor);
-    // basso: battuta 1 e 3 (in corsa anche un colpetto sul "e" del 2)
-    if (s === 0) bassNote(root - 12, t, 0.12, 1.4);
-    if (s === 4) bassNote(root - 12 + (mus.pat === 1 ? 7 : 0), t, 0.08, 1.0);
-    if (drive && s === 7) bassNote(root - 12, t, 0.045, 0.4);
-    // in corsa: tocco di cassa sulle battute 1 e 3, spazzola sui levare
-    if (drive) { if (s === 0 || s === 4) thump(t, 0.09); if (s === 2 || s === 6) brush(t, 0.02); }
-    // arpeggio
-    const bar4 = mus.bar % 4 === 3, dens = DENS[drive ? 'drive' : 'calm'], pr = dens[s] * (bar4 && s > 4 ? 0.5 : 1) * (mus.pat === 2 && (s === 1 || s === 5) ? 1.6 : 1);
-    if (Math.random() < pr || s === 0) {
-      let m;
-      if (s === 0 || s === 4) { const cand = ct.map(x => { while (x < 67) x += 12; while (x > 88) x -= 12; return x; }); m = cand.reduce((b, x) => Math.abs(x - mus.last) < Math.abs(b - mus.last) ? x : b, cand[0]); if (m === mus.last) m = cand[(cand.indexOf(m) + 1) % 3]; }
-      else { const i0 = POOL.findIndex(x => x >= mus.last), j = Math.max(0, Math.min(POOL.length - 1, (i0 < 0 ? POOL.length - 1 : i0) + [-2, -1, -1, 1, 1, 2][Math.floor(Math.random() * 6)])); m = POOL[j]; while (m < 67) m += 12; while (m > 88) m -= 12; }
-      mus.last = m; kal(m, t + (s % 2 ? 0.012 : 0), (s === 0 ? 0.26 : s === 4 ? 0.22 : 0.17) * (0.85 + Math.random() * 0.3));
-    }
-    mus.step++; if (s === 7) mus.bar++;
-  }
-  function musicPump(upTo) { if (!ok()) return; if (mus.next < ctx.currentTime) mus.next = ctx.currentTime + 0.05; while (mus.next < upTo) { playStep(mus.next); mus.next += STEP; } }
+  // ---- canzone ----------------------------------------------------------------------------------------------
+  // Un elemento <audio> in streaming (non si decodifica tutto in memoria: sul telefono sono ~60 MB) collegato al bus della musica,
+  // che ne gestisce volume e dissolvenze. Parte al primo tocco, si ripete in loop, si ferma in "solo effetti"/muto e quando la scheda va in background.
+  const mus = { mood: 'calm', el: null, off: 0 };
   function musicStart() {
-    if (!ctx || mus.on || muted) return; mus.on = true; mus.next = ctx.currentTime + 0.2;
-    mus.timer = setInterval(() => { if (ctx && ctx.state === 'running') musicPump(ctx.currentTime + 0.8); }, 160);
+    if (!ctx || mode !== 'all') return; clearTimeout(mus.off);
+    if (!mus.el) {
+      try { const el = new Audio(); el.src = SONG_SRC; el.loop = true; el.preload = 'auto'; el.setAttribute('playsinline', ''); const node = ctx.createMediaElementSource(el); node.connect(musBus); mus.el = el; }
+      catch (e) { mus.el = null; return; }
+    }
+    const p = mus.el.play(); if (p && p.catch) p.catch(() => {});
   }
-  function musicStop() { mus.on = false; clearInterval(mus.timer); mus.timer = 0; }
-  // umore: 'calm' (menu, lobby, disegno, risultati) o 'drive' (gara: un po' di basso e di ritmo, musica poco più bassa)
-  function mood(name) { mus.mood = name === 'drive' ? 'drive' : 'calm'; if (musBus && ctx) musBus.gain.setTargetAtTime(MUSIC[mus.mood], ctx.currentTime, 0.6); }
+  function musicStop() { clearTimeout(mus.off); mus.off = setTimeout(() => { if (mode !== 'all' && mus.el) mus.el.pause(); }, 350); }   // dopo la dissolvenza
+  // umore: 'calm' (menu, lobby, disegno, risultati) o 'drive' (gara: canzone un po' più bassa, perché si sentano gli effetti)
+  function mood(name) { mus.mood = name === 'drive' ? 'drive' : 'calm'; if (musBus && ctx && mode === 'all') musBus.gain.setTargetAtTime(MUSIC[mus.mood], ctx.currentTime, 0.6); }
 
-  // ---- muto -------------------------------------------------------------------------------------------
-  function setMuted(m) {
-    muted = m; try { localStorage.setItem(KEY, m ? 'off' : 'on'); } catch (e) {}
-    if (master) master.gain.setTargetAtTime(m ? 0 : MASTER, ctx.currentTime, 0.05);
-    if (m) musicStop(); else musicStart();
-    const b = document.getElementById('btn-sound'); if (b) { b.classList.toggle('muted', m); b.setAttribute('aria-pressed', m ? 'true' : 'false'); }
+  // ---- modalità audio: 'all' (musica + effetti) → 'fx' (solo effetti) → 'off' (muto) ---------------------------
+  function paintBtn() { const b = document.getElementById('btn-sound'); if (!b) return; b.classList.toggle('muted', mode === 'off'); b.classList.toggle('fx', mode === 'fx'); b.setAttribute('aria-pressed', mode === 'off' ? 'true' : 'false'); b.dataset.mode = mode; }
+  function setMode(m) {
+    mode = m; muted = m === 'off'; try { localStorage.setItem(KEY, m); } catch (e) {}
+    if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER, ctx.currentTime, 0.05);
+    if (musBus) musBus.gain.setTargetAtTime(m === 'all' ? MUSIC[mus.mood] : 0, ctx.currentTime, 0.08);
+    if (m === 'all') musicStart(); else musicStop();
+    paintBtn(); try { window.dispatchEvent(new CustomEvent('dw-sound-mode', { detail: m })); } catch (e) {}
   }
+  const setMuted = m => setMode(m ? 'off' : 'all');
   function init() {
     const b = document.getElementById('btn-sound');
-    if (b) { b.classList.toggle('muted', muted); b.setAttribute('aria-pressed', muted ? 'true' : 'false'); b.addEventListener('click', e => { e.stopPropagation(); unlock(); setMuted(!muted); if (!muted) click(); }); }
+    paintBtn();
+    if (b) b.addEventListener('click', e => { e.stopPropagation(); unlock(); setMode(mode === 'all' ? 'fx' : mode === 'fx' ? 'off' : 'all'); if (mode !== 'off') click(); });
     const first = () => { unlock(); };
     ['pointerdown', 'touchend', 'keydown'].forEach(ev => window.addEventListener(ev, first, { passive: true }));
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('button, .btn'); if (t && t.id !== 'btn-sound') { unlock(); click(); } }, true);
-    document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) ctx.suspend(); else if (!muted) ctx.resume(); });
+    document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) { ctx.suspend(); if (mus.el) mus.el.pause(); } else if (!muted) { ctx.resume(); if (mode === 'all') musicStart(); } });
   }
-  // solo per i test di misura (contesto offline): avvia il motore musicale senza timer e lo fa avanzare a mano
-  const _test = { start() { ensure(); mus.on = true; mus.next = 0; }, pump(upTo) { while (mus.next < upTo) { playStep(mus.next); mus.next += STEP; } }, mood, ensure };
-  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, portal, portalOut, update, silence, setMuted, mood, _test, get muted() { return muted; } };
+  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, portal, portalOut, update, silence, setMuted, mood, get muted() { return muted; }, get mode() { return mode; } };
 })();
