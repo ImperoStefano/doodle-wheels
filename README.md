@@ -235,5 +235,17 @@ Pulsante audio a tre stati (tocchi successivi): musica ed effetti → solo effet
 
 - La musica generativa (arpeggio di kalimba/marimba, pad, basso) è stata tolta. Al suo posto c'è la canzone dell'autore: `audio/canzone.mp3` (2:50, 128 kbps stereo, 2,7 MB, normalizzata a −16,5 LUFS con −9 dB di guadagno lineare, senza compressione; l'originale era a −7,1 LUFS con picchi a 0 dBFS).
 - Si ascolta in streaming con un elemento `<audio>` collegato al bus della musica (niente decodifica in memoria), in loop, parte al primo tocco, ha due livelli (calma nei menu, un po' più bassa in gara per farsi sentire gli effetti), e si ferma in "solo effetti", in muto e quando la scheda va in background. Il pulsante audio a tre stati resta com'è.
-- Per cambiare canzone basta sostituire `audio/canzone.mp3` (stesso nome); i livelli sono le costanti `MUSIC` in `js/sound.js`.
+- Per cambiare canzone basta sostituire `audio/musica.mp3` (pezzi e tempi sono nelle costanti `SEQ`/`PACK` di `js/sound.js`); i livelli sono le costanti `MUSIC` in `js/sound.js`.
 - Gli effetti con note "di legno" (clic dei pulsanti, conto alla rovescia, arrivo, portali) restano.
+
+## Ventunesimo giro: la canzone tagliata sulle battute
+- Analisi della traccia: 120 BPM esatti (la ripetizione del drop dista 80,000 s = 40 battute), 4/4, tonalità di Do (Do minore/maggiore ambigua: Re, Do, Si♭, Mi♭, Sol sono le note più presenti). Il drop cade all'inizio della battuta 8 (15,5 s nel file originale): è lì che la griglia delle battute è ancorata.
+- `audio/musica.mp3` (1,3 MB, 160 kbps, 70,4 s) sostituisce `canzone.mp3`: contiene solo i pezzi che servono, tagliati sulle battute (2 s l'una): intro calma + drop + due frasi di gara (0–50 s), quattro battute calme del break (50,2–58,2 s), finale con coda (58,4–70,4 s). Le parti calme sono alzate di 6 dB (−19 LUFS; la gara è a −15 LUFS), il tutto con −9 dB come prima.
+- Motore a sezioni in `js/sound.js`: i pezzi sono programmati sull'orologio dell'audio (non con timer), cambiano solo sulla battuta successiva e si sovrappongono con dissolvenze a potenza costante brevi (80 ms, prima della battuta così il colpo resta intatto) o lunghe (1,5 s, uscite verso il menu).
+  - Menu/lobby/disegno: loop calmo di 8 battute (intro + break).
+  - Gara: `Sfx.raceStart(startTime)` fa arrivare al drop con le battute dell'intro e il colpo cade esattamente sul "VIA" (misurato: 0 ms di scarto); poi loop di 16 battute. I bip 3-2-1-VIA sono programmati sullo stesso orologio e il VIA è un accordo Do-Sol-Re sul colpo del drop.
+  - Risultati: il finale parte alla battuta successiva, poi rientra il loop calmo con dissolvenza lunga.
+  - Effetti forti (arrivo, atterraggi violenti, portali) abbassano la musica per un attimo; in acqua la musica diventa ovattata.
+  - Note degli effetti accordate sulla canzone (Do, Re, Sol, Si♭).
+- Se un browser non toglie il ritardo dell'encoder mp3 (~25 ms), il motore lo compensa da solo (Chromium lo toglie già).
+- `musica_a_sezioni_demo.mp3` (fuori dal gioco) è un'anteprima della sequenza: calma → arrivo → via → loop di gara → finale → calma.
