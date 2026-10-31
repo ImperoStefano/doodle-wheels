@@ -71,7 +71,7 @@
   let trackLen = 'lunga', currentLayout = null, keepTrack = false, crazy = false;
   let lastCallSent = false, lastCallEnd = 0;
 
-  function showScreen(name) { ['menu', 'lobby', 'draw', 'race', 'results'].forEach(s => els[s].classList.toggle('screen--active', s === name)); }
+  function showScreen(name) { ['menu', 'lobby', 'draw', 'race', 'results'].forEach(s => els[s].classList.toggle('screen--active', s === name)); document.body.dataset.screen = name; if (typeof Sfx !== 'undefined') Sfx.mood(name === 'race' ? 'drive' : 'calm'); if (name === 'lobby' || name === 'menu') refreshInvite(); }
 
   els.btnHost.addEventListener('click', () => { const name = els.name.value.trim(); if (name) { Net.hostGame(name); try { Sim.warmCalibration && Sim.warmCalibration(); } catch (e) {} } else showMenuError(I18n.t('menu.err.name')); });
   els.btnJoin.addEventListener('click', () => {
@@ -82,25 +82,63 @@
 
   // ---- invio del link: condivisione nativa (telefono) o copia negli appunti ----
   function gameUrl(code) { const u = new URL(location.href); u.search = ''; u.hash = ''; if (code) u.searchParams.set('c', code); return u.toString(); }
-  function flashLabel(btn, key) { const old = btn.textContent; btn.textContent = I18n.t(key); btn.disabled = true; setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 1800); }
-  async function shareLink(btn, code) {
-    const url = gameUrl(code), text = I18n.t(code ? 'share.codeText' : 'share.text') + (code ? ' ' + code : '');
+  let toastT = 0;
+  function shareToast(key) { const t = document.getElementById('share-toast'); if (!t) return; t.textContent = I18n.t(key); t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 3200); }
+  async function shareLink(code) {
+    const url = gameUrl(code), text = I18n.t(code ? 'share.codeText' : 'share.text') + (code ? ' ' + code : ''), key = code ? 'share.toastRoom' : 'share.toastGame';
     try { if (navigator.share) { await navigator.share({ title: 'Doodle Wheels', text, url }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
-    try { await navigator.clipboard.writeText(text + '\n' + url); flashLabel(btn, 'share.copied'); return; } catch (e) {}
-    try { const ta = document.createElement('textarea'); ta.value = text + '\n' + url; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); flashLabel(btn, 'share.copied'); }
-    catch (e) { window.prompt('Link', url); }
+    try { await navigator.clipboard.writeText(text + '\n' + url); shareToast(key); return; } catch (e) {}
+    try { const ta = document.createElement('textarea'); ta.value = text + '\n' + url; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); if (ok) { shareToast(key); return; } } catch (e) {}
+    window.prompt('Link', url);
   }
-  els.btnShare = document.getElementById('btn-share'); els.btnInvite = document.getElementById('btn-invite');
-  if (els.btnShare) els.btnShare.addEventListener('click', () => shareLink(els.btnShare, ''));
-  if (els.btnInvite) els.btnInvite.addEventListener('click', () => shareLink(els.btnInvite, els.roomCode.textContent.trim()));
-  function applyInvite() {
-  try { const c = (new URLSearchParams(location.search).get('c') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); if (c.length === 4) { els.code.value = c; els.menuError.textContent = I18n.t('share.fromLink'); els.menuError.style.color = '#627d98'; setTimeout(() => els.name.focus(), 50); } } catch (e) {}
+  els.btnShare = document.getElementById('btn-share');
+  // dal menu: link del gioco; in lobby: invito con il codice della gara
+  if (els.btnShare) els.btnShare.addEventListener('click', () => shareLink(els.lobby.classList.contains('screen--active') ? els.roomCode.textContent.trim() : ''));
+  // riga "link da copiare" (desktop): mostra il link vero e lo copia con un clic
+  function refreshInvite() {
+    const m = document.getElementById('invite-url-menu'), l = document.getElementById('invite-url-lobby');
+    if (m) m.value = gameUrl('');
+    if (l) { const c = els.roomCode.textContent.trim(); l.value = /^[A-Z0-9]{4}$/.test(c) ? gameUrl(c) : ''; }
   }
+  async function copyInvite(inputId, btnId) {
+    const inp = document.getElementById(inputId), btn = document.getElementById(btnId); if (!inp || !btn) return;
+    refreshInvite(); inp.focus(); inp.select();
+    let ok = false;
+    try { await navigator.clipboard.writeText(inp.value); ok = true; } catch (e) { try { ok = document.execCommand('copy'); } catch (e2) {} }
+    if (ok) { btn.textContent = I18n.t('share.copied'); btn.classList.add('done'); setTimeout(() => { btn.textContent = I18n.t('share.copy'); btn.classList.remove('done'); }, 1800); }
+  }
+  [['invite-url-menu', 'btn-copy-menu'], ['invite-url-lobby', 'btn-copy-lobby']].forEach(([i, b]) => {
+    const bi = document.getElementById(b), ii = document.getElementById(i);
+    if (bi) bi.addEventListener('click', () => copyInvite(i, b)); if (ii) ii.addEventListener('focus', () => ii.select());
+  });
+  refreshInvite();
+  // ---- schermo intero (Android/iPad: dove il browser lo permette; su iPhone Safari non lo consente a una pagina) ----
+  (function () {
+    const root = document.documentElement, fsOn = () => document.fullscreenElement || document.webkitFullscreenElement;
+    const canFs = !!((document.fullscreenEnabled || document.webkitFullscreenEnabled) && (root.requestFullscreen || root.webkitRequestFullscreen));
+    const coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    const standalone = (window.matchMedia && matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) || navigator.standalone === true;
+    const btn = document.getElementById('btn-full');
+    if (btn && canFs && coarse && !standalone) {
+      document.body.classList.add('has-fs'); btn.title = I18n.t('full.title');
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        try {
+          if (fsOn()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+          await (root.requestFullscreen ? root.requestFullscreen({ navigationUI: 'hide' }) : root.webkitRequestFullscreen());
+          try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape'); } catch (er) {}
+        } catch (er) {}
+      });
+    }
+  })();
   // aperto da un invito (?c=CODICE): il codice è già compilato
+  function applyInvite() {
+    try { const c = (new URLSearchParams(location.search).get('c') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4); if (c.length === 4) { els.code.value = c; els.menuError.textContent = I18n.t('share.fromLink'); els.menuError.style.color = '#627d98'; setTimeout(() => els.name.focus(), 50); } } catch (e) {}
+  }
 
   Net.on('error', err => showMenuError(err.message || I18n.t('menu.err.net')));
   Net.on('hostLeft', () => { alert(I18n.t('race.hostleft')); location.reload(); });
-  Net.on('roomReady', ({ code }) => { els.roomCode.textContent = code; renderPlayerList(); showScreen('lobby'); });
+  Net.on('roomReady', ({ code }) => { els.roomCode.textContent = code; renderPlayerList(); showScreen('lobby'); refreshInvite(); });
   Net.on('playersChanged', () => {
     renderPlayerList();
     // Only a client still on the menu is moved to the lobby. (Before, ANY update — e.g. someone
@@ -850,5 +888,5 @@
   function showResults(st) { stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
   els.btnRematch.addEventListener('click', () => { if (Net.isHost) { wheels = {}; keepTrack = true; Net.broadcast({ type: 'restartToDraw' }); enterDrawPhase(); } });
   els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
-  I18n.init(); applyInvite(); if (typeof Sfx !== 'undefined') Sfx.init();
+  document.body.dataset.screen = 'menu'; I18n.init(); applyInvite(); if (typeof Sfx !== 'undefined') Sfx.init();
 })();

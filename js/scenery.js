@@ -807,8 +807,18 @@ const Scenery = (() => {
       ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       const fs = clamp(w * 0.055, 26, 46), y = Math.max(82, S.gy * 0.2) + slide;
       ctx.font = `700 ${Math.round(fs)}px Kalam, "Comic Sans MS", cursive`;
-      ctx.lineJoin = 'round'; ctx.lineWidth = fs * 0.22; ctx.strokeStyle = 'rgba(16,42,67,0.85)'; ctx.strokeText(bannerText(), w / 2, y);
-      ctx.fillStyle = '#ffffff'; ctx.fillText(bannerText(), w / 2, y);
+      // se il riquadro in alto a sinistra (minimappa + classifica) coprirebbe il titolo (telefono in verticale), lo si mette sotto di lui
+      let yy = y;
+      try {
+        const hud = document.querySelector('.hud'), cv = ctx.canvas;
+        if (hud && cv) {
+          const r = hud.getBoundingClientRect(), c = cv.getBoundingClientRect(), sc = w / (c.width || w), half = ctx.measureText(bannerText()).width / 2 + fs * 0.15;
+          const hb = (r.bottom - c.top) * sc, hr = (r.right - c.left) * sc, ht = (r.top - c.top) * sc;
+          if (r.width > 0 && w / 2 - half < hr + 6 && yy + fs * 0.6 > ht && yy - fs * 0.6 < hb + 4) yy = hb + fs * 0.6 + 10 * sc + slide;
+        }
+      } catch (e) {}
+      ctx.lineJoin = 'round'; ctx.lineWidth = fs * 0.22; ctx.strokeStyle = 'rgba(16,42,67,0.85)'; ctx.strokeText(bannerText(), w / 2, yy);
+      ctx.fillStyle = '#ffffff'; ctx.fillText(bannerText(), w / 2, yy);
       ctx.restore();
     }
   }

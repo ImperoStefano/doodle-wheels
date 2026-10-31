@@ -206,3 +206,25 @@ Tracciato finale (rifinito): le linee sono quelle vere della gara ma ammorbidite
 - Misure headless (8 layout, 12 forme): il fagiolo passa da +15,7% a +11,2% di ritardo medio e le vittorie si distribuiscono fra più forme (prima la stella a 8 punte ne vinceva 6 su 8, ora 3); su colline senza ostacoli il fagiolo non si pianta più (23,9 s → 18,1 s, tonda 17,2 s). Bot su 100 gare: nessun salto di recupero, nessun capovolgimento, tutte finite.
 - Strumenti: `stall.js`, `stall2.js`, `stall4.js`, `stall5.js` (dove e perché una forma si ferma).
 - **Invia link**: nel menu il tasto "Invia il link del gioco" (condivisione nativa su telefono, altrimenti copia negli appunti); in lobby "Invia invito" manda il link con `?c=CODICE`, e chi lo apre trova il codice già compilato (deve solo mettere il nome e premere Unisciti).
+
+Rifinitura "Invita": su telefono resta una macchia d'inchiostro in alto (icona condividi, apre la condivisione nativa e, se manca, copia il link con un avviso a schermo); su desktop (≥701 px) il link compare dentro la card, nel menu e in lobby, in un campo da copiare con il tasto "Copia" (diventa "Copiato ✓"). In lobby il link contiene `?c=CODICE`.
+
+## Diciassettesimo giro: audio più morbido e musica
+
+- **Effetti**: via onde quadre e a dente di sega; solo sinusoidi/triangoli e rumore filtrato, con un filtro che taglia gli acuti (3,6 kHz) e un riverbero corto. Clic, conto alla rovescia, arrivo, rifacimento ruota e uscita dal portale sono note "di legno" (marimba/kalimba) invece di bip. Rotolamento circa 6 dB più basso (il tappeto continuo era la cosa più rumorosa), colpi delle ruote poligonali al massimo 9 al secondo, modulazione dei terreni a ritmo limitata a 14 Hz.
+- **Musica generativa** (nessun file): do maggiore pentatonico a 88 bpm, accordi di una battuta in progressioni da 4 battute scelte a caso fra 4, pad morbido + basso sinusoidale + arpeggio di kalimba che sceglie note vicine alla precedente. Menu, lobby, disegno e risultati: umore "calma". In gara: umore "corsa" (cassa leggera e spazzola, musica un po' più bassa). Si spegne e riaccende col pulsante audio (la scelta resta salvata) e si ferma quando la scheda è in background.
+- **Misure** (render offline in Chromium headless, `br/audiotest.js`): rotolamento da −27,7 a −34,2 dB RMS (erba) e da −27,1 a −33,5 dB (ghiaia); centroide degli effetti più basso (es. specchio 2094 → 611 Hz, quota sopra 4 kHz dal 13,7% allo 0,1%); musica −33 dB RMS in calma e −35 dB in corsa, sotto gli eventi. Non ho potuto ascoltarlo su altoparlanti veri: giudizio finale all'orecchio.
+
+## Diciottesimo giro: fagiolo e forme "scomode"
+
+- La taratura trovava solo la velocità del motore: le ruote che sbandano per le asperità (fagiolo, triangolo) accelerano in modo ineguale e dopo ogni urto restavano indietro. Ora la taratura scala anche la coppia (`ACCEL_CAL` in `js/physics.js`, la ricalibrazione è automatica).
+- Misure headless (8 piste, 12 forme, ritardo medio dal migliore): fagiolo 11,2% → 5,3%; triangolo 7,0% → 3,1%; oval 5,9% → 5,1%. Su colline, ghiaia e ghiaccio senza ostacoli il fagiolo fa lo stesso tempo della tonda (4,63 s contro 4,62 s); resta indietro del ~10% sulle rampe.
+- Bot su 100 gare con 10 forme: tutte finite; 2 eventi rari (un ribaltamento del triangolo su rampa, un recupero dell'ovale sul ghiaccio a dossi), prima 0. Provato anche con coppia scalata al 60%: peggio (fagiolo 7,7% e 3 ribaltamenti), quindi tenuta al 100%.
+
+## Diciannovesimo giro: telefono (verticale/orizzontale), schermo intero e installazione
+
+- **Titolo del bioma** non più coperto dal riquadro in alto a sinistra (minimappa + classifica) in verticale: se lo coprirebbe, scende sotto il riquadro (`js/scenery.js`).
+- **Suggerimento "Consigliata visuale orizzontale"** spostato in basso e sfuma dopo 7 s (prima copriva il riquadro e i tasti).
+- **Orizzontale con barre del browser** (altezza ≤ 480 px): riquadro compatto (senza barra di avanzamento, minimappa e righe più piccole, pulsante "Cambia forma" più basso e piccolo).
+- **Schermo intero**: dove il browser lo permette (Android, iPad) c'è un tasto a macchia che lo attiva e prova a bloccare l'orizzontale; Safari su iPhone non lo consente a una pagina. (L'installazione "Aggiungi alla schermata Home" con manifest e suggerimento nel menu è stata provata e poi tolta su richiesta.)
+- Corretto un refuso nel numero di versione del CSS (`style.css?v=`), che poteva lasciare in cache vecchi stili.

@@ -18,6 +18,7 @@ const Sim = (() => {
   const GROUND_DEPTH = 300;   // thick ground: a fast wheel can never tunnel through it
   const CAP_GRIP_MAX = 1.1;
   const V_CAP = 7.3;         // oltre questa velocità (px/tick a 60 Hz ≈ 440 px/s) il motore smette di spingere
+  const ACCEL_CAL = 1;       // quanto la taratura scala anche la coppia (0 = spento)
   const ACCEL_SPIKE = 1;     // le forme spigolose hanno più "coppia" per riprendere velocità dopo ogni urto
   const ROLL_MAX = 1.7;      // tetto della compensazione di velocità su piano
   const ROLL_GAIN = 1.0;     // 1 = pareggio teorico (perimetro dell'involucro convesso)
@@ -533,8 +534,9 @@ const Sim = (() => {
     const dir = r.dir || 1, gov = dir * r.chassis.velocity.x > V_CAP * capK;
     // tetto di giro a terra: la ruota non gira più di SLIP_MAX volte quanto serve per l'avanzamento (partenza: velocità minima di riferimento)
     const lim = TUNE.slipMax > 0 && r.reff > 0 ? TUNE.slipMax * Math.max(r.chassis.velocity.x, TUNE.slipVmin) / r.reff : undefined;
-    driveWheel(r.fw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gf * c, r.accelK, lim);
-    driveWheel(r.rw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gr * c, r.accelK, lim);
+    const ak = (r.accelK || 1) * Math.max(1, ACCEL_CAL * c);   // chi ha bisogno di più spinta (taratura alta) recupera anche più in fretta dopo ogni urto
+    driveWheel(r.fw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gf * c, ak, lim);
+    driveWheel(r.rw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gr * c, ak, lim);
   }
 
 

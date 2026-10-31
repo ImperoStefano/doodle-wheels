@@ -178,9 +178,10 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 #orientation-warning {
   display: none;
   position: absolute;
-  top: calc(10px + env(safe-area-inset-top, 0px));
+  bottom: calc(92px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
+  animation: hintfade 7s forwards;
   z-index: 3000;
   flex-direction: row;
   align-items: center;
@@ -199,6 +200,7 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
   max-width: calc(100% - 24px);
   white-space: nowrap;
 }
+@keyframes hintfade { 0%, 70% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
 #orientation-warning span { font-size: 1.1rem; display: inline-block; animation: spin 2s infinite ease-in-out; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(90deg); } }
 
@@ -266,4 +268,47 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 .results-list .results-rank { font-family: 'Kalam', cursive; font-size: 1.05rem; min-width: 2.2em; }
 .results-list .results-time { margin-left: auto; font-variant-numeric: tabular-nums; }
 
-.btn--share { width: 100%; margin-top: 12px; font-size: 0.95rem; padding: 10px 14px; }
+
+/* tasto "Invita": macchia d'inchiostro come suono e lingua, solo in menu e lobby */
+.share-btn { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(176px + env(safe-area-inset-right, 0px)); z-index: 2500; isolation: isolate; border: 0; background: transparent; box-shadow: none; padding: 0 4px 0 2px; height: 30px; cursor: pointer; display: none; align-items: center; gap: 6px; color: #fff; font: 700 13px/1 inherit; font-family: inherit; letter-spacing: 0.02em; }
+body[data-screen="menu"] .share-btn, body[data-screen="lobby"] .share-btn { display: flex; }
+.share-btn::before { content: ''; position: absolute; inset: -5px -10px -5px -9px; z-index: -1; background: #0c0c12; border-radius: 48% 52% 46% 54% / 62% 55% 45% 40%; filter: url(#dw-ink); pointer-events: none; }
+.share-btn::after { content: ''; position: absolute; z-index: -1; left: 30%; bottom: -12px; width: 4px; height: 10px; background: #0c0c12; border-radius: 40% 40% 50% 50% / 25% 25% 75% 75%; pointer-events: none; }
+.share-btn:active { transform: translateY(1px); }
+.share-toast { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translate(-50%, -8px); z-index: 2600; max-width: min(88vw, 380px); padding: 11px 18px; color: #fff; font-weight: 700; font-size: 0.92rem; line-height: 1.35; text-align: center; opacity: 0; pointer-events: none; isolation: isolate; transition: opacity .25s, transform .25s; }
+.share-toast::before { content: ''; position: absolute; inset: 0; z-index: -1; background: #0c0c12; border-radius: 22px 9px 24px 11px / 13px 22px 10px 20px; filter: url(#dw-ink); }
+.share-toast.on { opacity: 1; transform: translate(-50%, 0); }
+@media (max-width: 420px) { .share-btn span { display: none; } .share-btn { right: calc(172px + env(safe-area-inset-right, 0px)); width: 30px; justify-content: center; padding: 0; } }
+
+/* link da copiare nella card (desktop); su telefono resta la macchia "Invita" con la condivisione nativa */
+.invite-box { display: none; margin-top: 16px; text-align: left; }
+.invite-label { display: block; font-size: 0.82rem; font-weight: 600; color: #486581; margin-bottom: 6px; }
+.invite-row { display: flex; gap: 8px; align-items: stretch; }
+.invite-url { flex: 1; min-width: 0; font: 600 0.85rem/1.2 ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: #f8fafc; border: 2px dashed #9fb3c8; border-radius: 12px; padding: 9px 11px; cursor: text; text-overflow: ellipsis; }
+.invite-url:focus { outline: none; border-color: var(--blue); }
+.invite-copy { white-space: nowrap; padding: 9px 16px; font-size: 0.95rem; }
+.invite-copy.done { background: #34c27a; color: #fff; }
+@media (min-width: 701px) {
+  .invite-box--desk { display: block; }
+  body[data-screen="menu"] .share-btn, body[data-screen="lobby"] .share-btn { display: none; }
+}
+
+/* schermo intero (dove il browser lo permette) */
+.full-btn { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(172px + env(safe-area-inset-right, 0px)); z-index: 2500; isolation: isolate; border: 0; background: transparent; box-shadow: none; padding: 0; width: 30px; height: 30px; cursor: pointer; display: none; align-items: center; justify-content: center; color: #fff; }
+.full-btn::before { content: ''; position: absolute; inset: -5px -5px -4px -4px; z-index: -1; background: #0c0c12; border-radius: 55% 45% 50% 50% / 48% 55% 45% 52%; filter: url(#dw-ink); pointer-events: none; }
+.full-btn::after { content: ''; position: absolute; z-index: -1; left: 55%; bottom: -11px; width: 4px; height: 9px; background: #0c0c12; border-radius: 40% 40% 50% 50% / 25% 25% 75% 75%; pointer-events: none; }
+body.has-fs .full-btn { display: flex; }
+body.has-fs .share-btn { right: calc(214px + env(safe-area-inset-right, 0px)); }
+/* telefono in orizzontale: il browser mostra barre e schede e lascia poca altezza → HUD compatto */
+@media (max-height: 480px) and (orientation: landscape) {
+  .hud { top: calc(8px + env(safe-area-inset-top, 0px)); left: calc(8px + env(safe-area-inset-left, 0px)); padding: 6px; gap: 5px; border-radius: 12px; max-width: min(190px, 40vw); }
+  .hud-progress { display: none; }
+  .minimap { width: clamp(110px, 24vw, 170px) !important; height: 20px !important; border-width: 1.5px; border-radius: 6px; }
+  .hud-leaderboard { gap: 2px; }
+  .hud-leaderboard li { padding: 2px 7px; font-size: 0.7rem; gap: 6px; border-radius: 6px; }
+  .rank-num { font-size: 0.8rem; }
+  .redraw-ui { bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important; right: calc(12px + env(safe-area-inset-right, 0px)) !important; }
+  .redraw-ui .btn { padding: 9px 14px; font-size: 0.85rem; border-radius: 12px; }
+  .countdown-overlay { font-size: 5rem; }
+}
+@media (orientation: portrait) { body[data-screen="race"] .full-btn { display: none; } }

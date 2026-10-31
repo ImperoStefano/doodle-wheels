@@ -4,7 +4,7 @@ const I18n = (() => {
   const D = {
     it: {
       'menu.sub': 'Disegna la tua ruota e affronta ostacoli dinamici.<br>Sfida fino a 4 amici in tempo reale (5 giocatori in tutto).',
-      'menu.name': 'Il tuo nome', 'menu.name.ph': 'Inserisci il nome...', 'menu.host': 'Crea Nuova Gara', 'menu.share': 'Invia il link del gioco', 'lobby.invite': 'Invia invito', 'share.text': 'Vieni a giocare a Doodle Wheels con me!', 'share.codeText': 'Vieni a correre con me a Doodle Wheels! Codice gara:', 'share.copied': 'Link copiato!', 'share.fromLink': 'Codice dal link: aggiungi il tuo nome e premi Unisciti.',
+      'menu.name': 'Il tuo nome', 'menu.name.ph': 'Inserisci il nome...', 'menu.host': 'Crea Nuova Gara', 'share.btn': 'Invita', 'full.title': 'Schermo intero', 'share.label': 'Invita gli amici: copia il link e mandalo in chat', 'share.labelRoom': 'Link d\'invito: si apre già col codice', 'share.copy': 'Copia', 'share.copied': 'Copiato ✓', 'share.toastGame': 'Link copiato! Incollalo in chat per invitare i tuoi amici.', 'share.toastRoom': 'Invito copiato! Chi lo apre trova già il codice della gara.', 'share.text': 'Vieni a giocare a Doodle Wheels con me!', 'share.codeText': 'Vieni a correre con me a Doodle Wheels! Codice gara:', 'share.fromLink': 'Codice dal link: aggiungi il tuo nome e premi Unisciti.',
       'menu.code.ph': 'CODICE', 'menu.join': 'Unisciti',
       'menu.err.name': 'Nome richiesto.', 'menu.err.namecode': 'Nome e codice (4 lettere) richiesti.', 'menu.err.net': 'Errore di rete.',
       'lobby.code': 'Codice della gara', 'lobby.share': 'Condividi questo codice per far entrare altri giocatori.',
@@ -27,7 +27,7 @@ const I18n = (() => {
     },
     en: {
       'menu.sub': 'Draw your wheel and take on dynamic obstacles.<br>Challenge up to 4 friends in real time (5 players in total).',
-      'menu.name': 'Your name', 'menu.name.ph': 'Enter your name...', 'menu.host': 'Create New Race', 'menu.share': 'Send the game link', 'lobby.invite': 'Send invite', 'share.text': 'Come play Doodle Wheels with me!', 'share.codeText': 'Come race me in Doodle Wheels! Race code:', 'share.copied': 'Link copied!', 'share.fromLink': 'Code from the link: add your name and press Join.',
+      'menu.name': 'Your name', 'menu.name.ph': 'Enter your name...', 'menu.host': 'Create New Race', 'share.btn': 'Invite', 'full.title': 'Full screen', 'share.label': 'Invite friends: copy the link and send it in a chat', 'share.labelRoom': 'Invite link: opens with the code filled in', 'share.copy': 'Copy', 'share.copied': 'Copied ✓', 'share.toastGame': 'Link copied! Paste it in a chat to invite your friends.', 'share.toastRoom': 'Invite copied! Whoever opens it finds the race code already filled in.', 'share.text': 'Come play Doodle Wheels with me!', 'share.codeText': 'Come race me in Doodle Wheels! Race code:', 'share.fromLink': 'Code from the link: add your name and press Join.',
       'menu.code.ph': 'CODE', 'menu.join': 'Join',
       'menu.err.name': 'Name required.', 'menu.err.namecode': 'Name and code (4 letters) required.', 'menu.err.net': 'Network error.',
       'lobby.code': 'Race code', 'lobby.share': 'Share this code to let other players join.',
