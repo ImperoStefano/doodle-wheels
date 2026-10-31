@@ -227,7 +227,7 @@ const Sfx = (() => {
   function setMode(m) {
     mode = m; muted = m === 'off'; try { localStorage.setItem(KEY, m); } catch (e) {}
     if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER, ctx.currentTime, 0.05);
-    if (musBus) musBus.gain.setTargetAtTime(m === 'all' ? MUSIC[mus.mood] : 0, ctx.currentTime, 0.08);
+    if (musBus) musBus.gain.setTargetAtTime(m === 'all' ? MUSIC[mus.want === 'race' ? 'drive' : 'calm'] : 0, ctx.currentTime, 0.08);
     if (m === 'all') musicStart(); else musicStop();
     paintBtn(); try { window.dispatchEvent(new CustomEvent('dw-sound-mode', { detail: m })); } catch (e) {}
   }
