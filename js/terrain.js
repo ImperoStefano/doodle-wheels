@@ -21,7 +21,7 @@ const Terrain = (() => {
   };
   const FRICTION = { start: 0.9, hills: 0.9, ice: 0.1, gravel: 0.6, water: 0.95, ramps: 1.1, lava: 0.9, finish: 0.9 };
   // lunghezza base di ogni zona (px); ogni zona la varia di ±12% in modo deterministico
-  const ZONE_LEN = { start: 1400, hills: 1750, ice: 1700, gravel: 1750, water: 2400, ramps: 2000, lava: 2300, finish: 1400 };
+  const ZONE_LEN = { start: 1400, hills: 2000, ice: 1950, gravel: 2000, water: 2750, ramps: 2300, lava: 3000, finish: 1400 };
   // quante zone "a tema" ha la pista: sono i tre formati che l'host può scegliere in lobby
   const LENGTHS = { corta: 7, media: 11, lunga: 15 };
 
@@ -60,6 +60,16 @@ const Terrain = (() => {
     if (count >= 5) need('water', count >= 11 ? 2 : 1);
     if (count >= 7) need('gravel', count >= 11 ? 2 : 1);
     if (count >= 7) need('lava', count >= 11 ? 2 : 1);
+    // mai il vulcano subito dopo la partenza: la ruota non ha ancora ritmo e il lago arriverebbe senza preavviso
+    if (out[0] === 'lava') {
+      for (let j = 2; j < out.length; j++) {
+        const k = out[j];
+        if (k === 'lava' || k === out[1]) continue;
+        if (out[j - 1] === 'lava' || out[j + 1] === 'lava') continue;
+        if (j === 2 && out[1] === 'lava') continue;
+        out[0] = k; out[j] = 'lava'; break;
+      }
+    }
     return out;
   }
 
@@ -357,8 +367,8 @@ const Terrain = (() => {
       } else if (z.key === 'lava') {
         // lago di lava: bacino largo, 56 px di fondo con pareti dolci; il pelo sta 26 px sotto la riva (come l'acqua), quindi la lava è profonda al più 30 px.
         // Una volta su tre c'è un ponte di basalto (arco in pietra): chi lo prende non tocca la lava.
-        const span = 640, mid = z.start + z.len * (0.44 + rnd() * 0.12);
-        z.gap = { g0: mid - span / 2, g1: mid + span / 2, D: 56, W: 250 };
+        const span = 940, mid = z.start + z.len * (0.44 + rnd() * 0.12);   // lago lungo: la ruota ha il tempo di sciogliersi davvero
+        z.gap = { g0: mid - span / 2, g1: mid + span / 2, D: 56, W: 300 };
         if (rnd() < 0.34) z.bridge = { kind: 'arch', start: z.gap.g0, end: z.gap.g1, peak: 52 };
       } else if (z.key === 'gravel' && wants.get(z)) {
         const span = 560, mid = z.start + z.len * (0.46 + rnd() * 0.08);

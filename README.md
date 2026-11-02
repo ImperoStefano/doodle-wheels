@@ -272,3 +272,11 @@ Idea: godersi, per un tratto di gara, il fatto di avere ruote enormi.
 - Rete: `sc` viaggia nello snapshot dell'host e nell'interpolazione dei client; tutto il resto (zoom, tremolio, polvere, suoni) è locale. Eventi `g` (gigante) e `n` (normale) con nota "Gigante!" e suoni dedicati.
 - Bug trovati lungo la strada: le ruote giganti si vedevano normali (la scala non passava nell'interpolazione dei client) e, a ×2,2, la bici esplodeva (inerzia del telaio).
 - Misurato con bot, non su dispositivi reali: la sensazione di guida, il tremolio e il rombo vanno provati a mano.
+
+## Ventiquattresimo giro: biomi più lunghi e vulcano che incide davvero
+Dopo due partite corte il feedback era: i biomi cambiano troppo in fretta e il vulcano passa senza far sentire la lava sulla ruota (una volta è anche arrivato subito dopo la partenza).
+- **Zone più lunghe (circa +15%):** colline 1750→2000 px, ghiaccio 1700→1950, canyon 1750→2000, laguna 2400→2750, rampe 2000→2300, vulcano 2300→3000. Partenza e arrivo invariati. Le lunghezze (7/11/15 zone) non cambiano: una corta passa da circa 45 s a circa 52 s.
+- **Lago di lava più lungo:** 640→940 px (pareti 300 px). La fusione è più lenta (`MELT_RATE` 1,6→1,0), così il danno cresce gradualmente per tutto il lago invece di saturare subito: dopo un lago la ruota è sciolta al 30–35% circa, dopo due al 45–50% (il massimo resta 62%).
+- **Mai il vulcano come prima zona:** se il sorteggio lo mette in testa, viene scambiato con una zona più avanti senza creare due zone uguali vicine.
+- Frequenza del vulcano (20 000 piste per misura): corta sempre 1 (2 nel 17% dei casi), media sempre 2, lunga 2 o 3 (metà e metà). In tutte le piste compaiono tutti e 6 i biomi.
+- Misurato (bot, 12 forme): un lago, 22,7–24,7 s; due laghi in fila (colline>lava>ghiaccio>lava>canyon) 37–44 s con la sola ovale più lenta (44,5 s). Modo meno classico: 60 gare, tutte finite, 65–88 s; portali giganti sempre 2 coppie su 11 zone, tratto di circa 5 s. Con la fusione veloce di prima il danno si sommava troppo e la spanna fra le forme arrivava a 14 s: per questo è stata rallentata. Non sono prove su dispositivi reali.

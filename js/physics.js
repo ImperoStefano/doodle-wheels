@@ -334,7 +334,7 @@ const Sim = (() => {
   // identico dappertutto (un'irregolarità fissa sulla ruota), quindi ci si "mangia" a chiazze invece di rimpicciolire in modo uniforme.
   // La forma sciolta è base·(1−m) con m appena sfumato fra punti vicini (profilo continuo, "cera che cede") e ricentrata sul baricentro.
   // I corpi fisici si ricostruiscono ogni MELT_BUILD_MS: la ruota cambia forma davvero (e, più piccola in quel punto, spinge meno). Nessuna ritaratura: lo svantaggio resta.
-  const MELT_RATE = 1.6, MELT_MAX = 0.62, MELT_DEPTH = 24, MELT_BUILD_MS = 120, LAVA_DRAG = 0.965;
+  const MELT_RATE = 1.0, MELT_MAX = 0.62, MELT_DEPTH = 24, MELT_BUILD_MS = 120, LAVA_DRAG = 0.965;
   const smooth01 = t => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
   function meltBase(v) {
     const n = v.length; if (n < 3) return v.map(p => ({ x: p.x, y: p.y }));
