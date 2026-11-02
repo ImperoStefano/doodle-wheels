@@ -10,7 +10,7 @@ const Props = (() => {
   const TAU = Math.PI * 2;
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
-  const ZONE_LABEL = { hills: 'Colline', ice: 'Ghiacciaio', gravel: 'Canyon', water: 'Laguna', ramps: 'Bosco d\'autunno', finish: 'Traguardo' };
+  const ZONE_LABEL = { hills: 'Colline', ice: 'Ghiacciaio', gravel: 'Canyon', water: 'Laguna', ramps: 'Bosco d\'autunno', lava: 'Vulcano', finish: 'Traguardo' };
 
   // ---------- ponti ---------------------------------------------------------------------------
   function drawBridges(ctx, camX, w, gy, S) {
@@ -204,7 +204,7 @@ const Props = (() => {
   // ---- nuovi ostacoli integrati nei biomi (solo profilo: nessun corpo fisico in più, quindi costo di disegno minimo) ----
   // Massi: tondeggianti, di varie dimensioni; muschio nelle colline, ruggine nella ghiaia, alghe nella laguna, polvere nelle rampe.
   function boulderRocks(ctx, p, camX, x0, x1, H, sub, t) {
-    const pal = p.zkey === 'gravel' ? { a: '#b3a79b', b: '#8d8176', c: '#5f554c', cap: '#b9763a' } : p.zkey === 'water' ? { a: '#9fb0b3', b: '#74878b', c: '#4b5c60', cap: '#4f9a73' } : p.zkey === 'ramps' ? { a: '#d6b78c', b: '#b58f62', c: '#7d5d3a', cap: '#c9923f' } : { a: '#b8b8ac', b: '#8f8f84', c: '#5c5c52', cap: '#6f9f45' };
+    const pal = p.zkey === 'gravel' ? { a: '#b3a79b', b: '#8d8176', c: '#5f554c', cap: '#b9763a' } : p.zkey === 'water' ? { a: '#9fb0b3', b: '#74878b', c: '#4b5c60', cap: '#4f9a73' } : p.zkey === 'ramps' ? { a: '#d6b78c', b: '#b58f62', c: '#7d5d3a', cap: '#c9923f' } : p.zkey === 'lava' ? { a: '#5d4a46', b: '#3f3231', c: '#241b1c', cap: '#c2491d' } : { a: '#b8b8ac', b: '#8f8f84', c: '#5c5c52', cap: '#6f9f45' };
     for (let j = 0; j < p.rocks.length; j++) {
       const q = p.rocks[j], cx = p.a + q.c; if (cx + q.w < x0 || cx - q.w > x1) continue;
       const l = Math.max(cx - q.w, x0), r = Math.min(cx + q.w, x1), hc = H(cx), X = cx - camX;
@@ -360,20 +360,21 @@ const Props = (() => {
     }
   }
   function portalDraw(ctx, q, sx, by, t, k, d, st, layer) {
-    const ry = 92 * k, rx = 42 * k, cy = by - 92 * k - 3, seed = q.id * 1.7;
+    const Zx = q.kind === 'big' ? 3.0 : 1, Zy = q.kind === 'big' ? 2.4 : 1;   // il portale grande è davvero grande: ci passano le ruote giganti (×2,2)
+    const ry = 92 * k * Zy, rx = 42 * k * Zx, cy = by - ry - 3, seed = q.id * 1.7;
     const ring = (n, f) => { ctx.beginPath(); for (let j = 0; j <= n; j++) { const a = f + (j / n) * TAU * (f === undefined ? 1 : 1); const wob = 1 + 0.05 * Math.sin(3 * a + t * 2 + seed) + 0.035 * Math.sin(5 * a - t * 3 + seed); const x = sx + Math.cos(a) * rx * wob, y = cy + Math.sin(a) * ry * wob; if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } };
-    const dim = q.kind === 'exit' && !(st.mirrored && st.myExit === q.id) ? 0.38 : 1;   // solo la propria uscita è in evidenza
+    const dim = q.kind === 'exit' && !(st.mirrored && st.myExit === q.id) ? 0.38 : q.kind === 'big' && !st.big ? 0.55 : 1;   // solo la propria uscita è in evidenza
     ctx.save(); ctx.globalAlpha = dim; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     if (layer === 'back') {
       // pozza d'inchiostro alla base
       ctx.fillStyle = 'rgba(12,12,18,0.55)'; ctx.beginPath(); ctx.ellipse(sx, by + 2, 34 * k, 5 * k, 0, 0, TAU); ctx.fill();
       // riempimento
       ring(36, 0);
-      ctx.fillStyle = q.kind === 'mirror' ? 'rgba(14,14,22,0.88)' : q.kind === 'shift' ? 'rgba(250,247,238,0.82)' : 'rgba(250,247,238,0.45)'; ctx.fill();
+      ctx.fillStyle = q.kind === 'mirror' ? 'rgba(14,14,22,0.88)' : q.kind === 'shift' || q.kind === 'grow' ? 'rgba(250,247,238,0.82)' : 'rgba(250,247,238,0.45)'; ctx.fill();
       ctx.save(); ctx.clip();
       // vortice a spirale d'inchiostro, come nel riferimento: fasce ondulate piene e sovrapposte che scorrono verso il centro,
       // una spirale al centro e un'ombra più chiara sul bordo (salto: nero su carta chiara · specchio: chiaro sul nero · uscita: leggero)
-      const dark = q.kind === 'mirror', ex = q.kind === 'exit', N = ex ? 4 : 7, col = dark ? '236,236,252' : '12,12,18';
+      const dark = q.kind === 'mirror', ex = q.kind === 'exit' || q.kind === 'big', N = ex ? 4 : 7, col = dark ? '236,236,252' : '12,12,18';
       const bands = [];
       for (let j = 0; j < N; j++) bands.push({ j, f: 1 - ((j + t * 0.4) % N) / N });
       bands.sort((p, q2) => q2.f - p.f);   // dalle più grandi alle più piccole
@@ -392,16 +393,20 @@ const Props = (() => {
       // glifo al centro
       ctx.strokeStyle = q.kind === 'mirror' ? '#f2f2ff' : '#0c0c12'; ctx.lineWidth = 3.4;
       const gy0 = cy, a = 9 * k;
-      if (q.kind !== 'exit') { ctx.fillStyle = q.kind === 'mirror' ? 'rgba(14,14,22,0.94)' : 'rgba(250,247,238,0.94)'; ctx.beginPath(); ctx.ellipse(sx, gy0, rx * 0.62, 21 * k, 0, 0, TAU); ctx.fill(); }
+      if (!ex) { ctx.fillStyle = q.kind === 'mirror' ? 'rgba(14,14,22,0.94)' : 'rgba(250,247,238,0.94)'; ctx.beginPath(); ctx.ellipse(sx, gy0, rx * 0.62, 21 * k, 0, 0, TAU); ctx.fill(); }
       const arrow = (x0, y0, x1) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); const s = x1 > x0 ? -1 : 1; ctx.moveTo(x1 + s * 6, y0 - 5); ctx.lineTo(x1, y0); ctx.lineTo(x1 + s * 6, y0 + 5); ctx.stroke(); };
-      if (q.kind === 'shift') { arrow(sx, gy0, sx + a); arrow(sx, gy0, sx - a); }
+      // gigante: anelli concentrici che si allargano · grande: anelli che si stringono (nessuna freccia)
+      const pulse = (dirOut, base) => { ctx.lineWidth = 3; for (let j = 0; j < 3; j++) { let u = ((t * 0.55 + j / 3) % 1); if (!dirOut) u = 1 - u; const e = 0.12 + 0.88 * u; ctx.globalAlpha *= 1; ctx.save(); ctx.globalAlpha = (0.25 + 0.75 * Math.sin(u * Math.PI)) * dim; ctx.beginPath(); ctx.ellipse(sx, gy0, base * rx * e, base * ry * 0.5 * e, 0, 0, TAU); ctx.stroke(); ctx.restore(); } };
+      if (q.kind === 'grow') pulse(true, 0.62);
+      else if (q.kind === 'big') pulse(false, 0.7);
+      else if (q.kind === 'shift') { arrow(sx, gy0, sx + a); arrow(sx, gy0, sx - a); }
       else if (q.kind === 'mirror') { arrow(sx - a, gy0 - 8, sx + a); arrow(sx + a, gy0 + 8, sx - a); }
       else arrow(sx + a, gy0, sx - a);
     }
     // anello (nel livello "front" solo la metà destra, così la bici sembra entrare nel portale)
     const ink = '#0c0c12';
     ctx.strokeStyle = ink; ctx.lineWidth = layer === 'back' ? 7 * (0.5 + 0.5 * k) : 5.5 * (0.5 + 0.5 * k);
-    if (q.kind === 'exit') ctx.setLineDash([9, 7]);
+    if (q.kind === 'exit' || q.kind === 'big') ctx.setLineDash([9, 7]);
     if (layer === 'back') { ring(36, 0); ctx.stroke(); }
     else { ctx.beginPath(); for (let j = 0; j <= 18; j++) { const a = -Math.PI / 2 + (j / 18) * Math.PI, wob = 1 + 0.05 * Math.sin(3 * a + t * 2 + seed) + 0.035 * Math.sin(5 * a - t * 3 + seed); const x = sx + Math.cos(a) * rx * wob, y = cy + Math.sin(a) * ry * wob; if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.stroke(); }
     ctx.setLineDash([]);

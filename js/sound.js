@@ -81,6 +81,8 @@ const Sfx = (() => {
   const portal = (type, d) => {
     duck(0.75, 0.15, 0.4);
     if (type === 's') { const up = d > 0; puff('bandpass', up ? 420 : 1500, 0.9, 0.34, 0.1, 0, up ? 1500 : 420); tone(up ? 330 : 520, 0.34, 'sine', 0.14, 0, up ? 700 : 260); tone(up ? 495 : 390, 0.26, 'sine', 0.08, 0.07); }
+    else if (type === 'g') { puff('lowpass', 500, 1, 0.5, 0.1, 0, 140); tone(150, 0.5, 'sine', 0.16, 0, 330); tone(225, 0.42, 'sine', 0.09, 0.06, 450); pluck(hz(55), 0.7, 0.12, 0.1); }
+    else if (type === 'n') { puff('bandpass', 1400, 1, 0.3, 0.09, 0, 500); tone(520, 0.24, 'sine', 0.1, 0, 240); pluck(hz(86), 0.4, 0.08, 0.04); }
     else if (type === 'm') { puff('bandpass', 1800, 1, 0.55, 0.1, 0, 260); tone(640, 0.55, 'sine', 0.12, 0, 120); [0, 0.15, 0.3].forEach((t, i) => pluck(hz([74, 70, 67][i]), 0.25, 0.1, t)); }
     else { pluck(hz(79), 0.7, 0.14); pluck(hz(86), 0.8, 0.11, 0.12); }
   };
@@ -88,13 +90,15 @@ const Sfx = (() => {
   const clack = v => { puff('lowpass', 420 + 160 * v, 0.8, 0.05, 0.015 + 0.035 * v); tone(95 + 40 * v, 0.07, 'sine', 0.02 + 0.045 * v, 0, 60); };
   // uscita da un salto: il "pop" dell'anello che si apre
   const portalOut = d => { tone(d > 0 ? 440 : 360, 0.16, 'sine', 0.14, 0, d > 0 ? 760 : 600); puff('bandpass', 1200, 0.9, 0.2, 0.07, 0, 500); pluck(hz(84), 0.5, 0.07, 0.06); };
+  // ruota che entra nella lava: sfrigolio (rumore filtrato che sale e si spegne) + un "blop" grave
+  const sizzle = () => { duck(0.8, 0.2, 0.5); puff('bandpass', 2600, 1.4, 0.55, 0.075, 0, 900); puff('bandpass', 1500, 0.9, 0.38, 0.06, 0.05, 600); tone(150, 0.25, 'sine', 0.13, 0, 70); };
   const redraw = () => { pluck(hz(72), 0.4, 0.1); pluck(hz(74), 0.5, 0.1, 0.09); };
 
   // ---- rotolamento continuo ----------------------------------------------------------------------------
   // un unico rumore filtrato (+ un'ampiezza modulata per i terreni "a ritmo": dentiera, strada ad archi, ghiaia).
   // Volumi e frequenze ridotti rispetto alla prima versione: è un tappeto, non deve farsi notare.
   const SURF = {   // filtro, frequenza base, Q, volume, modulazione (0 = continua)
-    grass: ['lowpass', 380, 0.6, 0.042, 0], gravel: ['bandpass', 1250, 0.5, 0.063, 0.45], ice: ['bandpass', 2200, 1.6, 0.028, 0],
+    lava: ['lowpass', 260, 1.1, 0.08, 0.5], grass: ['lowpass', 380, 0.6, 0.042, 0], gravel: ['bandpass', 1250, 0.5, 0.063, 0.45], ice: ['bandpass', 2200, 1.6, 0.028, 0],
     sand: ['bandpass', 1000, 0.5, 0.049, 0], mud: ['lowpass', 220, 1, 0.084, 0.3], rack: ['bandpass', 800, 2, 0.070, 0.9], rough: ['lowpass', 520, 0.9, 0.070, 0.9], water: ['bandpass', 800, 0.6, 0.049, 0.25],
   };
   function rollStart() {
@@ -115,7 +119,7 @@ const Sfx = (() => {
     if (!ctx) return; if (!roll) rollStart(); if (!roll) return;
     const t = ctx.currentTime, p = SURF[surf] || SURF.grass;
     const v = Math.max(0, Math.min(1, speed / 7.5)), on = ok() && !air && speed > 0.4;
-    muffle(surf === 'water' && !air);
+    muffle((surf === 'water' || surf === 'lava') && !air);
     roll.flt.type = p[0]; roll.flt.frequency.setTargetAtTime(p[1] * (0.7 + 0.6 * v), t, 0.1); roll.flt.Q.value = p[2];
     roll.g.gain.setTargetAtTime(on ? p[3] * (0.25 + 0.75 * v) : 0, t, 0.09);
     // modulazione: per i terreni a ritmo la frequenza segue l'avanzamento (un colpo per periodo di terreno), ma mai oltre 14 Hz (oltre diventa un ronzio fastidioso)
@@ -128,7 +132,22 @@ const Sfx = (() => {
     if (on && tick > 0.5) { roll.tp += Math.min(18, tick) * dtm / 1000; let n = 0; while (roll.tp >= 1 && n < 3) { roll.tp -= 1; n++; roll.cn++; if (tick <= 9 || (roll.cn & 1)) clack(v); } if (roll.tp > 3) roll.tp = 0; } else roll.tp = 0;
     roll.lfo.frequency.setTargetAtTime(Math.max(1, rate), t, 0.08); roll.lg.gain.setTargetAtTime(m * 0.4, t, 0.08); roll.am.gain.setTargetAtTime(1 - m * 0.4, t, 0.08);
   }
-  function silence() { if (roll && ctx) { roll.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); roll.hg.gain.setTargetAtTime(0, ctx.currentTime, 0.05); } }
+  // ---- ruote giganti: rombo basso continuo (k = quanto sei grande 0..1, v = velocità 0..1) e tonfo all'atterraggio ----
+  let gnt = null;
+  function giant(k, v, air) {
+    if (!ctx || !ok()) { if (gnt && ctx) gnt.g.gain.setTargetAtTime(0, ctx.currentTime, 0.1); return; }
+    if (!gnt) {
+      const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), s = ctx.createBufferSource(), nf = ctx.createBiquadFilter(), ng = ctx.createGain();
+      o1.type = 'sine'; o2.type = 'sine'; o1.frequency.value = 41; o2.frequency.value = 61.5; f.type = 'lowpass'; f.frequency.value = 160; g.gain.value = 0;
+      s.buffer = noiseBuf; s.loop = true; nf.type = 'lowpass'; nf.frequency.value = 130; ng.gain.value = 0.5;
+      o1.connect(f); o2.connect(f); s.connect(nf); nf.connect(ng); ng.connect(f); f.connect(g); g.connect(master); o1.start(); o2.start(); s.start();
+      gnt = { g, o1, o2, nf };
+    }
+    const t = ctx.currentTime, a = k > 0.02 ? (0.05 + 0.1 * k) * (air ? 0.35 : 0.5 + 0.5 * v) : 0;
+    gnt.g.gain.setTargetAtTime(a, t, 0.2); gnt.o1.frequency.setTargetAtTime(38 + 14 * v, t, 0.3); gnt.o2.frequency.setTargetAtTime(57 + 20 * v, t, 0.3); gnt.nf.frequency.setTargetAtTime(110 + 90 * v, t, 0.25);
+  }
+  const thud = v => { const k = Math.min(1, Math.max(0.25, v / 10)); duck(0.6, 0.12, 0.45); tone(62, 0.55, 'sine', 0.2 + 0.22 * k, 0, 30); puff('lowpass', 260, 0.8, 0.4, 0.09 + 0.1 * k, 0, 70); };
+  function silence() { if (gnt && ctx) gnt.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); if (roll && ctx) { roll.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05); roll.hg.gain.setTargetAtTime(0, ctx.currentTime, 0.05); } }
 
   // ---- la canzone, a sezioni --------------------------------------------------------------------------------
   // audio/musica.mp3 è la TUA canzone (120 BPM, 4/4, tonalità di Do) tagliata sulle battute (2 s l'una) e rimessa in un solo file:
@@ -241,5 +260,5 @@ const Sfx = (() => {
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('button, .btn'); if (t && t.id !== 'btn-sound') { unlock(); click(); } }, true);
     document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) ctx.suspend(); else if (!muted) { ctx.resume(); if (mode === 'all') musicStart(); } });
   }
-  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, portal, portalOut, update, silence, setMuted, mood, raceStart, get muted() { return muted; }, get mode() { return mode; } };
+  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, sizzle, giant, thud, portal, portalOut, update, silence, setMuted, mood, raceStart, get muted() { return muted; }, get mode() { return mode; } };
 })();

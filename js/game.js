@@ -67,6 +67,7 @@
   // dalla risoluzione fisica). Su schermi stretti (telefoni) viewScale < 1 così si vede più
   // pista invece di restare incollati a un fotogramma stretto come su desktop.
   let viewScale = 1, viewW = 0, viewH = 0, minimapMetrics = { w: 0, h: 0 };
+  let baseVS = 1, gzoom = 1, cssWv = 0, cssHv = 0, dprV = 1, shake = 0, shX = 0, shY = 0;   // zoom dinamico (ruote giganti) e tremolio della telecamera
   // lunghezza della pista scelta dall'host in lobby, e ultima pista giocata (per "Rigioca stessa pista")
   let trackLen = 'lunga', currentLayout = null, keepTrack = false, crazy = false;
   let lastCallSent = false, lastCallEnd = 0;
@@ -203,7 +204,7 @@
     const v = inRaceDrawer.getNormalizedVertices(80); els.redrawModal.style.display = 'none'; myRedrawsLeft--; if (typeof Sfx !== 'undefined') Sfx.redraw();
     els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft });
     if (myRedrawsLeft <= 0) els.redrawUi.style.display = 'none';
-    if (Net.isHost) { Sim.updateRacerWheel(Net.myId, v); raceMeta[Net.myId].vertices = v; Net.broadcast({ type: 'wheelUpdated', id: Net.myId, vertices: v }); }
+    if (Net.isHost) { Sim.updateRacerWheel(Net.myId, v); raceMeta[Net.myId].vertices = v; clearMelt(raceMeta[Net.myId]); Net.broadcast({ type: 'wheelUpdated', id: Net.myId, vertices: v }); }
     else { Net.send({ type: 'wheelUpdate', vertices: v }); }
   });
 
@@ -215,8 +216,9 @@
     if (data.type === 'results') showResults(data.standings);
     if (data.type === 'lastCall') showLastCall(data.ms);
     if (data.type === 'restartToDraw') enterDrawPhase();
-    if (data.type === 'wheelUpdate' && Net.isHost && raceMeta[from]) { Sim.updateRacerWheel(from, data.vertices); raceMeta[from].vertices = data.vertices; Net.broadcast({ type: 'wheelUpdated', id: from, vertices: data.vertices }); }
-    if (data.type === 'wheelUpdated') { if (raceMeta[data.id]) raceMeta[data.id].vertices = data.vertices; }
+    if (data.type === 'wheelUpdate' && Net.isHost && raceMeta[from]) { Sim.updateRacerWheel(from, data.vertices); raceMeta[from].vertices = data.vertices; clearMelt(raceMeta[from]); Net.broadcast({ type: 'wheelUpdated', id: from, vertices: data.vertices }); }
+    if (data.type === 'wheelUpdated') { if (raceMeta[data.id]) { raceMeta[data.id].vertices = data.vertices; clearMelt(raceMeta[data.id]); } }
+    if (data.type === 'melt' && !Net.isHost) applyMelt(data.id, data.f, data.r);
   });
 
   // Wake Lock: senza, lo schermo si spegne da solo dopo un po' di inattività (tipico durante
@@ -327,6 +329,7 @@
       const now = performance.now(), dt = Math.min(now - last, 100); last = now;
       const pt = Perf.on ? performance.now() : 0; Sim.tick(dt); const snap = Sim.snapshot(), pu = Sim.usedPortals(); syncUsed(pu); applySnapshot(snap); if (Perf.on) Perf.tick(performance.now() - pt);
       if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now, pu }); }
+      Sim.drainMelts().forEach(m => { applyMelt(m.id, m.f, m.r); Net.broadcast({ type: 'melt', id: m.id, f: m.f, r: m.r }); });
       // primo traguardo: gli altri hanno un tempo limitato, e lo sanno
       const gl = Sim.graceLeft();
       if (gl !== null && !lastCallSent) { lastCallSent = true; Net.broadcast({ type: 'lastCall', ms: gl }); showLastCall(gl); }
@@ -381,7 +384,7 @@
           for (const id in b.m) {
             const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
-            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im,
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
           }
           return;
@@ -395,7 +398,7 @@
       if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }   // portale (teletrasporto) o nuovo arrivato o salto (rimessa in pista): niente scivolata
       latestRacers[id] = {
         id, finished: rb.finished, finishTime: rb.finishTime,
-        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
         fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
         rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
       };
@@ -414,7 +417,8 @@
     const dpr = window.devicePixelRatio || 1;
     const cssW = window.innerWidth, cssH = window.innerHeight;
 
-    viewScale = Math.min(1, Math.max(MIN_VIEW_SCALE, Math.min(cssW / REF_W, cssH / REF_H)));
+    baseVS = viewScale = Math.min(1, Math.max(MIN_VIEW_SCALE, Math.min(cssW / REF_W, cssH / REF_H)));
+    cssWv = cssW; cssHv = cssH; dprV = dpr; viewScale = baseVS * gzoom;
     viewW = cssW / viewScale;
     viewH = cssH / viewScale;
 
@@ -426,7 +430,7 @@
     els.raceCanvas.style.width = cssW + 'px';
     els.raceCanvas.style.height = cssH + 'px';
     if (ctx2d) ctx2d.setTransform(dpr * viewScale, 0, 0, dpr * viewScale, 0, 0);
-    Scenery.setView(dpr, viewScale);
+    Scenery.setView(dpr, baseVS);
 
     resizeMinimap();
   }
@@ -486,17 +490,21 @@
   function raceAudio(r, meta, now) {
     if (r.finished) { if (!aud.fin) { aud.fin = true; Sfx.silence(); let pl = 1; for (const id in latestRacers) { const o = latestRacers[id]; if (id !== r.id && o.finished && o.finishTime <= r.finishTime) pl++; } Sfx.finish(pl); } return; }
     const dt = aud.t ? Math.max(1, now - aud.t) : 16; aud.t = now;
-    const R = wheelR(meta), gr = Sim.GROUND_Y - Terrain.height(r.rwX) - r.rwY, gf = Sim.GROUND_Y - Terrain.height(r.fwX) - r.fwY;
+    const R = wheelR(meta) * (r.sc || 1), gr = Sim.GROUND_Y - Terrain.height(r.rwX) - r.rwY, gf = Sim.GROUND_Y - Terrain.height(r.fwX) - r.fwY;
     const air = Math.min(gr, gf) - R > 12, vy = aud.y === null ? 0 : (r.y - aud.y) / (dt / 16.67);
     aud.y = r.y;
-    if (aud.air && !air) Sfx.land(Math.max(aud.vy, vy));
+    if (aud.air && !air) { Sfx.land(Math.max(aud.vy, vy)); if ((r.sc || 1) > 1.4) giantLand(r, Math.max(aud.vy, vy)); }
+    if (Sfx.giant) Sfx.giant((r.sc || 1) > 1.15 ? Math.min(1, ((r.sc || 1) - 1) / 1.2) : 0, Math.min(1, Math.abs(r.vx) / 8), air);
     aud.air = air; aud.vy = vy;
     const zk = Terrain.zoneKeyAt(r.rwX), wet = zk === 'water' && Terrain.isWater(r.rwX);
     if (wet && !aud.wet) Sfx.splash(Math.min(1, Math.abs(r.vx) / 8));
     aud.wet = wet;
+    const hot = zk === 'lava' && Terrain.isLava(r.rwX) && r.rwY + 62 > Sim.GROUND_Y - Terrain.lavaLevel(r.rwX);
+    if (hot && !aud.hot) Sfx.sizzle();
+    aud.hot = hot;
     const gk = Terrain.gripAt(r.rwX), p = Terrain.patchAt(r.rwX);
     let surf = gk || (zk === 'gravel' ? 'gravel' : zk === 'water' ? 'water' : 'grass');
-    if (wet) surf = 'water'; else if (p && (p.kind === 'boulders' || p.kind === 'logs' || p.kind === 'stairs' || p.kind === 'holes' || p.kind === 'whoops')) surf = 'rough';
+    if (hot) surf = 'lava'; else if (wet) surf = 'water'; else if (p && (p.kind === 'boulders' || p.kind === 'logs' || p.kind === 'stairs' || p.kind === 'holes' || p.kind === 'whoops')) surf = 'rough';
     // colpi dei vertici: giri al secondo della ruota posteriore × numero di vertici (solo forme con pochi spigoli; le tonde rotolano lisce)
     let ticks = 0; const nv = meta && meta.vertices ? meta.vertices.length : 0;
     if (aud.ang !== undefined && nv >= 3 && nv <= 14) { let d = r.rwAngle - aud.ang; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; ticks = Math.abs(d) / (2 * Math.PI) / (dt / 1000) * nv; }
@@ -617,7 +625,7 @@
     // portali (anelli d'inchiostro): neri gli specchi, tratteggiati le uscite
     const hAt = x => { let b = P[0]; for (const q of P) { if (q[0] > x) break; b = q; } return b[1]; };
     const drawPortalMarks = () => {
-    (Terrain.PORTALS || []).forEach(p => { if (p.x < x0 || p.x > x1) return; const gx = X(p.x), gy = Yh(hAt(p.x)) - 12; g.strokeStyle = p.kind === 'shift' ? 'rgba(16,42,67,0.75)' : '#0c0c12'; g.lineWidth = p.kind === 'mirror' ? 3 : 1.8; g.setLineDash(p.kind === 'exit' ? [3, 3] : []); g.beginPath(); g.ellipse(gx, gy, 4.4, 12, 0, 0, Math.PI * 2); g.save(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth += 3; g.setLineDash([]); g.stroke(); g.restore(); g.stroke(); });
+    (Terrain.PORTALS || []).forEach(p => { if (p.x < x0 || p.x > x1) return; const gx = X(p.x), gy = Yh(hAt(p.x)) - 12; g.strokeStyle = p.kind === 'shift' ? 'rgba(16,42,67,0.75)' : '#0c0c12'; g.lineWidth = p.kind === 'mirror' ? 3 : 1.8; g.setLineDash(p.kind === 'exit' || p.kind === 'big' ? [3, 3] : []); g.beginPath(); g.ellipse(gx, gy, p.kind === 'big' ? 6.4 : 4.4, p.kind === 'big' ? 17 : 12, 0, 0, Math.PI * 2); g.save(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth += 3; g.setLineDash([]); g.stroke(); g.restore(); g.stroke(); });
     g.setLineDash([]);
     };
     // traguardo: bandierina
@@ -695,7 +703,7 @@
   function setMirrorView(on) { els.raceWrap.classList.toggle('mirrored', on); }
   // portali consumati da qualcuno (lo dice l'host in ogni snapshot): spariscono per tutti, con la dissolvenza a schizzi
   function syncUsed(pu) { const n = performance.now(); for (let i = 0; i < pu.length; i++) if (!pst.gone[pu[i]]) pst.gone[pu[i]] = n; }
-  function resetPortals() { for (const k in arrAt) delete arrAt[k]; for (const k in peSeen) delete peSeen[k]; pst.gone = {}; pst.mirrored = false; pst.myExit = -1; pst.pe = 0; mirrorF = 1; mirT = 0; clearTimeout(noteTimer); els.portalNote.style.display = 'none'; setMirrorView(false); }
+  function resetPortals() { if (gzoom !== 1) applyZoom(1); shake = shX = shY = 0; for (const k in arrAt) delete arrAt[k]; for (const k in peSeen) delete peSeen[k]; pst.gone = {}; pst.mirrored = false; pst.big = false; pst.myExit = -1; pst.pe = 0; mirrorF = 1; mirT = 0; clearTimeout(noteTimer); els.portalNote.style.display = 'none'; setMirrorView(false); }
   // anello d'arrivo: dove la bici riappare dopo un salto. Si apre veloce, resta un attimo e si dissolve in schizzi (come i portali usati).
   const ARR_Q = { id: 9000, kind: 'shift', x: 0 };
   function drawArrivals(ctx, camX, w, gy, now, layer) {
@@ -704,6 +712,41 @@
       const sx = a.x - camX; if (sx < -120 || sx > w + 120) continue;
       const k = Math.min(1, easeOutBack(Math.min(1, tt / 380))), d = Math.max(0, (tt - 1000) / 900);
       Props.portalDraw(ctx, ARR_Q, sx, gy - Terrain.height(a.x), now / 1000, Math.max(0.01, k * (1 - d * d)), d, pst, layer);
+    }
+  }
+  // ---- ruote giganti: telecamera che si allontana, tremolio, polvere ----
+  const gfx = { t: 0 };
+  function applyZoom(g) {
+    gzoom = g; viewScale = baseVS * g; viewW = cssWv / viewScale; viewH = cssHv / viewScale;
+    if (ctx2d) ctx2d.setTransform(dprV * viewScale, 0, 0, dprV * viewScale, 0, 0);
+  }
+  function zoomFor(me, now) {
+    const dt = Math.min(0.1, gfx.t ? (now - gfx.t) / 1000 : 0.016); gfx.t = now;
+    const S = me && !me.finished ? (me.sc || 1) : 1, T = S > 1.02 ? 1 / (1 + 0.4 * (S - 1)) : 1;
+    const g = gzoom + (T - gzoom) * Math.min(1, dt * 3.2);
+    if (Math.abs(g - gzoom) > 0.002 || (T === 1 && gzoom !== 1 && Math.abs(g - 1) < 0.004)) applyZoom(Math.abs(g - 1) < 0.004 && T === 1 ? 1 : g);
+    // tremolio: decade in fretta; mentre sei gigante e veloce la terra trema appena
+    shake *= Math.pow(0.004, dt);
+    if (S > 1.3) shake = Math.max(shake, 0.9 * Math.min(1, (S - 1) / 1.2) * Math.min(1, Math.abs(me.vx || 0) / 6));
+    if (shake > 0.12) { shX = (Math.random() - 0.5) * shake * 2; shY = (Math.random() - 0.5) * shake * 2; } else { shX = shY = 0; shake = 0; }
+  }
+  const DUST = 'rgba(198,176,146,';
+  function giantDust(r, gs) {
+    if (Math.abs(r.vx) < 2 || particles.length > 170 || Math.random() > 0.85) return;
+    const rad = 80 * gs;
+    for (const wx of [r.fwX, r.rwX]) {
+      const gap = Sim.GROUND_Y - Terrain.height(wx) - ((wx === r.fwX ? r.fwY : r.rwY) + rad);   // distanza della ruota dal terreno (≈0 se tocca)
+      if (gap > 40) continue;
+      for (let q = 0; q < 2; q++) particles.push({ x: wx + (Math.random() - 0.5) * 90, y: (wx === r.fwX ? r.fwY : r.rwY) + rad * 0.92, vx: -r.vx * 0.3 * Math.random() - 0.3, vy: -Math.random() * 2.6 - 0.5, g: -0.02, dl: 0.012, life: 0.7, size: 7 + Math.random() * 13, col: DUST });
+    }
+  }
+  function giantLand(r, v) {
+    shake = Math.max(shake, Math.min(15, 2 + v * 1.1));
+    if (typeof Sfx !== 'undefined' && Sfx.thud) Sfx.thud(v);
+    const rad = 80 * (r.sc || 1);
+    for (const [wx, wy] of [[r.fwX, r.fwY], [r.rwX, r.rwY]]) for (let i = 0; i < 12; i++) {
+      const d = i < 6 ? -1 : 1, sp = 1.5 + Math.random() * 4.5;
+      if (particles.length < 190) particles.push({ x: wx + d * Math.random() * rad * 0.5, y: wy + rad * 0.9, vx: d * sp, vy: -Math.random() * 3.5, g: 0.02, dl: 0.011, life: 0.65, size: 7 + Math.random() * 13, col: DUST });
     }
   }
   function portalFx(me, now) {
@@ -715,6 +758,8 @@
       if (me.pt === 's') { els.portalFlash.classList.remove('go'); void els.portalFlash.offsetWidth; els.portalFlash.classList.add('go'); showNote(me.pd > 0 ? 'crazy.fwd' : 'crazy.back', 1800, (me.pd > 0 ? '+' : '−') + Math.round(Math.abs(me.pd))); }
       else if (me.pt === 'm') { const mp = Terrain.PORTALS.find(p => p.id === me.pi); pst.myExit = mp ? mp.exit : -1; showNote('crazy.mirror', 0); }
       else if (me.pt === 'x') { clearTimeout(noteTimer); els.portalNote.style.display = 'none'; }
+      else if (me.pt === 'g') { pst.big = true; showNote('crazy.grow', 1600); }
+      else if (me.pt === 'n') { pst.big = false; }
       if (typeof Sfx !== 'undefined') { Sfx.portal(me.pt, me.pd); if (me.pt === 's') setTimeout(() => { try { Sfx.portalOut(me.pd); } catch (e) {} }, 330); }
     }
     const mir = me.dir === -1; if (mir !== pst.mirrored) { pst.mirrored = mir; setMirrorView(mir); }
@@ -724,9 +769,11 @@
   function renderRace(ts) {
     const t0 = performance.now();
     interpolateRacers(t0);
-    const w = viewW, h = viewH, me = latestRacers[Net.myId];
+    const me = latestRacers[Net.myId];
+    zoomFor(me, t0);   // ruote giganti: la telecamera si allontana (cambia viewW/viewH)
+    const w = viewW, h = viewH;
     updateCamera(Math.min(0.1, (ts - (lastCamTs || ts)) / 1000), w, h); lastCamTs = ts;
-    const groundY = h * 0.8 + cam.dy, camX = smoothCamX;
+    const groundY = h * 0.8 + cam.dy + shY, camX = smoothCamX + shX;
     const SC = Scenery.state;
 
     Scenery.update(camX, w, h, groundY, t0);
@@ -739,7 +786,7 @@
 
     // Spruzzi delle ruote (ghiaccio, ghiaia, acqua)
     for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.03;
+      const p = particles[i]; p.x += p.vx; p.y += p.vy; if (p.g) p.vy += p.g; p.life -= p.dl || 0.03;
       if (p.life <= 0) { particles.splice(i, 1); continue; }
       ctx2d.fillStyle = `${p.col}${p.life})`; ctx2d.beginPath(); ctx2d.arc(p.x - camX, p.y - Sim.GROUND_Y + groundY, p.size, 0, Math.PI * 2); ctx2d.fill();
     }
@@ -769,10 +816,18 @@
       if (ar) { const tt = t0 - ar.t0; sc = tt < 130 ? 0.001 : Math.max(0.001, Math.min(1.15, easeOutBack(Math.min(1, (tt - 130) / 420)))); }
       if (sc !== 1) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(sc, sc); ctx2d.translate(-cx, -cy(r.y)); }
       if (r.im > 0) drawGlow(ctx2d, cx, cy(r.y), meta.color, r.im, t0);
+      const gs = r.sc || 1, bigB = gs > 1.01;   // la bici cresce insieme alle ruote
+      if (bigB) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(gs, gs); ctx2d.translate(-cx, -cy(r.y)); }
       drawBike(cx, cy(r.y), r.angle, meta.color);
-      drawWheel(r.rwX - camX, cy(r.rwY), r.rwAngle, meta.vertices, meta.color, id === Net.myId);
-      drawWheel(r.fwX - camX, cy(r.fwY), r.fwAngle, meta.vertices, meta.color, id === Net.myId);
+      if (bigB) ctx2d.restore();
+      const hR = wheelHeat(id, 'r', r.rwX, r.rwY), hF = wheelHeat(id, 'f', r.fwX, r.fwY);
+      drawWheel(r.rwX - camX, cy(r.rwY), r.rwAngle, meta.vr || meta.vertices, meta.color, id === Net.myId, hR, meta.vr ? meta.mr : null, id, r.sc);
+      drawWheel(r.fwX - camX, cy(r.fwY), r.fwAngle, meta.vf || meta.vertices, meta.color, id === Net.myId, hF, meta.vf ? meta.mf : null, id, r.sc);
+      lavaDrips(id, r, meta, hR, hF);
+      if (bigB) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(gs, gs); ctx2d.translate(-cx, -cy(r.y)); }
       drawRider(cx, cy(r.y), r.angle, meta.color, meta.name, id === Net.myId);
+      if (bigB) ctx2d.restore();
+      if (bigB && gs > 1.3) giantDust(r, gs);
       if (r.im > 0) drawGlow(ctx2d, cx, cy(r.y), meta.color, r.im, t0, true);
       if (sc !== 1) ctx2d.restore();
 
@@ -827,12 +882,54 @@
     ctx2d.restore();
   }
 
-  function drawWheel(x, y, a, v, c, isMe) {
+  // ---- vulcano: ruote che si sciolgono -------------------------------------------------------------------------------
+  // l'host manda, per ogni ruota, quanto si è sciolto ogni punto (interi 0..100); la forma si ricostruisce qui con le stesse funzioni della fisica.
+  // meta.vf / meta.vr = contorno sciolto della ruota davanti / dietro, meta.mf / meta.mr = quanto (0..1) per punto, usati per far brillare il bordo.
+  function applyMelt(id, f, r) {
+    const meta = raceMeta[id]; if (!meta || !meta.vertices) return;
+    if (!meta.base) meta.base = Sim.meltBase(meta.vertices);
+    meta.mf = f.map(v => v / 100); meta.mr = r.map(v => v / 100);
+    meta.vf = Sim.meltVertices(meta.base, meta.mf); meta.vr = Sim.meltVertices(meta.base, meta.mr);
+  }
+  function clearMelt(meta) { if (!meta) return; meta.base = meta.vf = meta.vr = meta.mf = meta.mr = null; }
+  const heatOf = {};   // id -> {f, r}: calore della ruota (0..1): sale quando è nella lava, scende piano dopo
+  function wheelHeat(id, which, x, y) {
+    const H = heatOf[id] || (heatOf[id] = { f: 0, r: 0 });
+    let hot = 0;
+    if (Terrain.nearLava && Terrain.nearLava(x, 120)) { const ls = Sim.GROUND_Y - Terrain.lavaLevel(x); hot = Math.max(0, Math.min(1, (y + 62 - ls) / 26)); }
+    H[which] = Math.max(hot, H[which] * 0.985);
+    return H[which];
+  }
+  // gocce di materiale fuso che cadono dai punti sciolti, e schizzi/scintille quando la ruota è dentro la lava
+  function lavaDrips(id, r, meta, hR, hF) {
+    if (particles.length > 100) return;
+    const go = (x, y, ang, h, v, m) => {
+      if (h < 0.18 || !v) return;
+      if (Math.random() < 0.55 * h) {
+        const i = (Math.random() * v.length) | 0, p = v[i], ca = Math.cos(ang), sa = Math.sin(ang), wx = x + (ca * p.x - sa * p.y) * (r.sc || 1), wy = y + (sa * p.x + ca * p.y) * (r.sc || 1);
+        const mm = m ? m[i] || 0 : 0;
+        if (mm > 0.04 || h > 0.7) particles.push({ x: wx, y: wy, vx: (Math.random() - 0.5) * 0.8 - r.vx * 0.12, vy: Math.random() * 0.8, g: 0.2, dl: 0.022, life: 1, size: 1.8 + Math.random() * 2.6, col: Math.random() < 0.5 ? 'rgba(255,140,30,' : 'rgba(255,200,70,' });
+      }
+      if (h > 0.75 && Math.random() < 0.5) particles.push({ x: x + (Math.random() - 0.5) * 100, y: y + 60, vx: (Math.random() - 0.5) * 2.2, vy: -2 - Math.random() * 4, g: 0.17, dl: 0.026, life: 1, size: 1.4 + Math.random() * 2.2, col: 'rgba(255,190,60,' });
+    };
+    go(r.rwX, r.rwY, r.rwAngle, hR, meta.vr || meta.vertices, meta.vr ? meta.mr : null);
+    go(r.fwX, r.fwY, r.fwAngle, hF, meta.vf || meta.vertices, meta.vf ? meta.mf : null);
+  }
+  // contorno morbido: curva che passa per i punti medi dei lati (la ruota sciolta ha un profilo continuo, non una poligonale)
+  function smoothPath(v) {
+    const n = v.length; ctx2d.beginPath();
+    let mx = (v[n - 1].x + v[0].x) / 2, my = (v[n - 1].y + v[0].y) / 2; ctx2d.moveTo(mx, my);
+    for (let i = 0; i < n; i++) { const p = v[i], q = v[(i + 1) % n]; ctx2d.quadraticCurveTo(p.x, p.y, (p.x + q.x) / 2, (p.y + q.y) / 2); }
+    ctx2d.closePath();
+  }
+  function drawWheel(x, y, a, v, c, isMe, heat, mArr, id, sc) {
     ctx2d.save(); ctx2d.translate(x, y); ctx2d.rotate(a);
+    if (sc && sc !== 1) ctx2d.scale(sc, sc);   // portale gigante: stessa forma, più grande (i tratti restano della stessa grossezza)
+    const ls = sc && sc !== 1 ? 1 / sc : 1;
 
     // Raggi adattabili dinamicamente alla forma tracciata
     if (v && v.length > 0) {
-      ctx2d.lineWidth = 2;
+      ctx2d.lineWidth = 2 * ls;
       ctx2d.strokeStyle = 'rgba(15,23,42,0.2)';
       const step = Math.max(1, Math.floor(v.length / 6));
       for (let i = 0; i < v.length; i += step) {
@@ -841,9 +938,25 @@
       }
     }
 
-    ctx2d.beginPath(); v.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y)); ctx2d.closePath();
+    const melted = !!mArr;
+    if (melted) smoothPath(v); else { ctx2d.beginPath(); v.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y)); ctx2d.closePath(); }
     ctx2d.fillStyle = c; ctx2d.globalAlpha = 0.85; ctx2d.fill();
-    ctx2d.globalAlpha = 1; ctx2d.lineWidth = isMe ? 4 : 2.5; ctx2d.strokeStyle = '#0f172a'; ctx2d.stroke();
+    ctx2d.globalAlpha = 1; ctx2d.lineWidth = (isMe ? 4 : 2.5) * ls; ctx2d.strokeStyle = '#0f172a'; ctx2d.stroke();
+    if (melted || heat > 0.02) {
+      // bordo incandescente: dove il materiale è più sciolto (e mentre è nella lava) brilla d'arancio, con un alone; poi si raffredda
+      const n = v.length, hh = Math.max(0.0, heat);
+      ctx2d.save(); ctx2d.globalCompositeOperation = 'lighter'; ctx2d.lineCap = 'round'; ctx2d.lineJoin = 'round';
+      if (hh > 0.03) { smoothPath(v); ctx2d.strokeStyle = `rgba(255,120,20,${(0.5 * hh).toFixed(3)})`; ctx2d.lineWidth = 9; ctx2d.stroke(); ctx2d.strokeStyle = `rgba(255,210,90,${(0.55 * hh).toFixed(3)})`; ctx2d.lineWidth = 3; ctx2d.stroke(); }
+      if (melted) {
+        // la parte sciolta: tratto più spesso e caldo lungo i punti con fusione alta, che sfuma col calore
+        for (let i = 0; i < n; i++) {
+          const m = mArr[i] || 0, k = Math.min(1, m / 0.25) * (0.25 + 0.75 * hh); if (k < 0.04) continue;
+          const p = v[i], q = v[(i + 1) % n];
+          ctx2d.strokeStyle = `rgba(255,${100 + 90 * k | 0},20,${(0.8 * k).toFixed(3)})`; ctx2d.lineWidth = 3 + 5 * k; ctx2d.beginPath(); ctx2d.moveTo(p.x, p.y); ctx2d.lineTo(q.x, q.y); ctx2d.stroke();
+        }
+      }
+      ctx2d.restore();
+    }
     ctx2d.beginPath(); ctx2d.arc(0, 0, 8, 0, Math.PI * 2); ctx2d.fillStyle = '#0f172a'; ctx2d.fill(); ctx2d.restore();
   }
 

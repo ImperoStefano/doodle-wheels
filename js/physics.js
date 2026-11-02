@@ -253,10 +253,14 @@ const Sim = (() => {
   }
 
   function makeAxle(chassis, dx, wheel) {
-    return Matter.Constraint.create({
+    const ax = Matter.Constraint.create({
       bodyA: chassis, pointA: { x: dx, y: 0 },
       bodyB: wheel, stiffness: AXLE_STIFFNESS, damping: AXLE_DAMPING, length: 0
     });
+    // Matter misura pointA nel telaio com'era alla creazione del vincolo (angleA = angolo di allora): se il telaio è già inclinato (ruota sciolta o ridisegnata
+    // mentre la moto è in salita) l'attacco resterebbe storto di quell'angolo per sempre. L'attacco è sempre sull'asse del telaio.
+    ax.angleA = 0;
+    return ax;
   }
 
   function addRacer(id, vertices, color, name, startIndex) {
@@ -281,15 +285,17 @@ const Sim = (() => {
     racers[id] = {
       chassis, fw, rw, axF, axR, color, name,
       finished: false, finishTime: null,
-      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, pe: 0, pt: '', pd: 0,
+      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {},
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
+    meltInit(racers[id], id, vertices);
   }
 
   function updateRacerWheel(id, vertices) {
     const r = racers[id];
     if (!r || r.finished) return;
 
+    meltInit(r, r.nid, vertices);   // ruota ridisegnata: materiale nuovo, niente più bruciature
     r.cal = calOf(vertices); calibrate(vertices, v => { r.cal = v; });
     r.spike = spikiness(vertices); r.teeth = teethGrip(vertices); r.peaks = lastPeaks; r.prom = lastProm; r.roll = rollFactor(vertices, r.teeth); r.reff = lastReff; r.accelK = 1 + ACCEL_SPIKE * r.spike;
     const group = r.chassis.collisionFilter.group;
@@ -304,19 +310,129 @@ const Sim = (() => {
 
     Matter.World.remove(world, [r.fw, r.rw, r.axF, r.axR]);
 
-    const fw = createWheelBody(fwPos.x, fwPos.y, vertices, wOpt);
-    const rw = createWheelBody(rwPos.x, rwPos.y, vertices, wOpt);
+    const sv = r.sc && r.sc !== 1 ? vertices.map(p => ({ x: p.x * r.sc, y: p.y * r.sc })) : vertices;   // portale gigante: la ruota ridisegnata nasce già della taglia attuale
+    const fw = createWheelBody(fwPos.x, fwPos.y, sv, wOpt);
+    const rw = createWheelBody(rwPos.x, rwPos.y, sv, wOpt);
+    if (r.sc && r.sc > 1.001) { Matter.Body.setDensity(fw, fw.density / (r.sc * r.sc)); Matter.Body.setDensity(rw, rw.density / (r.sc * r.sc)); }
 
     Matter.Body.setVelocity(fw, fwVel);
     Matter.Body.setVelocity(rw, rwVel);
     Matter.Body.setAngularVelocity(fw, fwAng);
     Matter.Body.setAngularVelocity(rw, rwAng);
 
-    const axF = makeAxle(r.chassis, 80, fw);
-    const axR = makeAxle(r.chassis, -80, rw);
+    const axF = makeAxle(r.chassis, 80 * (r.sc || 1), fw);
+    const axR = makeAxle(r.chassis, -80 * (r.sc || 1), rw);
 
     Matter.World.add(world, [fw, rw, axF, axR]);
     r.fw = fw; r.rw = rw; r.axF = axF; r.axR = axR;
+  }
+
+
+  // ---- vulcano: il materiale che tocca la lava si scioglie ----------------------------------------------------
+  // Ogni ruota è un contorno fitto di punti (r.base: i lati lunghi sono suddivisi, gli spigoli restano) e ogni punto ha una "fusione" m (0..MELT_MAX).
+  // Solo i punti IMMERSI nella lava si sciolgono, tanto più quanto sono più a fondo (verso il fondale), e le punte prima del resto; il materiale non è
+  // identico dappertutto (un'irregolarità fissa sulla ruota), quindi ci si "mangia" a chiazze invece di rimpicciolire in modo uniforme.
+  // La forma sciolta è base·(1−m) con m appena sfumato fra punti vicini (profilo continuo, "cera che cede") e ricentrata sul baricentro.
+  // I corpi fisici si ricostruiscono ogni MELT_BUILD_MS: la ruota cambia forma davvero (e, più piccola in quel punto, spinge meno). Nessuna ritaratura: lo svantaggio resta.
+  const MELT_RATE = 1.6, MELT_MAX = 0.62, MELT_DEPTH = 24, MELT_BUILD_MS = 120, LAVA_DRAG = 0.965;
+  const smooth01 = t => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+  function meltBase(v) {
+    const n = v.length; if (n < 3) return v.map(p => ({ x: p.x, y: p.y }));
+    let per = 0; for (let i = 0; i < n; i++) per += Math.hypot(v[(i + 1) % n].x - v[i].x, v[(i + 1) % n].y - v[i].y);
+    const seg = Math.max(7, per / 150), out = [];
+    for (let i = 0; i < n; i++) {
+      const a = v[i], b = v[(i + 1) % n], k = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / seg));
+      for (let j = 0; j < k; j++) out.push({ x: a.x + (b.x - a.x) * j / k, y: a.y + (b.y - a.y) * j / k });
+    }
+    return out;
+  }
+  // forma sciolta: base (punti) e m (0..1 per punto) → contorno ricentrato sul baricentro. Pura: la usano anche i client per disegnare.
+  function meltVertices(base, m) {
+    const n = base.length, out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const t = Math.min(MELT_MAX, 0.25 * m[(i + n - 1) % n] + 0.5 * m[i] + 0.25 * m[(i + 1) % n]), k = 1 - t;
+      out[i] = { x: base[i].x * k, y: base[i].y * k };
+    }
+    let cx = 0, cy = 0, a2 = 0;
+    for (let i = 0; i < n; i++) { const p = out[i], q = out[(i + 1) % n], cr = p.x * q.y - q.x * p.y; a2 += cr; cx += (p.x + q.x) * cr; cy += (p.y + q.y) * cr; }
+    if (Math.abs(a2) > 1e-6) { cx /= 3 * a2; cy /= 3 * a2; for (const p of out) { p.x -= cx; p.y -= cy; } }
+    return out;
+  }
+  function meltInit(r, id, vertices) {
+    const base = meltBase(vertices), n = base.length, rad = base.map(p => Math.hypot(p.x, p.y));
+    let h = 2166136261 >>> 0; const sid = String(id); for (let i = 0; i < sid.length; i++) { h ^= sid.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    const ph = (h % 6283) / 1000, lobes = 2 + (h % 3);
+    r.nid = id; r.base = base; r.mF = new Float32Array(n); r.mR = new Float32Array(n); r.meltAt = 0; r.meltDirty = false; r.meltOut = false; r.molten = 0; r.mkF = 1; r.mkR = 1; r.baseArea = undefined;
+    r.tip = base.map((p, i) => { let s = 0; for (let k = -4; k <= 4; k++) s += rad[(i + k + n * 2) % n]; return Math.max(0, Math.min(1, (rad[i] - s / 9) / 9)); });
+    r.hot = base.map((p, i) => 0.2 + 0.8 * Math.pow(0.5 + 0.5 * Math.sin(2 * Math.PI * lobes * i / n + ph), 1.3));   // 0.2..1: dove il materiale cede più volentieri
+  }
+  function meltWheel(r, w, m, dtSec) {
+    const x0 = w.position.x, y0 = w.position.y, L0 = Terrain.lavaLevel(x0);
+    if (!(L0 > -1e8)) return false;
+    const yTest = GROUND_Y - L0 - 10, ca = Math.cos(w.angle), sa = Math.sin(w.angle), n = r.base.length, mm = new Float32Array(n);
+    // posizione attuale dei punti = forma sciolta (senza ricentrare: basta l'ordine di grandezza)
+    let any = false;
+    for (let i = 0; i < n; i++) {
+      const k = (1 - m[i]) * (r.sc || 1), bx = r.base[i].x * k, by = r.base[i].y * k, wx = x0 + ca * bx - sa * by, wy = y0 + sa * bx + ca * by;
+      if (wy < yTest) continue;
+      if (!Terrain.isLava(wx)) continue;
+      const d = wy - (GROUND_Y - Terrain.lavaLevel(wx)); if (d <= 0) continue;
+      const dm = MELT_RATE * dtSec * smooth01(d / MELT_DEPTH) * (1 + 1.3 * r.tip[i]) * r.hot[i];
+      if (m[i] < MELT_MAX) { m[i] = Math.min(MELT_MAX, m[i] + dm); any = true; }
+    }
+    return any;
+  }
+  // il corpo fisico non ha bisogno di ogni puntino: semplifica il contorno (Douglas–Peucker, 1,4 px) e la scomposizione in pezzi convessi resta leggera
+  function simplifyRing(pts, tol) {
+    const n = pts.length; if (n < 12) return pts;
+    const dist = (p, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy; if (l < 1e-9) return Math.hypot(p.x - a.x, p.y - a.y); return Math.abs((p.x - a.x) * dy - (p.y - a.y) * dx) / Math.sqrt(l); };
+    const keep = new Array(n).fill(false);
+    const rdp = (i, j) => { let mx = 0, k = -1; for (let t = i + 1; t < j; t++) { const d = dist(pts[t], pts[i], pts[j]); if (d > mx) { mx = d; k = t; } } if (mx > tol && k > 0) { keep[k] = true; rdp(i, k); rdp(k, j); } };
+    let far = 0, fd = 0; for (let i = 1; i < n; i++) { const d = Math.hypot(pts[i].x - pts[0].x, pts[i].y - pts[0].y); if (d > fd) { fd = d; far = i; } }
+    keep[0] = keep[far] = true; rdp(0, far);
+    const tail = pts.slice(far).concat([pts[0]]); // seconda metà, chiusa sul punto 0
+    const keep2 = new Array(tail.length).fill(false); keep2[0] = keep2[tail.length - 1] = true;
+    const rdp2 = (i, j) => { let mx = 0, k = -1; for (let t = i + 1; t < j; t++) { const d = dist(tail[t], tail[i], tail[j]); if (d > mx) { mx = d; k = t; } } if (mx > tol && k > 0) { keep2[k] = true; rdp2(i, k); rdp2(k, j); } };
+    rdp2(0, tail.length - 1);
+    const out = []; for (let i = 0; i <= far; i++) if (keep[i]) out.push(pts[i]); for (let i = 1; i < tail.length - 1; i++) if (keep2[i]) out.push(tail[i]);
+    return out.length >= 3 ? out : pts;
+  }
+  const ringArea = v => { let a = 0; for (let i = 0; i < v.length; i++) { const p = v[i], q = v[(i + 1) % v.length]; a += p.x * q.y - q.x * p.y; } return Math.abs(a) / 2; };
+  // una ruota mangiata dalla lava spinge peggio: la perdita di spinta segue la materia persa (MELT_GRIP = quanto pesa), ma la forma resta quella vera
+  const MELT_GRIP = 1.0;
+  function rebuildWheel(r, key, m) {
+    let mv = meltVertices(r.base, m);
+    if (r.baseArea === undefined) r.baseArea = ringArea(r.base);
+    const kk = Math.max(0.35, 1 - MELT_GRIP * Math.max(0, 1 - ringArea(mv) / (r.baseArea || 1)));
+    if (r.sc && r.sc !== 1) { const S = r.sc; mv = mv.map(p => ({ x: p.x * S, y: p.y * S })); }
+    if (key === 'fw') r.mkF = kk; else r.mkR = kk;
+    const old = r[key], axKey = key === 'fw' ? 'axF' : 'axR', dx = (key === 'fw' ? 80 : -80) * (r.sc || 1), group = r.chassis.collisionFilter.group;
+    const pos = { x: old.position.x, y: old.position.y }, ang = old.angle;
+    const nw = createWheelBody(pos.x, pos.y, simplifyRing(mv, 1.4), wheelOptions(group));
+    // si copia lo stato di moto così com'è (posizione precedente, angolo precedente, passo di tempo): niente scossoni alla ricostruzione
+    if (r.sc && r.sc > 1.001) Matter.Body.setDensity(nw, nw.density / (r.sc * r.sc));   // ruota gigante: stessa massa di prima (4,8 volte più pesante farebbe esplodere i vincoli con il telaio leggero)
+    Matter.Body.setPosition(nw, pos); Matter.Body.setAngle(nw, ang);   // (setPosition: difesa se la scomposizione in pezzi lascia il corpo altrove)
+    nw.deltaTime = old.deltaTime; nw.deltaTimePrev = old.deltaTimePrev; nw.positionPrev.x = pos.x - (old.position.x - old.positionPrev.x); nw.positionPrev.y = pos.y - (old.position.y - old.positionPrev.y);
+    nw.anglePrev = nw.angle - (old.angle - old.anglePrev); nw.velocity.x = old.velocity.x; nw.velocity.y = old.velocity.y; nw.angularVelocity = old.angularVelocity; nw.speed = old.speed; nw.angularSpeed = old.angularSpeed;
+    Matter.World.remove(world, [old, r[axKey]]);
+    const ax = makeAxle(r.chassis, dx, nw); Matter.World.add(world, [nw, ax]);
+    r[key] = nw; r[axKey] = ax;
+  }
+  function meltStep(r, elapsed) {
+    if (!Terrain.nearLava || !(Terrain.nearLava(r.fw.position.x, 140) || Terrain.nearLava(r.rw.position.x, 140))) return;
+    const dt = FIXED_DT / 1000;
+    if (meltWheel(r, r.fw, r.mF, dt)) r.dF = true;
+    if (meltWheel(r, r.rw, r.mR, dt)) r.dR = true;
+    if ((r.dF || r.dR) && elapsed - r.meltAt >= MELT_BUILD_MS) {
+      if (r.dF) rebuildWheel(r, 'fw', r.mF); if (r.dR) rebuildWheel(r, 'rw', r.mR);
+      r.dF = r.dR = false; r.meltAt = elapsed; r.meltOut = true;
+    }
+  }
+  // novità da mandare a tutti: per ogni ruota che si è sciolta, i valori m (interi 0..100 per punto). I client rifanno la forma con meltBase + meltVertices.
+  function drainMelts() {
+    const out = [];
+    for (const id in racers) { const r = racers[id]; if (!r.meltOut) continue; r.meltOut = false; out.push({ id, f: Array.from(r.mF, v => Math.round(v * 100)), r: Array.from(r.mR, v => Math.round(v * 100)) }); }
+    return out;
   }
 
   function start() {
@@ -509,8 +625,8 @@ const Sim = (() => {
     const cx = r.chassis.position.x + dist, cy = r.chassis.position.y - HOP_Y;
     Matter.Body.setPosition(r.chassis, { x: cx, y: cy });
     Matter.Body.setAngle(r.chassis, 0);            // also rights a flipped bike
-    Matter.Body.setPosition(r.fw, { x: cx + 80, y: cy });
-    Matter.Body.setPosition(r.rw, { x: cx - 80, y: cy });
+    Matter.Body.setPosition(r.fw, { x: cx + 80 * (r.sc || 1), y: cy });
+    Matter.Body.setPosition(r.rw, { x: cx - 80 * (r.sc || 1), y: cy });
     for (const b of [r.chassis, r.fw, r.rw]) {
       Matter.Body.setVelocity(b, { x: 0, y: 0 });
       Matter.Body.setAngularVelocity(b, 0);
@@ -531,12 +647,13 @@ const Sim = (() => {
     const c = r.roll * (Array.isArray(r.cal) ? r.cal[r.secOf ? r.secOf(cx) : (SEC_OF_KEY[Terrain.zoneKeyAt ? Terrain.zoneKeyAt(cx) : ''] || 0)] : (r.cal || 1));
     // la presa sposta anche il tetto di velocità: sul terreno sbagliato la bici non arriva a V_CAP, su quello giusto sì (o poco oltre)
     const capK = Math.min(CAP_GRIP_MAX, (gf + gr) / 2);
-    const dir = r.dir || 1, gov = dir * r.chassis.velocity.x > V_CAP * capK;
+    const dir = r.dir || 1, gov = dir * r.chassis.velocity.x > V_CAP * capK * Math.pow(r.sc || 1, 0.6);   // ruote giganti: tetto più alto (il motore non cambia, ma il giro è più lungo)
     // tetto di giro a terra: la ruota non gira più di SLIP_MAX volte quanto serve per l'avanzamento (partenza: velocità minima di riferimento)
-    const lim = TUNE.slipMax > 0 && r.reff > 0 ? TUNE.slipMax * Math.max(r.chassis.velocity.x, TUNE.slipVmin) / r.reff : undefined;
+    const lim = TUNE.slipMax > 0 && r.reff > 0 ? TUNE.slipMax * Math.max(r.chassis.velocity.x, TUNE.slipVmin) / (r.reff * (r.sc || 1)) : undefined;
     const ak = (r.accelK || 1) * Math.max(1, ACCEL_CAL * c);   // chi ha bisogno di più spinta (taratura alta) recupera anche più in fretta dopo ogni urto
-    driveWheel(r.fw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gf * c, ak, lim);
-    driveWheel(r.rw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gr * c, ak, lim);
+    const mkF = r.mkF || 1, mkR = r.mkR || 1;   // vulcano: ruote sciolte, meno spinta
+    driveWheel(r.fw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gf * c * mkF, ak, lim);
+    driveWheel(r.rw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gr * c * mkR, ak, lim);
   }
 
 
@@ -725,6 +842,25 @@ const Sim = (() => {
     const dy = (top - 150) - r.chassis.position.y;
     for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.translate(b, { x: dx, y: dy });
   }
+  // Portale gigante: la taglia dipende da DOVE sei rispetto agli anelli, non da un istante. Cresce mentre attraversi l'anello (da 1 a GROW lungo il suo
+  // spessore), resta gigante nel tratto in mezzo e torna normale mentre attraversi il portale grande. Non si consuma: ognuno lo fa una volta sola.
+  const sm01 = t => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+  function growLogic(r, P, x) {
+    let target = 1;
+    for (const q of P) {
+      if (q.kind !== 'grow' || r.pUsed[q.id]) continue;
+      const big = P.find(e => e.kind === 'big' && e.grow === q.id); if (!big) continue;
+      const end = big.x + BIG_HW;
+      if (r.dir !== 1 || x < q.x - GROW_HW) { continue; }
+      if (x >= end) { r.pUsed[q.id] = true; if (r.gEv[q.id] === 1) { r.gEv[q.id] = 2; portalEvent(r, 'n', 0, big.id); } continue; }
+      const up = sm01((x - (q.x - GROW_HW)) / (2 * GROW_HW)), down = sm01((x - (big.x - BIG_HW)) / (2 * BIG_HW));
+      target = 1 + (GROW - 1) * up * (1 - down);
+      if (!r.gEv[q.id] && x >= q.x) { r.gEv[q.id] = 1; portalEvent(r, 'g', 0, q.id); }
+      if (r.gEv[q.id] === 1 && x >= big.x) { r.gEv[q.id] = 2; portalEvent(r, 'n', 0, big.id); }
+      break;
+    }
+    r.scT = target;
+  }
   function checkPortals(r, elapsed) {
     const P = Terrain.PORTALS; if (!P || !P.length) return;
     const x = r.chassis.position.x, lx = r.lx; r.lx = x;
@@ -732,8 +868,10 @@ const Sim = (() => {
       const ex = P.find(e => e.id === r.exitId);
       if (ex && x <= ex.x) { portalUsed[ex.id] = true; r.exitId = -1; r.dir = 1; r.immuneUntil = elapsed + IMMUNE_MS; r.bestX = x; r.hopBaseX = x; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'x', 0, ex.id); return; }
     }
+    growLogic(r, P, x);
     if (x === lx) return;
     for (const q of P) {
+      if (q.kind === 'grow' || q.kind === 'big') continue;   // gestiti da growLogic (la taglia segue la posizione dentro l'anello)
       if (portalUsed[q.id]) continue;   // già consumato: da chiunque, spariscono per tutti
       if (q.kind !== 'exit' && elapsed < r.immuneUntil) continue;   // immune: ci passa attraverso, il portale resta per gli altri
       if ((lx - q.x) * (x - q.x) > 0 || (lx === q.x && x === q.x)) continue;
@@ -755,10 +893,31 @@ const Sim = (() => {
     }
   }
 
+  // ---- portale gigante: la ruota cresce (o torna normale) un po' alla volta, con la stessa forma ----------------------------------
+  const GROW = 2.2, GROW_STEP = 0.14, GROW_MS = 30, GROW_HW = 45, BIG_HW = 110;   // mezze larghezze dei due anelli (il grande è 1,75 volte più largo)
+  function scaleStep(r, elapsed) {
+    const dd = Math.abs(r.sc - r.scT);
+    if (dd < 0.001 || (dd < 0.02 && r.scT > 1.001 && r.scT < GROW - 0.001) || elapsed - r.scAt < GROW_MS) return;   // (fra un gradino e l'altro non si ricostruisce per variazioni minime)
+    const d = r.scT - r.sc, st = Math.sign(d) * Math.min(GROW_STEP, Math.abs(d));
+    r.sc = Math.abs(r.scT - (r.sc + st)) < 0.002 ? r.scT : r.sc + st; r.scAt = elapsed;
+    // la bici cresce tutta insieme: gli attacchi delle ruote si allontanano in proporzione (altrimenti due ruote giganti si sovrapporrebbero) e,
+    // crescendo, si alza tutta (la ruota più grande non deve affondare nel terreno)
+    const ca = Math.cos(r.chassis.angle), sa = Math.sin(r.chassis.angle);
+    if (st > 0) for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.translate(b, { x: 0, y: -80 * st });
+    Matter.Body.translate(r.fw, { x: 80 * st * ca, y: 80 * st * sa }); Matter.Body.translate(r.rw, { x: -80 * st * ca, y: -80 * st * sa });
+    // gli attacchi sono più lontani dal centro del telaio: con la sua inerzia di prima i vincoli rigidi lo farebbero esplodere (leva troppo lunga)
+    if (r.chI0 === undefined) r.chI0 = r.chassis.inertia;
+    Matter.Body.setInertia(r.chassis, r.chI0 * r.sc * r.sc);
+    rebuildWheel(r, 'fw', r.mF); rebuildWheel(r, 'rw', r.mR);
+    r.dF = r.dR = false;
+  }
+
   function stepRacer(r, elapsed) {
     if (r.finished) return;
 
     driveRacer(r, elapsed, true);
+    meltStep(r, elapsed);
+    scaleStep(r, elapsed);
     checkPortals(r, elapsed);
 
     // progress = furthest x reached IN THE DIRECTION OF TRAVEL (dir·x); if it hasn't improved enough for STALL_MS, hop
@@ -772,6 +931,15 @@ const Sim = (() => {
       r.progressAt = elapsed;
     }
 
+    if (Terrain.isLava && (Terrain.isLava(r.fw.position.x) || Terrain.isLava(r.rw.position.x))) {
+      // la lava frena solo per quanto le ruote sono davvero immerse (non per tutta la conca): altrimenti l'uscita in salita si trasforma in una trappola
+      let f = 0;
+      for (const w of [r.fw, r.rw]) {
+        const wx = w.position.x; if (!Terrain.isLava(wx)) continue;
+        const dep = w.bounds.max.y - (GROUND_Y - Terrain.lavaLevel(wx)); if (dep > 0) f += Math.min(1, dep / 24) * 0.5;
+      }
+      if (f > 0) { const k = 1 - (1 - LAVA_DRAG) * f; Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x * k, y: r.chassis.velocity.y * k }); }
+    }
     if (isWater(r.chassis.position.x)) {
       Matter.Body.setVelocity(r.chassis, {
         x: r.chassis.velocity.x * 0.94,
@@ -819,7 +987,7 @@ const Sim = (() => {
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
       finished: r.finished, finishTime: r.finishTime,
-      dir: r.dir || 1, pe: r.pe || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
+      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
   }
 
@@ -851,7 +1019,7 @@ const Sim = (() => {
   }
 
   return {
-    init, addRacer, updateRacerWheel, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
+    init, addRacer, updateRacerWheel, drainMelts, meltBase, meltVertices, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
     snapshot, allFinished, isTimedOut, standings, GROUND_Y, usedPortals: () => Object.keys(portalUsed).map(Number),
     get FINISH_X() { return Terrain.FINISH_X; },
     // ms rimasti agli altri dopo che il primo ha tagliato il traguardo (null = nessuno è arrivato)

@@ -14,14 +14,14 @@ const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
   let ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], PATCHES = [], PORTALS = [];
 
-  const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps'];
+  const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps', 'lava'];
   const ZONE_COLORS = {
     start: '#10b981', hills: '#059669', ice: '#7dd3fc',
-    gravel: '#94a3b8', water: '#3b82f6', ramps: '#f59e0b', finish: '#10b981'
+    gravel: '#94a3b8', water: '#3b82f6', ramps: '#f59e0b', lava: '#dc2626', finish: '#10b981'
   };
-  const FRICTION = { start: 0.9, hills: 0.9, ice: 0.1, gravel: 0.6, water: 0.95, ramps: 1.1, finish: 0.9 };
+  const FRICTION = { start: 0.9, hills: 0.9, ice: 0.1, gravel: 0.6, water: 0.95, ramps: 1.1, lava: 0.9, finish: 0.9 };
   // lunghezza base di ogni zona (px); ogni zona la varia di ±12% in modo deterministico
-  const ZONE_LEN = { start: 1400, hills: 1750, ice: 1700, gravel: 1750, water: 2400, ramps: 2000, finish: 1400 };
+  const ZONE_LEN = { start: 1400, hills: 1750, ice: 1700, gravel: 1750, water: 2400, ramps: 2000, lava: 2300, finish: 1400 };
   // quante zone "a tema" ha la pista: sono i tre formati che l'host può scegliere in lobby
   const LENGTHS = { corta: 7, media: 11, lunga: 15 };
 
@@ -53,12 +53,13 @@ const Terrain = (() => {
       while (have < n && guard++ < 50) {
         const i = 1 + Math.floor(Math.random() * (out.length - 1));
         if (out[i] === key || out[i - 1] === key || out[i + 1] === key) continue;
-        if (out[i] === 'water' || out[i] === 'gravel') continue;
+        if (out[i] === 'water' || out[i] === 'gravel' || out[i] === 'lava') continue;
         out[i] = key; have++;
       }
     };
     if (count >= 5) need('water', count >= 11 ? 2 : 1);
     if (count >= 7) need('gravel', count >= 11 ? 2 : 1);
+    if (count >= 7) need('lava', count >= 11 ? 2 : 1);
     return out;
   }
 
@@ -71,6 +72,7 @@ const Terrain = (() => {
       case 'ice':    return 13 * Math.sin(u / 380 + z.ph);
       case 'water':  return 12 * Math.sin(u / 300 + z.ph);
       case 'ramps':  return rampProfile(u - RAMP_LEAD);
+      case 'lava':   return 20 * Math.sin(u / 250 + z.ph) + 7 * Math.sin(u / 97 + z.ph * 2.3);   // basalto: dossi bassi e larghi
       default:       return 0;
     }
   }
@@ -201,6 +203,7 @@ const Terrain = (() => {
     gravel: [['ripples', 0.22], ['stairs', 0.2], ['rack', 0.3], ['sand', 0.2], ['arch', 0.1]],
     water:  [],                      // laguna: ponti e bacini (nessun terreno speciale)
     ramps:  [['logs', 0.4], ['mud', 0.27], ['sand', 0.15]],
+    lava:   [],                      // vulcano: laghi di lava (con o senza ponte di basalto), nessun terreno speciale
   };
   // seconda scelta (più leggera): ostacoli corti, integrati nel bioma, che si aggiungono al terreno a tema se c'è posto
   const LIGHT = { boulders: 1, whoops: 1, ridges: 1, bowl: 1, jump: 1, drop: 1 };
@@ -210,6 +213,7 @@ const Terrain = (() => {
     ramps:  [['whoops', 0.5], ['jump', 0.35], ['boulders', 0.2]],
     ice:    [['ridges', 0.65]],
     water:  [['boulders', 0.35], ['whoops', 0.3]],   // laguna: massi sulla riva e dossi di sabbia fra un bacino e l'altro
+    lava:   [['boulders', 0.45], ['ridges', 0.45]],  // vulcano: massi di basalto e creste di roccia sulla riva
   };
   function planPatches(rnd, force) {
     PATCHES = [];
@@ -247,6 +251,7 @@ const Terrain = (() => {
   // ---- portali (modalità pazza) ----------------------------------------------------------------------------
   //  shift   anello d'inchiostro: a ogni passaggio ti sposta avanti o indietro di 150–400 px, a caso (lo decide l'host)
   //  mirror  ti specchia la vista (solo a te) e la bici va davvero all'indietro, come se corresse verso il traguardo ma al contrario
+  //  grow    anello che ingigantisce le ruote (stessa forma, crescita graduale) · big: anello GRANDE, 1400–1900 px dopo, che le riporta normali
   //  exit    portale d'uscita, ~650–900 px dietro lo specchio: chi arriva da dietro lo attraversa, rimette tutto com'era
   // Posizioni deterministiche dal layout (RNG separato: la pista normale non cambia). Mai su ponti/vuoti né su tratti a tema,
   // e l'intero tratto fra uscita e specchio è libero, così la retromarcia si fa su terreno pulito.
@@ -259,6 +264,11 @@ const Terrain = (() => {
         if (z.gap && a < z.gap.g1 + 130 && b > z.gap.g0 - 130) return false;
         for (const p of z.patches || []) if (a < p.b + 90 && b > p.a - 90) return false;
       }
+      return a >= lo - 700 && b <= FINISH_X - 400;
+    };
+    // il tratto gigante può contenere ostacoli (massi, dossi, fango: sono il bello, una ruota enorme ci passa sopra) ma non laghi, canyon o lava
+    const freeG = (a, b) => {
+      for (const z of ZONES) if (z.gap && a < z.gap.g1 + 130 && b > z.gap.g0 - 130) return false;
       return a >= lo - 700 && b <= FINISH_X - 400;
     };
     const taken = [];     // intervalli già occupati da portali
@@ -278,6 +288,10 @@ const Terrain = (() => {
     let id = 0;
     spread(pairs, x => { const R = 650 + Math.round(rnd() * 250); return free(x - R - 70, x + 70) ? [x - R - 70, x + 70, R] : null; },
       (x, r) => { const R = r[2]; PORTALS.push({ id: id++, kind: 'exit', x: Math.round(x - R) }, { id: id++, kind: 'mirror', x: Math.round(x), exit: id - 2 }); });
+    // portale gigante + portale grande: ruote ingrandite (stessa forma) per 1400–1900 px di terreno pulito. Non si consumano: li usa ognuno una volta sola
+    const grows = nz <= 7 ? 1 : nz <= 11 ? 2 : 3;
+    spread(grows, x => { const R = 1400 + Math.round(rnd() * 500); return freeG(x - R - 70, x + 170) ? [x - R - 70, x + 170, R] : null; },
+      (x, r) => { const R = r[2]; PORTALS.push({ id: id++, kind: 'grow', x: Math.round(x - R) }, { id: id++, kind: 'big', x: Math.round(x), grow: id - 2 }); });
     spread(shifts, x => free(x - 120, x + 120) ? [x - 120, x + 120] : null, x => PORTALS.push({ id: id++, kind: 'shift', x: Math.round(x) }));
     PORTALS.sort((a, b) => a.x - b.x);
   }
@@ -295,7 +309,7 @@ const Terrain = (() => {
     ZONES = []; BRIDGES = []; lastZ = 0;
     let x = TRACK_START, level = 0;
 
-    const LEVEL_DELTA = { hills: [-90, 110], gravel: [-50, 70], ramps: [-30, 30], water: [-20, 20], ice: [-25, 25] };
+    const LEVEL_DELTA = { hills: [-90, 110], gravel: [-50, 70], ramps: [-30, 30], water: [-20, 20], ice: [-25, 25], lava: [-30, 40] };
     const add = key => {
       const base = ZONE_LEN[key];
       const len = (key === 'start' || key === 'finish') ? base : Math.round(base * (0.88 + rnd() * 0.24) / 10) * 10;
@@ -326,7 +340,7 @@ const Terrain = (() => {
   //  - zona canyon -> crepaccio profondo + ponte sospeso di assi e corde
   // Il ponte è la quota su cui guidano le ruote; il vuoto sotto è solo terreno "naturale" più basso.
   function planGaps(rnd) {
-    const cand = ZONES.filter(z => z.key === 'water' || z.key === 'gravel');
+    const cand = ZONES.filter(z => z.key === 'water' || z.key === 'gravel');   // (il vulcano ha sempre il suo lago di lava: vedi sotto)
     const wants = new Map();
     cand.forEach(z => wants.set(z, rnd() < (z.key === 'water' ? 0.75 : 0.5)));
     if (cand.length && ![...wants.values()].some(Boolean)) wants.set(cand[Math.floor(rnd() * cand.length)], true); // almeno un ponte
@@ -340,6 +354,12 @@ const Terrain = (() => {
         } else {
           z.gap = { g0: z.start + z.len * 0.2, g1: z.end - z.len * 0.2, D: 60, W: 290 };
         }
+      } else if (z.key === 'lava') {
+        // lago di lava: bacino largo, 56 px di fondo con pareti dolci; il pelo sta 26 px sotto la riva (come l'acqua), quindi la lava è profonda al più 30 px.
+        // Una volta su tre c'è un ponte di basalto (arco in pietra): chi lo prende non tocca la lava.
+        const span = 640, mid = z.start + z.len * (0.44 + rnd() * 0.12);
+        z.gap = { g0: mid - span / 2, g1: mid + span / 2, D: 56, W: 250 };
+        if (rnd() < 0.34) z.bridge = { kind: 'arch', start: z.gap.g0, end: z.gap.g1, peak: 52 };
       } else if (z.key === 'gravel' && wants.get(z)) {
         const span = 560, mid = z.start + z.len * (0.46 + rnd() * 0.08);
         z.gap = { g0: mid - span / 2, g1: mid + span / 2, D: 150, W: 130 };
@@ -406,6 +426,12 @@ const Terrain = (() => {
   // Pelo dell'acqua: nelle zone acqua, 28px sotto la riva. Dove il fondo sta più in alto non c'è acqua.
   function waterLevel(x) { const z = zoneAt(x); return z.key === 'water' && z.gap ? zoneBase(z, x) - 28 : -Infinity; }
   function isWater(x) { const z = zoneAt(x); return z.key === 'water' && !bridgeAt(x) && naturalHeight(x) < waterLevel(x); }
+
+  // Lava: il pelo sta 26 px sotto la riva; dove il fondo è più in alto non c'è lava, e sotto il ponte non si tocca.
+  function lavaLevel(x) { const z = zoneAt(x); return z.key === 'lava' && z.gap ? zoneBase(z, x) - 26 : -Infinity; }
+  function isLava(x) { const z = zoneAt(x); return z.key === 'lava' && z.gap && !bridgeAt(x) && naturalHeight(x) < lavaLevel(x); }
+  // x dentro il tratto (con un po' di margine) dove può esserci lava: serve a non fare conti inutili altrove
+  function nearLava(x, m) { const z = zoneAt(x); return z.key === 'lava' && !!z.gap && !z.bridge && x > z.gap.g0 - (m || 0) && x < z.gap.g1 + (m || 0); }
 
   // ---- fiori ----------------------------------------------------------------------------------
   // Specie: 0 margherita, 1 tulipano, 2 rosa, 3 girasole, 4 bucaneve, 5 cristallo di ghiaccio,
@@ -480,7 +506,7 @@ const Terrain = (() => {
   applyLayout(generateRandomLayout());
 
   return {
-    generateRandomLayout, applyLayout, height, naturalHeight, baseHeight, waterLevel, isWater, zoneAt, bridgeAt,
+    generateRandomLayout, applyLayout, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
     frictionAt: x => FRICTION[zoneAt(x).key] || 0.9,
     colorAt: x => zoneAt(x).color || '#059669',
     zoneKeyAt: x => zoneAt(x).key,

@@ -249,3 +249,26 @@ Pulsante audio a tre stati (tocchi successivi): musica ed effetti → solo effet
   - Note degli effetti accordate sulla canzone (Do, Re, Sol, Si♭).
 - Se un browser non toglie il ritardo dell'encoder mp3 (~25 ms), il motore lo compensa da solo (Chromium lo toglie già).
 - `musica_a_sezioni_demo.mp3` (fuori dal gioco) è un'anteprima della sequenza: calma → arrivo → via → loop di gara → finale → calma.
+
+## Ventiduesimo giro: il Vulcano (la lava scioglie le ruote)
+- Nuovo bioma (7° tipo di zona, `lava`): un lago di lava largo, ~56 px di fondo con pareti dolci, e di tanto in tanto un ponte di basalto. Intorno: cielo rosso, vulcano con cratere e fumo, alberi bruciati, braci e cenere, riflessi caldi sulle ruote. Compare nei percorsi lunghi (1 volta, 2 su quelli da 11+ zone).
+- La lava è disegnata opaca davanti alle bici (le ruote ci affondano): gradiente arancio→rosso, vene di luce, croste scure alla deriva, bolle che scoppiano con scintille, bordo luminoso e alone caldo (ellisse sfumata, senza bordi).
+- **Ruote che si sciolgono (organico e graduale):** ogni ruota è un contorno fitto di punti con una "fusione" per punto (0–62%). Si sciolgono solo i punti immersi nella lava, tanto più quanto sono profondi, e le punte per prime; il materiale non è uguale dappertutto (un'irregolarità fissa per ruota), quindi si "mangia" a chiazze invece di rimpicciolire. Il contorno sciolto è continuo ("cera che cede") e il corpo fisico si ricostruisce ogni 120 ms con la forma vera.
+- Lo svantaggio resta (la ruota non viene ritarata) e in più la spinta cala in proporzione alla materia persa (`MELT_GRIP`): dopo un lago, ~1–4 s in più sul resto di un percorso medio. Ridisegnare la ruota (cambio forma) azzera tutto: è lì che chi ha già usato i cambi paga lo svantaggio.
+- La lava frena solo le ruote davvero immerse (prima frenava per tutta la conca e bloccava l'uscita in salita).
+- Rete: l'host manda `{type:'melt', id, f:[…], r:[…]}` (interi 0–100 per punto); i client ricostruiscono la forma con `Sim.meltBase`/`Sim.meltVertices`.
+- **Bug trovato e corretto lungo la strada:** i vincoli degli assi (Matter ricorda l'angolo del telaio alla creazione) restavano storti se la ruota veniva ricostruita (fusione, ma anche ridisegno in gara) con la moto inclinata; la moto si incastrava per decine di secondi. Ora `makeAxle` azzera `angleA`.
+- Misurato (bot, 12 forme): tempi entro ±1 s su percorsi con uno o due laghi (es. colline>lava>colline 18,1–20,2 s). Non sono prove su dispositivi reali.
+- Suoni: sfrigolio nella lava (`Sfx.sizzle`), ovattamento come in acqua.
+
+## Ventitreesimo giro: il portale gigante (solo "Gara meno classica")
+Idea: godersi, per un tratto di gara, il fatto di avere ruote enormi.
+- Coppia di portali: **gigante** (anello d'inchiostro, cerchi concentrici che si allargano) e, 1400–1900 px dopo, il **portale grande** (3 volte più largo e 2,4 più alto, tratteggiato, cerchi che si stringono). 1/2/3 coppie secondo la lunghezza; il tratto non contiene laghi, canyon o lava, ma può avere massi, dossi e fango: una ruota enorme ci passa sopra.
+- Non si consumano: ognuno li attraversa una volta (chi è in testa non li toglie agli altri); l'anello si dissolve solo sullo schermo di chi l'ha usato.
+- **Taglia legata alla posizione:** da 1 a **2,2** mentre attraversi il portale gigante (±45 px), resta così nel tratto, torna a 1 mentre attraversi il grande (±110 px). In fisica la scala segue la posizione con gradini di 0,14 ogni 30 ms. Se un teletrasporto ti lascia a metà, la taglia è già quella giusta.
+- **La bici cresce intera:** gli attacchi delle ruote si allontanano in proporzione (×scala), il telaio ha l'inerzia moltiplicata per scala² (senza, i vincoli rigidi con leve così lunghe esplodevano a ×2,2), le ruote giganti mantengono la massa di quelle normali, e a ogni gradino la bici si alza quanto serve per non affondare. Le ruote ricostruite conservano forma e fusione da lava.
+- Velocità: il tetto cresce con `scala^0,6` (≈ +60%): ~600–700 px/s contro i ~440 normali; il tratto dura circa 5 s. Tempi equi fra le forme (bot, 6 forme × 4 piste: 64–76 s).
+- **Effetti (solo disegno e suono, nessun effetto sulla fisica):** la telecamera si allontana (zoom dinamico fino a ~0,68, con ritorno dolce); la terra trema appena mentre sei gigante e veloce e più forte agli atterraggi; polvere sotto le ruote e nuvole di terra quando atterri; fiori e cespugli reagiscono con raggio proporzionale; rombo grave continuo sotto la musica e "tonfo" all'atterraggio (`Sfx.giant`, `Sfx.thud`). La bici e il pilota sono disegnati scalati.
+- Rete: `sc` viaggia nello snapshot dell'host e nell'interpolazione dei client; tutto il resto (zoom, tremolio, polvere, suoni) è locale. Eventi `g` (gigante) e `n` (normale) con nota "Gigante!" e suoni dedicati.
+- Bug trovati lungo la strada: le ruote giganti si vedevano normali (la scala non passava nell'interpolazione dei client) e, a ×2,2, la bici esplodeva (inerzia del telaio).
+- Misurato con bot, non su dispositivi reali: la sensazione di guida, il tremolio e il rombo vanno provati a mano.

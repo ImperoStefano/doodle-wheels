@@ -30,7 +30,7 @@ const Scenery = (() => {
 
   // ---------- biomi --------------------------------------------------------------------------
   // flora: [[tipo, peso], …] degli alberi/arbusti sulle creste più vicine
-  const FL = { ROUND: 0, PINE: 1, SNOWPINE: 2, CACTUS: 3, BUSH: 4, PALM: 5, AUTUMN: 6 };
+  const FL = { ROUND: 0, PINE: 1, SNOWPINE: 2, CACTUS: 3, BUSH: 4, PALM: 5, AUTUMN: 6, DEAD: 7 };
   const BIOME_DEFS = [
     { name: 'Prato fiorito', skyT: '#69b9f0', skyB: '#d6f1ff', ridge: ['#cfe3f5', '#b0ddca', '#88cd97', '#5fb870'], shape: [1, 0, 0], amp: 0.9, snow: 0,
       flora: [[FL.ROUND, 5], [FL.BUSH, 3], [FL.PINE, 1]], dens: 0.8, soil: '#8b5a2b', surf: '#3fc060', fg: 0, part: 'meadow' },
@@ -46,8 +46,10 @@ const Scenery = (() => {
       flora: [[FL.AUTUMN, 7], [FL.PINE, 1], [FL.BUSH, 2]], dens: 0.95, soil: '#7c4b25', surf: '#dc8a2c', fg: 5, part: 'leaves' },
     { name: 'Traguardo!', skyT: '#66bff7', skyB: '#ffe4f2', ridge: ['#d6e5f8', '#bfe0e0', '#98d6a4', '#6cc27c'], shape: [1, 0, 0], amp: 0.8, snow: 0,
       flora: [[FL.ROUND, 5], [FL.BUSH, 3]], dens: 0.7, soil: '#8b5a2b', surf: '#3fc060', fg: 0, part: 'confetti' },
+    { name: 'Vulcano', skyT: '#4a2840', skyB: '#ff8a4c', ridge: ['#8a5a63', '#6b4651', '#4d3340', '#33242f'], shape: [0.1, 0.9, 0], amp: 1.25, snow: 0,
+      flora: [[FL.DEAD, 6], [FL.BUSH, 1]], dens: 0.5, soil: '#2d2126', surf: '#46343a', fg: 6, part: 'ember', water: '#ff6a1a' },
   ];
-  const ZONE_TO_BIOME = { start: 0, hills: 1, ice: 2, gravel: 3, water: 4, ramps: 5, finish: 6 };
+  const ZONE_TO_BIOME = { start: 0, hills: 1, ice: 2, gravel: 3, water: 4, ramps: 5, finish: 6, lava: 7 };
   const BIOMES = BIOME_DEFS.map(b => ({
     name: b.name, skyT: hex(b.skyT), skyB: hex(b.skyB), ridge: b.ridge.map(hex),
     wR: b.shape[0], wP: b.shape[1], wM: b.shape[2], amp: b.amp, snow: b.snow,
@@ -129,6 +131,14 @@ const Scenery = (() => {
       [[-17, -13, 14], [0, -20, 19], [17, -13, 14], [-6, -12, 15], [9, -10, 14]].forEach(([x, y, r]) => circ(x, y, r, T(pal[0])));
       circ(-6, -26, 10, T(pal[1])); circ(-18, -17, 7, T(pal[1]));
       circ(9, -26, 2.4, T('#fb7185')); circ(-12, -14, 2.2, T('#fde047')); circ(18, -14, 2.2, T('#fb7185'));
+    } else if (kind === FL.DEAD) {
+      // tronco bruciato: nero-viola, rami spogli, qualche brace sulla punta
+      g.strokeStyle = T(variant ? '#2a1d24' : '#33232b'); g.lineCap = 'round'; g.lineJoin = 'round';
+      g.lineWidth = 9; g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(-4, -40, (variant ? 5 : -5), -78); g.stroke();
+      g.lineWidth = 5;
+      [[-6, -44, -24, -58, -30, -76], [3, -56, 20, -66, 26, -86], [(variant ? 4 : -4), -70, -10, -86, -6, -102]].forEach(([x0, y0, cx, cy, x1, y1]) => { g.beginPath(); g.moveTo(x0, y0); g.quadraticCurveTo(cx, cy, x1, y1); g.stroke(); });
+      g.lineWidth = 3; g.beginPath(); g.moveTo(-24, -58); g.lineTo(-38, -62); g.moveTo(20, -66); g.lineTo(34, -70); g.stroke();
+      circ(-30, -76, 2.6, T('#ff7a24')); circ(26, -86, 2.4, T('#ffb347')); circ(-6, -102, 2.2, T('#ff7a24'));
     } else if (kind === FL.PALM) {
       g.strokeStyle = T('#8a5f35'); g.lineCap = 'round'; g.lineWidth = 8;
       g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(10, -50, (variant ? -8 : 6), -88); g.stroke();
@@ -237,6 +247,14 @@ const Scenery = (() => {
     } else if (kind === 3) {
       for (let i = 0; i < 110; i++) { const x = rnd(i, 31) * FG_W; blade(x, 18 + rnd(i, 32) * 40, 2.5 + rnd(i, 33) * 2.5, (rnd(i, 34) - 0.5) * 26, ['#b99a62', '#d1b27a', '#9c7f4d'][i % 3]); }
       for (let i = 0; i < 16; i++) { const x = rnd(i, 35) * FG_W, r = 9 + rnd(i, 36) * 18; g.fillStyle = ['#8c6a4a', '#a98260', '#6f5238'][i % 3]; g.beginPath(); g.ellipse(x, 3, r * 1.3, r, 0, Math.PI, TAU); g.fill(); }
+    } else if (kind === 6) {
+      // rocce di basalto nere con venature di brace
+      for (let i = 0; i < 26; i++) {
+        const x = rnd(i, 51) * FG_W, r = 12 + rnd(i, 52) * 26;
+        g.fillStyle = ['#241a20', '#2e2128', '#1b1317'][i % 3]; g.beginPath(); g.moveTo(x - r * 1.4, 4); g.lineTo(x - r * 0.8, -r * 0.8); g.lineTo(x - r * 0.1, -r); g.lineTo(x + r * 0.7, -r * 0.7); g.lineTo(x + r * 1.4, 4); g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(255,120,30,0.75)'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(x - r * 0.5, 0); g.lineTo(x - r * 0.2, -r * 0.45); g.lineTo(x + r * 0.15, -r * 0.3); g.lineTo(x + r * 0.35, -r * 0.7); g.stroke();
+      }
+      for (let i = 0; i < 40; i++) { const x = rnd(i, 53) * FG_W, h = 8 + rnd(i, 54) * 22; g.fillStyle = 'rgba(30,20,26,0.9)'; g.beginPath(); g.moveTo(x - 6, 4); g.lineTo(x, -h); g.lineTo(x + 6, 4); g.closePath(); g.fill(); }
     } else if (kind === 4) {
       for (let i = 0; i < 70; i++) { const x = rnd(i, 41) * FG_W, h = 40 + rnd(i, 42) * 70; blade(x, h, 2.2 + rnd(i, 43) * 1.6, (rnd(i, 44) - 0.5) * 18, ['#2d8c57', '#3aa466', '#1f7345'][i % 3]); }
       for (let i = 0; i < 16; i++) {          // tife (cattails)
@@ -250,9 +268,9 @@ const Scenery = (() => {
 
   function bakeAll() {
     atlas.trees = [];
-    for (let k = 0; k < 7; k++) { atlas.trees[k] = []; for (let l = 1; l < 4; l++) atlas.trees[k][l] = [bakeTree(k, LAYER[l].fog, 0), bakeTree(k, LAYER[l].fog, 1)]; }
+    for (let k = 0; k < 8; k++) { atlas.trees[k] = []; for (let l = 1; l < 4; l++) atlas.trees[k][l] = [bakeTree(k, LAYER[l].fog, 0), bakeTree(k, LAYER[l].fog, 1)]; }
     bakeSun(); bakeClouds();
-    atlas.fg = [0, 1, 2, 3, 4, 5].map(k => (k === 1 ? null : bakeForeground(k)));
+    atlas.fg = [0, 1, 2, 3, 4, 5, 6].map(k => (k === 1 ? null : bakeForeground(k)));
     bakedPr = pr; dirty = false;
   }
 
@@ -281,11 +299,11 @@ const Scenery = (() => {
   // ---------- particelle (pool fisso, nessuna allocazione per fotogramma) --------------------
   const PMAX = 56;
   const P = Array.from({ length: PMAX }, () => ({ on: false, kind: 0, x: 0, y: 0, vx: 0, vy: 0, life: 0, max: 1, size: 1, rot: 0, vr: 0, par: 1, col: 0, ph: 0 }));
-  const K_SNOW = 0, K_LEAF = 1, K_DUST = 2, K_GLOW = 3, K_BUTTERFLY = 4, K_CONFETTI = 5;
+  const K_SNOW = 0, K_LEAF = 1, K_DUST = 2, K_GLOW = 3, K_BUTTERFLY = 4, K_CONFETTI = 5, K_EMBER = 6, K_ASH = 7;
   const LEAF_COLS = ['#d9531f', '#f08a2a', '#ffc247', '#b8461d', '#c9372c'];
   const CONF_COLS = ['#ef4444', '#3b82f6', '#facc15', '#22c55e', '#ec4899', '#ffffff'];
   const BFLY_COLS = ['#fb923c', '#f472b6', '#60a5fa', '#facc15', '#c084fc'];
-  const want = [0, 0, 0, 0, 0, 0], alive = [0, 0, 0, 0, 0, 0];
+  const want = [0, 0, 0, 0, 0, 0, 0, 0], alive = [0, 0, 0, 0, 0, 0, 0, 0];
 
   function addWanted(b, wgt) {
     if (wgt <= 0) return;
@@ -296,6 +314,7 @@ const Scenery = (() => {
       case 'lagoon':   want[K_GLOW] += 8 * wgt; want[K_BUTTERFLY] += S.day * 1.5 * wgt; break;
       case 'leaves':   want[K_LEAF] += 16 * wgt; break;
       case 'confetti': want[K_CONFETTI] += 26 * wgt; break;
+      case 'ember':    want[K_EMBER] += 16 * wgt; want[K_ASH] += 9 * wgt; break;
     }
   }
   function spawn(kind, glowCol) {
@@ -309,6 +328,8 @@ const Scenery = (() => {
       case K_DUST:     p.x = w + 60; p.y = gy - 20 - r() * gy * 0.36; p.vx = -(40 + r() * 50); p.vy = (r() - 0.5) * 6; p.size = 26 + r() * 40; p.max = 14; p.par = 0.9; break;
       case K_GLOW:     p.x = r() * w; p.y = gy - 30 - r() * 230 * S.hs; p.vx = (r() - 0.5) * 16; p.vy = (r() - 0.5) * 14; p.size = 2 + r() * 1.6; p.max = 6 + r() * 5; p.col = glowCol; break;
       case K_BUTTERFLY:p.x = r() * w; p.y = gy - 70 - r() * 260 * S.hs; p.vx = 20 + r() * 25; p.vy = 0; p.size = 6 + r() * 3; p.max = 10 + r() * 8; p.col = (r() * BFLY_COLS.length) | 0; p.par = 0.8; break;
+      case K_EMBER:    p.x = r() * (w + 60); p.y = gy + 6 - r() * 40; p.vx = -10 + r() * 30; p.vy = -(46 + r() * 70); p.size = 1.3 + r() * 2; p.max = 3 + r() * 3; p.par = 0.9 + r() * 0.3; break;
+      case K_ASH:      p.x = r() * (w + 100); p.y = -8; p.vx = 12 + r() * 20; p.vy = 18 + r() * 24; p.size = 3 + r() * 4; p.max = 16; p.vr = (r() - 0.5) * 2.5; p.par = 0.5 + r() * 0.4; break;
       case K_CONFETTI: p.x = r() * (w + 100); p.y = -10; p.vx = (r() - 0.5) * 40; p.vy = 55 + r() * 80; p.size = 4 + r() * 4; p.col = (r() * CONF_COLS.length) | 0; p.max = 14; p.vr = (r() - 0.5) * 9; break;
     }
   }
@@ -328,15 +349,17 @@ const Scenery = (() => {
         case K_GLOW: p.vx += (Math.random() - 0.5) * 30 * dt; p.vy += (Math.random() - 0.5) * 30 * dt; p.vx *= 0.98; p.vy *= 0.98; break;
         case K_BUTTERFLY: p.y += Math.sin(p.life * 2.3 + p.ph) * 22 * dt; p.vx += (Math.random() - 0.5) * 20 * dt; p.vx = clamp(p.vx, 8, 55); break;
         case K_CONFETTI: p.x += Math.sin(p.life * 3 + p.ph) * 30 * dt; p.rot += p.vr * dt; break;
+        case K_EMBER: p.x += Math.sin(p.life * 4 + p.ph) * 22 * dt; p.vy *= 0.995; break;
+        case K_ASH: p.x += Math.sin(p.life * 1.6 + p.ph) * 18 * dt; p.rot += p.vr * dt; break;
       }
       const ground = S.gy - 4;
-      const gone = p.life > p.max || p.x < -80 || p.x > S.w + 120 || ((p.kind === K_SNOW || p.kind === K_LEAF || p.kind === K_CONFETTI) && p.y > ground + 10 * (1 + (p.ph % 3)))
+      const gone = p.life > p.max || p.x < -80 || p.x > S.w + 120 || ((p.kind === K_SNOW || p.kind === K_LEAF || p.kind === K_CONFETTI || p.kind === K_ASH) && p.y > ground + 10 * (1 + (p.ph % 3)))
         || total >= lim || want[p.kind] < 0.5;
       if (gone) { p.on = false; continue; }
       alive[p.kind]++; total++;
     }
     if (lim === 0) return;
-    for (let k = 0, spawned = 0; k < 6 && spawned < 2; k++) if (alive[k] < want[k] - 0.5 && total < lim) { spawn(k, glowCol); spawned++; total++; }
+    for (let k = 0, spawned = 0; k < 8 && spawned < 2; k++) if (alive[k] < want[k] - 0.5 && total < lim) { spawn(k, glowCol); spawned++; total++; }
   }
   function drawParticles(ctx) {
     for (let i = 0; i < PMAX; i++) {
@@ -364,6 +387,10 @@ const Scenery = (() => {
           ctx.fillStyle = '#334155'; ctx.fillRect(-0.9, -s * 0.7, 1.8, s * 1.4);
           ctx.restore(); break;
         }
+        case K_EMBER: { const tw = 0.6 + 0.4 * Math.sin(p.life * 17 + p.ph), al = a * tw;
+          ctx.fillStyle = `rgba(255,120,30,${(0.2 * al).toFixed(3)})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * 3.4, 0, TAU); ctx.fill();
+          ctx.fillStyle = `rgba(255,214,110,${(0.95 * al).toFixed(3)})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, TAU); ctx.fill(); break; }
+        case K_ASH: ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = a * 0.55; ctx.fillStyle = '#3a2d33'; ctx.scale(1, Math.abs(Math.cos(p.rot * 1.3)) * 0.7 + 0.3); ctx.fillRect(-p.size * 0.5, -p.size * 0.35, p.size, p.size * 0.7); ctx.restore(); break;
         case K_CONFETTI: ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.globalAlpha = a; ctx.fillStyle = CONF_COLS[p.col]; ctx.scale(1, Math.abs(Math.cos(p.rot * 1.7)) * 0.8 + 0.2); ctx.fillRect(-p.size * 0.5, -p.size * 0.3, p.size, p.size * 0.6); ctx.restore(); break;
       }
     }
@@ -518,7 +545,40 @@ const Scenery = (() => {
       ctx.fillStyle = hg; ctx.fillRect(0, gy - 280 * S.hs, w, 280 * S.hs);
     }
 
-    for (let l = 0; l < 4; l++) drawLayer(ctx, l);
+    // cielo del vulcano: foschia rossa all'orizzonte (si sfuma col bioma)
+    const va = (S.A.part === 'ember' ? 1 - S.t : 0) + (S.B.part === 'ember' ? S.t : 0);
+    if (va > 0.02) {
+      const vg = ctx.createLinearGradient(0, gy - 330 * S.hs, 0, gy);
+      vg.addColorStop(0, 'rgba(255,90,40,0)'); vg.addColorStop(1, `rgba(255,96,40,${(va * 0.42 * (1 - S.night * 0.4)).toFixed(3)})`);
+      ctx.fillStyle = vg; ctx.fillRect(0, gy - 330 * S.hs, w, 330 * S.hs);
+    }
+    for (let l = 0; l < 4; l++) { drawLayer(ctx, l); if (l === 0 && va > 0.02) drawVolcanoes(ctx, va); }
+  }
+
+  // coni vulcanici lontani (fra la prima e la seconda fila di montagne): fianchi scuri, cratere che brilla, un filo di lava, pennacchio di fumo
+  function drawVolcanoes(ctx, va) {
+    const w = S.w, gy = S.gy, now = S.now / 1000, par = S.camX * 0.05, sp = 1250;
+    const s0 = Math.floor((par - 260) / sp), s1 = Math.floor((par + w + 260) / sp);
+    for (let s = s0; s <= s1; s++) {
+      const cx = s * sp + sp * (0.25 + 0.5 * rnd(s, 71)) - par; if (cx < -260 || cx > w + 260) continue;
+      const hh = (150 + 90 * rnd(s, 72)) * S.hs, bw = hh * (1.5 + 0.4 * rnd(s, 73)), base = gy - 92 * S.hs, top = base - hh, cr = bw * 0.1;
+      ctx.globalAlpha = va * (1 - S.night * 0.15);
+      // fumo prima (dietro il cono): 4 sbuffi che salgono e si allargano
+      for (let k = 0; k < 4; k++) {
+        const ph = (now * 0.07 + k / 4 + rnd(s, 74)) % 1, py = top - 10 - ph * 130 * S.hs, px = cx + 20 * Math.sin(ph * 5 + s) + ph * 50, pr = 16 + ph * 46 * S.hs;
+        ctx.fillStyle = `rgba(60,44,56,${(0.42 * (1 - ph) * va).toFixed(3)})`; ctx.beginPath(); ctx.arc(px, py, pr, 0, TAU); ctx.fill();
+      }
+      ctx.globalAlpha = va;
+      const gr = ctx.createLinearGradient(0, top, 0, base); gr.addColorStop(0, rgb(mix([86, 54, 62], S.skyB, 0.18))); gr.addColorStop(1, rgb(mix([52, 34, 44], S.skyB, 0.32)));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(cx - bw, base + 4); ctx.quadraticCurveTo(cx - bw * 0.35, base - hh * 0.25, cx - cr, top); ctx.lineTo(cx + cr, top); ctx.quadraticCurveTo(cx + bw * 0.35, base - hh * 0.25, cx + bw, base + 4); ctx.closePath(); ctx.fill();
+      // bagliore dal cratere + colata di lava lungo un fianco
+      const pulse = 0.75 + 0.25 * Math.sin(now * 1.7 + s * 2);
+      const cg = ctx.createRadialGradient(cx, top, 2, cx, top, bw * 0.55); cg.addColorStop(0, `rgba(255,170,60,${(0.8 * pulse * va).toFixed(3)})`); cg.addColorStop(1, 'rgba(255,100,30,0)');
+      ctx.fillStyle = cg; ctx.fillRect(cx - bw * 0.6, top - bw * 0.55, bw * 1.2, bw * 1.1);
+      ctx.fillStyle = `rgba(255,190,80,${(0.95 * va).toFixed(3)})`; ctx.beginPath(); ctx.ellipse(cx, top + 1, cr * 1.05, cr * 0.34, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = `rgba(255,120,30,${(0.85 * pulse * va).toFixed(3)})`; ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(cx + cr * 0.4, top + 3); ctx.quadraticCurveTo(cx + bw * 0.12, top + hh * 0.35, cx + bw * 0.2 + 8 * rnd(s, 75), base - hh * 0.1); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
   }
 
   const SNOW_COL = [250, 253, 255];
@@ -629,13 +689,14 @@ const Scenery = (() => {
       const g0 = tz.gap.g0, g1 = tz.gap.g1; if (g1 < camX - 20 || g0 > camX + w + 20) continue;
       const i0 = Math.max(0, Math.floor((g0 - camX) / step)), i1 = Math.min(n - 1, Math.ceil((g1 - camX) / step));
       if (i1 <= i0) continue;
-      const canyon = tz.key === 'gravel';
+      const canyon = tz.key === 'gravel', lavaZ = tz.key === 'lava';
       ctx.beginPath(); let yTop = 1e9, yBot = -1e9;
       for (let i = i0; i <= i1; i++) { const y = gy - Terrain.baseHeight(camX + i * step); if (y < yTop) yTop = y; if (i === i0) ctx.moveTo(i * step, y); else ctx.lineTo(i * step, y); }
       for (let i = i1; i >= i0; i--) { const y = gy - surf[i]; if (y > yBot) yBot = y; ctx.lineTo(i * step, y); }
       ctx.closePath();
       const g = ctx.createLinearGradient(0, yTop, 0, yBot);
-      if (canyon) { g.addColorStop(0, rgb(tod([196, 124, 74], 0.3, 0.5))); g.addColorStop(0.55, rgb(tod([120, 62, 34], 0.3, 0.6))); g.addColorStop(1, rgb(tod([92, 70, 100], 0.2, 0.6))); }
+      if (lavaZ) { g.addColorStop(0, rgb(tod([70, 48, 54], 0.2, 0.4))); g.addColorStop(0.6, rgb(tod([38, 24, 30], 0.15, 0.4))); g.addColorStop(1, rgb([86, 20, 12])); }
+      else if (canyon) { g.addColorStop(0, rgb(tod([196, 124, 74], 0.3, 0.5))); g.addColorStop(0.55, rgb(tod([120, 62, 34], 0.3, 0.6))); g.addColorStop(1, rgb(tod([92, 70, 100], 0.2, 0.6))); }
       else { g.addColorStop(0, rgb(tod([139, 119, 97], 0.3, 0.5))); g.addColorStop(1, rgb(tod([48, 40, 32], 0.2, 0.6))); }
       ctx.fillStyle = g; ctx.fill();
       ctx.save(); ctx.clip();
@@ -700,7 +761,7 @@ const Scenery = (() => {
 
     // 4. dettagli di superficie, uno per bioma, tutti a lotto
     if (quality < 2) {
-      const grass = {}, snow = new Path2D(), spark = new Path2D(), peb = new Path2D(), leafs = [new Path2D(), new Path2D(), new Path2D()];
+      const grass = {}, crk = new Path2D(), snow = new Path2D(), spark = new Path2D(), peb = new Path2D(), leafs = [new Path2D(), new Path2D(), new Path2D()];
       let zi = S.zi0;
       for (let s = Math.floor(camX / 34) - 1; s <= Math.floor((camX + w) / 34) + 1; s++) {
         const wx = s * 34 + rnd(s, 1) * 26, sx = wx - camX; if (sx < -20 || sx > w + 20) continue;
@@ -714,6 +775,9 @@ const Scenery = (() => {
         } else if (bi === 3) {
           if (r < 0.5) { const rr = 2.5 + r * 6; peb.moveTo(sx + rr * 1.3, y - 3); peb.ellipse(sx, y - 3, rr * 1.3, rr, 0, 0, TAU); }
           else if (r < 0.75) { (grass[3] = grass[3] || new Path2D()); const g2 = grass[3], hh = 6 + r * 8; g2.moveTo(sx - 3, y + 1); g2.lineTo(sx - 5, y - hh); g2.moveTo(sx, y + 1); g2.lineTo(sx + 1, y - hh - 3); g2.moveTo(sx + 3, y + 1); g2.lineTo(sx + 6, y - hh + 1); }
+        } else if (bi === 7) {
+          if (r < 0.4) { const rr = 3 + r * 9; peb.moveTo(sx + rr * 1.2, y - 3); peb.ellipse(sx, y - 3, rr * 1.2, rr * 0.8, 0, 0, TAU); }
+          else if (r < 0.62) { crk.moveTo(sx - 9, y + 7); crk.lineTo(sx - 3, y + 11); crk.lineTo(sx + 2, y + 7); crk.lineTo(sx + 9, y + 12); }
         } else if (bi === 5) {
           if (r < 0.45) { const lp = leafs[(r * 20 | 0) % 3], rr = 4 + r * 7; lp.moveTo(sx + rr, y - 2); lp.ellipse(sx, y - 2, rr, rr * 0.5, r, 0, TAU); }
           else if (r < 0.7) { (grass[5] = grass[5] || new Path2D()); const g2 = grass[5], hh = 6 + r * 9; g2.moveTo(sx - 3, y + 1); g2.lineTo(sx - 5, y - hh); g2.moveTo(sx, y + 1); g2.lineTo(sx, y - hh - 3); g2.moveTo(sx + 3, y + 1); g2.lineTo(sx + 5, y - hh); }
@@ -730,14 +794,99 @@ const Scenery = (() => {
       }
       ctx.fillStyle = rgba(tod([255, 255, 255], 0.3, 0.45), 0.96); ctx.fill(snow);
       ctx.strokeStyle = 'rgba(190,235,255,0.95)'; ctx.lineWidth = 1.8; ctx.stroke(spark);
-      ctx.fillStyle = rgba(tod([128, 112, 96], 0.2, 0.5), 1); ctx.fill(peb);
+      ctx.fillStyle = rgba(tod(S.A.part === 'ember' ? [40, 30, 36] : [128, 112, 96], 0.2, 0.5), 1); ctx.fill(peb);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(255,110,30,0.55)'; ctx.lineWidth = 5; ctx.stroke(crk); ctx.strokeStyle = 'rgba(255,200,90,0.8)'; ctx.lineWidth = 1.8; ctx.stroke(crk); ctx.restore();
       ['#d9531f', '#f08a2a', '#c9372c'].forEach((c, k) => { ctx.fillStyle = c; ctx.fill(leafs[k]); });
     }
   }
 
   // ---------- acqua: trasparente, disegnata DAVANTI alle bici ---------------------------------
+  // ---------- lava: opaca, luminosa, disegnata DAVANTI alle bici (le ruote ci affondano dentro) ----------------
+  // gradiente da arancio vivo (in superficie) a rosso scuro (sul fondo); croste scure che scivolano via, vene di luce, bolle che si gonfiano e scoppiano
+  // (con scintille), alone caldo sopra il pelo. Tutto deterministico dalla posizione nel mondo + il tempo: niente stato, niente allocazioni per fotogramma.
+  function drawLava(ctx, surf, n, step) {
+    const camX = S.camX, w = S.w, gy = S.gy, now = S.now / 1000;
+    let any = false;
+    for (let zi = S.zi0; zi < Z.length && Z[zi].start < camX + w; zi++) if (Z[zi].key === 'lava') { any = true; break; }
+    if (!any) return;
+    const nightK = S.night * 0.25;
+    let i = 0;
+    while (i < n) {
+      const ll0 = Terrain.lavaLevel(camX + i * step);
+      if (!(ll0 > surf[i] + 0.5)) { i++; continue; }
+      let j = i, yTop = gy - ll0, yBot = gy - surf[i];
+      const tops = [];
+      while (j < n) {
+        const ll = Terrain.lavaLevel(camX + j * step);
+        if (!(ll > surf[j] + 0.5)) break;
+        const x = j * step, wx = x + camX, wv = 2.6 * Math.sin(wx * 0.025 + now * 1.6) + 1.7 * Math.sin(wx * 0.06 - now * 2.4) + 1.1 * Math.sin(wx * 0.13 + now * 3.1);
+        tops.push(x, gy - ll + wv); yBot = Math.max(yBot, gy - surf[j]); j++;
+      }
+      const x0 = i * step, x1 = (j - 1) * step;
+      // alone caldo sopra la superficie (additivo)
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      // (ellisse sfumata: niente bordi rettangolari visibili ai lati dell'alone)
+      const hcx = (x0 + x1) / 2, hhw = (x1 - x0) / 2 + 150;
+      ctx.translate(hcx, yTop + 4); ctx.scale(hhw / 120, 1);
+      const hg = ctx.createRadialGradient(0, 0, 0, 0, 0, 120);
+      const ha = (0.36 + nightK).toFixed(3);
+      hg.addColorStop(0, `rgba(255,110,30,${ha})`); hg.addColorStop(0.45, `rgba(255,95,25,${(ha * 0.45).toFixed(3)})`); hg.addColorStop(1, 'rgba(255,90,20,0)');
+      ctx.fillStyle = hg; ctx.fillRect(-120, -120, 240, 240); ctx.restore();
+      ctx.beginPath(); ctx.moveTo(tops[0], tops[1]);
+      for (let k = 2; k < tops.length; k += 2) ctx.lineTo(tops[k], tops[k + 1]);
+      for (let k = j - 1; k >= i; k--) ctx.lineTo(k * step, gy - surf[k]);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(0, yTop, 0, yBot);
+      g.addColorStop(0, 'rgba(255,176,50,0.97)'); g.addColorStop(0.18, 'rgba(255,112,26,0.97)'); g.addColorStop(0.6, 'rgba(214,52,14,0.97)'); g.addColorStop(1, 'rgba(120,16,8,0.98)');
+      ctx.fillStyle = g; ctx.fill();
+      if (quality < 2) {
+        ctx.save(); ctx.clip();
+        // vene luminose che scorrono
+        ctx.strokeStyle = 'rgba(255,226,120,0.34)'; ctx.lineWidth = 2.4; ctx.beginPath();
+        for (let k = 1; yTop + 7 + k * 13 < yBot; k++) {
+          const y = yTop + 7 + k * 13; ctx.moveTo(x0, y);
+          for (let x = x0; x <= x1; x += 18) ctx.lineTo(x, y + 3 * Math.sin((x + camX) * 0.045 - now * (0.9 + k * 0.25) + k * 1.7));
+        }
+        ctx.stroke();
+        // croste scure che galleggiano e vanno alla deriva (più dense in superficie)
+        ctx.fillStyle = 'rgba(52,18,14,0.82)';
+        const s0 = Math.floor((camX + x0 - 120) / 95), s1 = Math.floor((camX + x1 + 120) / 95);
+        for (let sI = s0; sI <= s1; sI++) {
+          const drift = (now * (7 + 5 * rnd(sI, 81))) % 95, wx = sI * 95 + rnd(sI, 82) * 70 - drift + 95, sx = wx - camX; if (sx < x0 - 40 || sx > x1 + 40) continue;
+          const fi = clamp((sx - x0) / step, 0, tops.length / 2 - 1), a = Math.floor(fi), f = fi - a, ty = tops[a * 2 + 1] * (1 - f) + tops[Math.min(tops.length / 2 - 1, a + 1) * 2 + 1] * f;
+          const rw = 14 + 22 * rnd(sI, 83), rh = 3.2 + 3 * rnd(sI, 84), yy = ty + 3 + 14 * rnd(sI, 85) * rnd(sI, 85);
+          ctx.beginPath(); ctx.ellipse(sx, yy, rw, rh, 0, 0, TAU); ctx.fill();
+          ctx.strokeStyle = 'rgba(255,140,40,0.55)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(sx, yy, rw, rh, 0, Math.PI, TAU); ctx.stroke();
+        }
+        ctx.restore();
+        // bolle: si gonfiano, scoppiano, lanciano due scintille
+        const b0 = Math.floor((camX + x0) / 64), b1 = Math.floor((camX + x1) / 64);
+        for (let b = b0; b <= b1; b++) {
+          const per = 2.6 + 2.4 * rnd(b, 91), ph = ((now + rnd(b, 92) * per) % per) / per, bx = b * 64 + rnd(b, 93) * 50 - camX; if (bx < x0 + 6 || bx > x1 - 6) continue;
+          const fi = clamp((bx - x0) / step, 0, tops.length / 2 - 1), a = Math.floor(fi), f = fi - a, ty = tops[a * 2 + 1] * (1 - f) + tops[Math.min(tops.length / 2 - 1, a + 1) * 2 + 1] * f;
+          const R = 5 + 7 * rnd(b, 94);
+          if (ph < 0.72) {
+            const k = smooth(ph / 0.72), r = R * k;
+            ctx.fillStyle = 'rgba(255,184,66,0.9)'; ctx.beginPath(); ctx.ellipse(bx, ty + 1, r, r * 0.75, 0, Math.PI, TAU); ctx.fill();
+            ctx.strokeStyle = 'rgba(255,238,160,0.9)'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.ellipse(bx, ty + 1, r, r * 0.75, 0, Math.PI, TAU); ctx.stroke();
+          } else if (quality < 1) {
+            const k = (ph - 0.72) / 0.28;   // scoppio: due gocce che saltano
+            ctx.fillStyle = `rgba(255,200,80,${(0.9 * (1 - k)).toFixed(3)})`;
+            for (let d = -1; d <= 1; d += 2) { const dx = d * (6 + 14 * k), dy = -(Math.sin(k * Math.PI) * (14 + R)); ctx.beginPath(); ctx.arc(bx + dx, ty + dy, 2.2 * (1 - k * 0.5), 0, TAU); ctx.fill(); }
+          }
+        }
+      }
+      // bordo: filo chiaro, alone arancio
+      ctx.beginPath(); ctx.moveTo(tops[0], tops[1]); for (let k = 2; k < tops.length; k += 2) ctx.lineTo(tops[k], tops[k + 1]);
+      ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(255,150,40,0.45)'; ctx.lineWidth = 9; ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,244,176,0.95)'; ctx.lineWidth = 3; ctx.stroke();
+      i = j + 1;
+    }
+  }
+
   function drawWater(ctx, surf, n, step) {
     if (!Z.length) return;
+    drawLava(ctx, surf, n, step);
     const camX = S.camX, w = S.w, gy = S.gy, now = S.now / 1000;
     let any = false;
     for (let zi = S.zi0; zi < Z.length && Z[zi].start < camX + w; zi++) if (Z[zi].key === 'water') { any = true; break; }

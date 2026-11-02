@@ -87,14 +87,15 @@ const Flora = (() => {
         const r = racers[id];
         for (let k = 0; k < 2; k++) {
           const wx = k ? r.rwX : r.fwX, wy = k ? r.rwY : r.fwY, d = f.x - wx, ad = Math.abs(d);
-          if (ad > 135) continue;
+          const GS = r.sc || 1;   // ruote giganti: raggio d'azione e quota di contatto in proporzione
+          if (ad > 135 * GS) continue;
           const lift = baseY - wy;                       // quanto in alto è il centro ruota sopra il terreno
-          const gate = clamp(1 - Math.max(0, lift - 90) / 80, 0, 1);   // in volo alto: nessun contatto
+          const gate = clamp(1 - Math.max(0, lift - 90 * GS) / (80 * GS), 0, 1);   // in volo alto: nessun contatto
           if (gate <= 0) continue;
           const sp = clamp(Math.abs(r.vx) / 6, 0.25, 1.4);
-          const near = 1 - ad / 135;
+          const near = 1 - ad / (135 * GS);
           push += Math.sign(d || 1) * near * near * sp * gate * 0.9;
-          if (ad < f.r + 40 && gate > 0.6 && Math.abs(r.vx) > 1.5) hit = Math.max(hit, sp * gate);
+          if (ad < f.r + 40 * GS && gate > 0.6 && Math.abs(r.vx) > 1.5) hit = Math.max(hit, sp * gate);
         }
       }
       // molla smorzata verso (vento + spinta)
