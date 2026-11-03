@@ -287,3 +287,14 @@ Segnalato in gara: dopo il portale gigante la bici si è ribaltata. Riprodotto c
 - **Raddrizzamento (`rightBike`):** se la bici resta a testa in giù (oltre 109° per 3 passi), tutta la bici ruota rigida attorno al telaio fino a tornare in piedi, in circa un quarto di secondo, alzandosi un poco per non finire nel terreno. Non è un teletrasporto e non rompe gli assi.
 - Misurato con bot (non su dispositivi reali): a testa in giù da fermo, in piedi in 0,27 s con tutte le forme provate; giro completo in volo a ~6 rad/s: prima restava capovolta per sempre, ora l'angolo massimo è ~1,0 rad e torna in piedi in 0,4–0,6 s; 144 gare nel modo meno classico, 0 ribaltamenti; inclinazione massima in gara normale ridotta (fagiolo 1,16→0,76 rad); tempi fra le 12 forme invariati o più vicini (due laghi in fila: 35–42 s, prima 37–44).
 - La rete non cambia: è solo fisica dell'host.
+
+## Ventiseiesimo giro: il tracciato finale rifatto (schermata dei risultati)
+Il disegno a fine gara era una collina grigia con le pennellate sopra: non diceva dove si era corso, tagliava i salti in alto e laghi e ponti non si vedevano.
+- **Biomi:** il terreno è colorato per bioma ad acquerello e sotto c'è una fascia con il nome di ogni zona (se non ci sta tutto, la prima parola; se non ci sta neanche quella, niente).
+- **Laghi e ponti:** acqua e lava si vedono nei loro bacini (pelo luminoso: azzurro o arancio), i ponti sono archi bassi di legno con i due pali. Il profilo mostra anche canyon e bacini con la profondità vera; dossi e fango sono levigati, così il disegno resta pulito.
+- **Tratto gigante** ("Gara meno classica"): una striscia gialla dal portale gigante al portale grande, con la scritta "Gigante!" e i bordi tratteggiati; lì le pennellate sono più spesse, in proporzione alla taglia (cresce e cala con la stessa curva della fisica). Gli anelli di quei due portali non si disegnano più, sono già nella striscia.
+- **Scala:** la quota massima ora comprende anche i salti e i tratti giganti, quindi la corsa non esce più dal bordo in alto.
+- **Scheda più larga:** la scheda dei risultati sale a 640 px (500 sui telefoni in orizzontale, con margini ridotti) perché i nomi restino leggibili; il corpo dei testi si adatta alla larghezza prevista.
+- Resta lo stile: foglio a quadretti, linea a matita, pennellate con bordo chiaro, salti tratteggiati, numeri d'arrivo e bandierina.
+- Controllato (browser headless, non dispositivi reali): desktop, telefono in verticale e in orizzontale, classica (nessun portale) e meno classica, da 1 a 4 giocatori.
+- **Lingua:** nomi dei biomi e "Gigante!" vengono dalle traduzioni (italiano e inglese). Se si cambia lingua con i pulsanti IT/EN mentre si è nei risultati, la mappa si ridisegna subito nella lingua nuova. Sui telefoni in verticale un nome di una sola parola troppo lungo per la zona (es. "Ghiacciaio") non viene scritto.

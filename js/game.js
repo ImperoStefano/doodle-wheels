@@ -600,55 +600,116 @@
       ctx.fillStyle = `rgba(${r1 < 0.25 ? deep : rgb},0.92)`; ctx.beginPath(); ctx.ellipse(S[i][0] + (hsh(q[3], 1.3) - 0.5) * 22, S[i][1] + up * (W(i) * 0.5 + 6 + 40 * hsh(q[3], 6.6) * hsh(q[3], 6.6)), rr * 1.25, rr, 0, 0, Math.PI * 2); ctx.fill(); c++; }
     ctx.restore();
   }
-  // tracciato finale: foglio a quadretti, colline a matita, la corsa di ognuno a pennellate, salti tratteggiati, bandiera al traguardo.
-  // Le linee sono quelle vere della gara, solo ammorbidite (media su ~100 px di pista) così i sobbalzi non le fanno sembrare tremolanti;
-  // con più giocatori ognuno ha la sua corsia (leggermente sfalsata), l'ultimo è sotto e il primo sopra, ogni pennellata ha un bordo chiaro.
+  // tracciato finale: foglio a quadretti con la pista vera disegnata a matita e acquerello. Il terreno è colorato per bioma (con il nome in una fascia sotto),
+  // laghi d'acqua e di lava e ponti si vedono, il tratto gigante è evidenziato; la corsa di ognuno è a pennellate (più spesse nel tratto gigante), con i salti
+  // tratteggiati e la bandierina al traguardo. Le linee sono quelle vere della gara, solo ammorbidite (media su ~100 px di pista) così i sobbalzi non le fanno
+  // sembrare tremolanti; con più giocatori ognuno ha la sua corsia (leggermente sfalsata), l'ultimo è sotto e il primo sopra, ogni pennellata ha un bordo chiaro.
   function drawFinalTrace(standings) {
     const cv = els.resultsTrace; if (!cv) return;
     const ids = Object.keys(trails).filter(id => trails[id].full.length > 1);
     if (!trailOn() || !ids.length) { cv.style.display = 'none'; return; }
     cv.style.display = 'block';
-    const K = 2, CW = 660, CH = 280; if (cv.width !== CW * K) { cv.width = CW * K; cv.height = CH * K; }
+    const K = 2, CW = 660, CH = 330; if (cv.width !== CW * K) { cv.width = CW * K; cv.height = CH * K; }
     const g = cv.getContext('2d'), W = CW, H = CH, x0 = Terrain.TRACK_START + 200, x1 = Terrain.FINISH_X + 120, sx = (W - 56) / (x1 - x0);
+    const gB = H - 34;                                   // fondo del terreno; sotto, la fascia con i nomi dei biomi
+    const X = x => 28 + (x - x0) * sx, sm = t => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+    const INK = '#0c0c12';
+    // la scheda dei risultati arriva al massimo a 640 px (meno il margine interno): dalla larghezza prevista si sceglie il corpo dei testi, così restano leggibili anche sui telefoni
+    const short = (window.innerHeight || 800) <= 480, dispW = Math.min(short ? 500 : 640, (window.innerWidth || 640) - 24) - (short ? 36 : 64), fz = Math.max(10.5, Math.min(17, 9.5 / Math.max(0.3, Math.min(1, dispW / CW))));
     g.setTransform(K, 0, 0, K, 0, 0); g.clearRect(0, 0, W, H); g.fillStyle = '#f0f4f8'; g.fillRect(0, 0, W, H); g.fillStyle = '#d9e2ec';
     for (let x = 0; x < W; x += 24) g.fillRect(x, 0, 1.5, H); for (let y = 0; y < H; y += 24) g.fillRect(0, y, W, 1.5);
-    // profilo: quota di riva delle zone (senza ostacoli), levigata in metri di pista così resta una collina morbida
-    const prof = []; let lo = 1e9, hi = -1e9;
-    for (let x = x0 - 200; x <= x1 + 200; x += 25) prof.push([x, Terrain.baseHeight(x)]);
-    const sm = prof.map((q, i) => { let s = 0, c = 0; for (let j = Math.max(0, i - 8); j <= Math.min(prof.length - 1, i + 8); j++) { const w = Math.exp(-Math.pow((j - i) / 4.5, 2)); s += prof[j][1] * w; c += w; } return [q[0], s / c]; });
-    const P = sm.filter(q => q[0] >= x0 && q[0] <= x1); P.forEach(q => { lo = Math.min(lo, q[1]); hi = Math.max(hi, q[1]); });
-    const span = Math.max(150, hi - lo), top = 52 + 8 * ids.length, sy = (H - top - 34) / span, baseY = H - 34 + lo * sy;
-    const X = x => 28 + (x - x0) * sx, Yh = h => baseY - h * sy;
+    // profilo: la riva (levigata su ~60 px di pista, così dossi e fango non sporcano il disegno) meno la profondità esatta di laghi e canyon; passo di 14 px
+    const STEP = 14, raw = []; for (let x = x0 - 160; x <= x1 + 160; x += STEP) { const b = Terrain.baseHeight(x); raw.push([x, b, Math.max(0, b - Terrain.naturalHeight(x))]); }
+    const P = raw.map((q, i) => { let s = 0, c = 0; for (let j = Math.max(0, i - 9); j <= Math.min(raw.length - 1, i + 9); j++) { const w = Math.exp(-Math.pow((j - i) / 3.5, 2)); s += raw[j][1] * w; c += w; } const B = s / c; return [q[0], B - q[2], B]; }).filter(q => q[0] >= x0 && q[0] <= x1);
+    const hAt = x => P[Math.max(0, Math.min(P.length - 1, Math.round((x - P[0][0]) / STEP)))][1];
+    // tratti giganti (dal portale gigante al portale grande), solo se la pista li ha
+    const GR = []; (Terrain.PORTALS || []).forEach(p => { if (p.kind !== 'grow') return; const b = Terrain.PORTALS.find(e => e.kind === 'big' && e.grow === p.id); if (b) GR.push([p.x, b.x]); });
+    const gk = x => { let k = 0; for (const [ga, gb] of GR) k = Math.max(k, sm((x - (ga - 45)) / 90) * (1 - sm((x - (gb - 110)) / 220))); return k; };
+    // quote delle corse (levigate sui punti vicini dello stesso tratto: non attraversano i salti dei portali), prima della scala così i salti non escono dal foglio
+    const rank = id => { const i = (standings || []).findIndex(s => s.id === id); return i < 0 ? 99 : i; };
+    const order = ids.slice().sort((a, b) => rank(a) - rank(b));
+    const runs = {}; let altMax = -1e9;
+    ids.forEach(id => {
+      const F = trails[id].full;
+      // scarto tipico fra il centro ruota e la riva sotto di lei (≈ raggio della ruota): lo togliamo così la corsa poggia sulla collina, salti compresi
+      const offs = F.map(q => (Sim.GROUND_Y - q[1]) - Terrain.baseHeight(q[0])).sort((u, v) => u - v), med = offs[offs.length >> 1] || 0, alt = q => (Sim.GROUND_Y - q[1]) - med;
+      const H2 = F.map((q, i) => { let s = 0, c = 0; for (let d = -9; d <= 9; d++) { const j = i + d; if (j < 0 || j >= F.length) continue; let ok = true; if (d > 0) { for (let m = i + 1; m <= j; m++) if (F[m][2]) { ok = false; break; } } else if (d < 0) { for (let m = j + 1; m <= i; m++) if (F[m][2]) { ok = false; break; } } if (!ok) continue; const w = Math.exp(-d * d / 24); s += alt(F[j]) * w; c += w; } return s / c; });
+      H2.forEach(v => { if (v > altMax) altMax = v; }); runs[id] = { F, H2 };
+    });
+    const lift = 13, laneGap = ids.length > 1 ? Math.min(6.5, 22 / (ids.length - 1)) : 0, bw0 = ids.length > 3 ? 5.5 : ids.length > 1 ? 6.5 : 8;
+    let lo = 1e9, hi = -1e9; P.forEach(q => { lo = Math.min(lo, q[1]); hi = Math.max(hi, q[1]); }); hi = Math.max(hi, altMax);
+    const topPad = 30 + lift + laneGap * (ids.length - 1) + bw0 * (GR.length ? 1.9 : 1) / 2, sy = (gB - 12 - topPad) / Math.max(150, hi - lo), baseY = gB - 12 + lo * sy, Yh = h => baseY - h * sy;
     const path = () => { g.beginPath(); P.forEach(([x, h], i) => { if (i) g.lineTo(X(x), Yh(h)); else g.moveTo(X(x), Yh(h)); }); };
-    path(); g.lineTo(X(x1), H); g.lineTo(X(x0), H); g.closePath(); g.fillStyle = 'rgba(16,42,67,0.08)'; g.fill();
-    g.strokeStyle = 'rgba(16,42,67,0.6)'; g.lineWidth = 2; g.lineJoin = 'round'; path(); g.stroke();
-    // portali (anelli d'inchiostro): neri gli specchi, tratteggiati le uscite
-    const hAt = x => { let b = P[0]; for (const q of P) { if (q[0] > x) break; b = q; } return b[1]; };
+    const zs = Terrain.ZONES.filter(z => z.end > x0 && z.start < x1);
+    // 1) il terreno, colorato per bioma (acquerello leggero)
+    zs.forEach(z => {
+      const xa = Math.max(x0, z.start), xb = Math.min(x1, z.end), pts = P.filter(q => q[0] >= xa && q[0] <= xb); if (pts.length < 2) return;
+      g.beginPath(); g.moveTo(X(pts[0][0]), gB); pts.forEach(([x, h]) => g.lineTo(X(x), Yh(h))); g.lineTo(X(pts[pts.length - 1][0]), gB); g.closePath();
+      g.fillStyle = `rgba(${hexRgb(z.color || '#94a3b8')},${z.key === 'lava' ? 0.3 : 0.24})`; g.fill();
+    });
+    // 2) laghi: acqua e lava sopra il fondo, fino al pelo
+    zs.forEach(z => {
+      if ((z.key !== 'water' && z.key !== 'lava') || !z.gap) return;
+      const off = z.key === 'lava' ? 26 : 28, pts = P.filter(q => q[0] >= z.start && q[0] <= z.end), lvAt = new Map(pts.map(q => [q[0], q[2] - off])), lv = x => lvAt.get(x);
+      let run = []; const flush = () => {
+        if (run.length > 1) { g.beginPath(); run.forEach(([x], i) => { const yy = Yh(lv(x)); if (i) g.lineTo(X(x), yy); else g.moveTo(X(x), yy); }); for (let i = run.length - 1; i >= 0; i--) g.lineTo(X(run[i][0]), Yh(run[i][1])); g.closePath();
+          g.fillStyle = z.key === 'lava' ? 'rgba(239,68,68,0.7)' : 'rgba(59,130,246,0.5)'; g.fill();
+          g.strokeStyle = z.key === 'lava' ? '#f97316' : '#2563eb'; g.lineWidth = z.key === 'lava' ? 2 : 1.5; g.beginPath(); run.forEach(([x], i) => { const yy = Yh(lv(x)); if (i) g.lineTo(X(x), yy); else g.moveTo(X(x), yy); }); g.stroke(); }
+        run = [];
+      };
+      pts.forEach(q => { if (q[1] < lv(q[0])) run.push(q); else flush(); }); flush();
+    });
+    // 3) tratto gigante: striscia gialla sotto le pennellate, con i due bordi tratteggiati e la scritta
+    GR.forEach(([ga, gb]) => {
+      const xa = Math.max(x0, ga), xb = Math.min(x1, gb); if (xb <= xa) return;
+      g.fillStyle = 'rgba(250,204,21,0.17)'; g.fillRect(X(xa), 18, X(xb) - X(xa), gB - 18);
+      g.strokeStyle = 'rgba(12,12,18,0.4)'; g.lineWidth = 1.2; g.setLineDash([3, 4]); [xa, xb].forEach(x => { g.beginPath(); g.moveTo(X(x), 18); g.lineTo(X(x), gB); g.stroke(); }); g.setLineDash([]);
+      g.fillStyle = 'rgba(12,12,18,0.8)'; g.font = `700 ${fz.toFixed(1)}px Kalam, cursive`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(I18n.t('crazy.grow'), (X(xa) + X(xb)) / 2, 5 + fz * 0.6);
+    });
+    // 4) linea del terreno a matita e ponti (impalcato in legno con i due pali)
+    g.strokeStyle = 'rgba(16,42,67,0.65)'; g.lineWidth = 2; g.lineJoin = 'round'; path(); g.stroke();
+    (Terrain.BRIDGES || []).forEach(b => {
+      if (b.end < x0 || b.start > x1) return; const pts = [], arch = Math.min(1, 6 / (Math.max(1, Math.abs(b.peak)) * sy));   // la scala verticale è molto esagerata: l'arco resta basso, come un ponte e non una tenda
+       for (let x = Math.max(x0, b.start); x <= Math.min(x1, b.end); x += 8) { const q = P[Math.max(0, Math.min(P.length - 1, Math.round((x - P[0][0]) / STEP)))]; pts.push([x, q[2] + (Terrain.height(x) - Terrain.baseHeight(x)) * arch]); }
+      if (pts.length < 2) return; const dk = () => { g.beginPath(); pts.forEach(([x, h], i) => { if (i) g.lineTo(X(x), Yh(h)); else g.moveTo(X(x), Yh(h)); }); };
+      g.lineCap = 'round'; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 5.6; dk(); g.stroke(); g.strokeStyle = '#7c4a1d'; g.lineWidth = 2.8; dk(); g.stroke();
+      g.strokeStyle = '#7c4a1d'; g.lineWidth = 1.6; [pts[0], pts[pts.length - 1]].forEach(([x, h]) => { g.beginPath(); g.moveTo(X(x), Yh(h)); g.lineTo(X(x), Yh(h) + 7); g.stroke(); });
+    });
+    // 5) fascia dei biomi, con il nome (solo se ci sta)
+    const bY = gB + 7, bH = H - 5 - bY;
+    g.font = `700 ${fz.toFixed(1)}px Kalam, cursive`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    zs.forEach(z => {
+      const xa = X(Math.max(x0, z.start)), xb = X(Math.min(x1, z.end)); if (xb - xa < 4) return;
+      g.fillStyle = `rgba(${hexRgb(z.color || '#94a3b8')},0.55)`; g.strokeStyle = 'rgba(16,42,67,0.6)'; g.lineWidth = 1.2;
+      g.beginPath(); if (g.roundRect) g.roundRect(xa + 0.6, bY, xb - xa - 1.2, bH, 4); else g.rect(xa + 0.6, bY, xb - xa - 1.2, bH); g.fill(); g.stroke();
+      if (z.key === 'start' || z.key === 'finish') return;
+      let nm = I18n.t('sign.' + z.key); if (g.measureText(nm).width + 8 >= xb - xa) nm = nm.split(' ')[0];   // se non ci sta tutto il nome, la prima parola
+      if (g.measureText(nm).width + 8 < xb - xa) { g.fillStyle = 'rgba(12,12,18,0.85)'; g.fillText(nm, (xa + xb) / 2, bY + bH / 2 + 0.5); }
+    });
+    // portali (anelli d'inchiostro): neri gli specchi, tratteggiate le uscite; il gigante e il grande sono già nella striscia gialla
     const drawPortalMarks = () => {
-    (Terrain.PORTALS || []).forEach(p => { if (p.x < x0 || p.x > x1) return; const gx = X(p.x), gy = Yh(hAt(p.x)) - 12; g.strokeStyle = p.kind === 'shift' ? 'rgba(16,42,67,0.75)' : '#0c0c12'; g.lineWidth = p.kind === 'mirror' ? 3 : 1.8; g.setLineDash(p.kind === 'exit' || p.kind === 'big' ? [3, 3] : []); g.beginPath(); g.ellipse(gx, gy, p.kind === 'big' ? 6.4 : 4.4, p.kind === 'big' ? 17 : 12, 0, 0, Math.PI * 2); g.save(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth += 3; g.setLineDash([]); g.stroke(); g.restore(); g.stroke(); });
+    (Terrain.PORTALS || []).forEach(p => { if (p.kind === 'grow' || p.kind === 'big' || p.x < x0 || p.x > x1) return; const gx = X(p.x), gy = Yh(hAt(p.x)) - 12; g.strokeStyle = p.kind === 'shift' ? 'rgba(16,42,67,0.75)' : INK; g.lineWidth = p.kind === 'mirror' ? 3 : 1.8; g.setLineDash(p.kind === 'exit' ? [3, 3] : []); g.beginPath(); g.ellipse(gx, gy, 4.4, 12, 0, 0, Math.PI * 2); g.save(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth += 3; g.setLineDash([]); g.stroke(); g.restore(); g.stroke(); });
     g.setLineDash([]);
     };
     // traguardo: bandierina
     const fx = X(Terrain.FINISH_X), fy = Yh(hAt(Terrain.FINISH_X));
-    g.strokeStyle = '#0c0c12'; g.lineWidth = 2.2; g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx, fy - 32); g.stroke(); g.fillStyle = '#0c0c12'; g.beginPath(); g.moveTo(fx, fy - 32); g.lineTo(fx + 16, fy - 26); g.lineTo(fx, fy - 20); g.closePath(); g.fill();
-    // ordine di disegno: dall'ultimo al primo (il vincitore resta in vista); ordine in classifica se disponibile
-    const rank = id => { const i = (standings || []).findIndex(s => s.id === id); return i < 0 ? 99 : i; };
-    const order = ids.slice().sort((a, b) => rank(a) - rank(b));
-    const lift = 13, laneGap = ids.length > 1 ? Math.min(6.5, 22 / (ids.length - 1)) : 0;
+    g.strokeStyle = INK; g.lineWidth = 2.2; g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx, fy - 32); g.stroke(); g.fillStyle = INK; g.beginPath(); g.moveTo(fx, fy - 32); g.lineTo(fx + 16, fy - 26); g.lineTo(fx, fy - 20); g.closePath(); g.fill();
+    // le corse, dall'ultimo al primo (il vincitore resta in vista)
     order.slice().reverse().forEach(id => {
-      const meta = raceMeta[id]; if (!meta) return; const lane = order.indexOf(id), F = trails[id].full, rgb = hexRgb(meta.color), ink = mixRgb(rgb, 0.4);
-      const dy = -lift - lane * laneGap;
-      // scarto tipico fra il centro ruota e la riva sotto di lei (≈ raggio della ruota): lo togliamo così la corsa poggia sulla collina, salti compresi
-      const offs = F.map(q => (Sim.GROUND_Y - q[1]) - Terrain.baseHeight(q[0])).sort((u, v) => u - v), med = offs[offs.length >> 1] || 0, alt = q => (Sim.GROUND_Y - q[1]) - med;
-      // media pesata sui punti vicini dello stesso tratto (non attraversa i salti dei portali)
-      const Y = F.map((q, i) => { let s = 0, c = 0; for (let d = -9; d <= 9; d++) { const j = i + d; if (j < 0 || j >= F.length) continue; let ok = true; if (d > 0) { for (let m = i + 1; m <= j; m++) if (F[m][2]) { ok = false; break; } } else if (d < 0) { for (let m = j + 1; m <= i; m++) if (F[m][2]) { ok = false; break; } } if (!ok) continue; const w = Math.exp(-d * d / 24); s += alt(F[j]) * w; c += w; } return Yh(s / c) + dy; });
-      g.lineCap = 'round'; g.lineJoin = 'round';
-      const stroke = (col, w, off) => { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); let pen = false; for (let i = 0; i < F.length; i++) { const xx = X(F[i][0]), yy = Y[i] + off; if (F[i][2]) pen = false; if (!pen) { g.moveTo(xx, yy); pen = true; } else g.lineTo(xx, yy); } g.stroke(); };
-      const bw = ids.length > 3 ? 5.5 : ids.length > 1 ? 6.5 : 8;
+      const meta = raceMeta[id]; if (!meta) return; const lane = order.indexOf(id), { F, H2 } = runs[id], rgb = hexRgb(meta.color), ink = mixRgb(rgb, 0.4);
+      const dy = -lift - lane * laneGap, Y = H2.map(h => Yh(h) + dy), bw = bw0, kk = F.map(q => GR.length ? gk(q[0]) : 0);
+      g.lineJoin = 'round';
+      // un tratto di pennellata: largo bw (più largo nel tratto gigante). Tutto il percorso in un colpo solo se non ci sono giganti; altrimenti segmento per segmento
+      const stroke = (col, w, off, cap) => {
+        g.strokeStyle = col; g.lineCap = cap || 'round';
+        if (!GR.length) { g.lineWidth = w; g.beginPath(); let pen = false; for (let i = 0; i < F.length; i++) { const xx = X(F[i][0]), yy = Y[i] + off; if (F[i][2]) pen = false; if (!pen) { g.moveTo(xx, yy); pen = true; } else g.lineTo(xx, yy); } g.stroke(); return; }
+        for (let i = 1; i < F.length; i++) { if (F[i][2]) continue; const f = 1 + 0.85 * (kk[i - 1] + kk[i]) / 2; g.lineWidth = w * f; g.beginPath(); g.moveTo(X(F[i - 1][0]), Y[i - 1] + off * f); g.lineTo(X(F[i][0]), Y[i] + off * f); g.stroke(); }
+      };
       stroke('rgba(255,255,255,0.95)', bw + 3.2, 0);              // bordo chiaro: separa dalle altre corsie
       stroke(`rgba(${rgb},1)`, bw, 0);                            // corpo della pennellata piena
-      stroke(`rgba(${ink},0.5)`, bw * 0.34, bw * 0.28);           // ombra sul lato basso
-      stroke('rgba(255,255,255,0.55)', 0.9, -bw * 0.22);          // riga di carta che affiora
+      stroke(`rgba(${ink},0.5)`, bw * 0.34, bw * 0.28, 'butt');   // ombra sul lato basso
+      stroke('rgba(255,255,255,0.55)', 0.9, -bw * 0.22, 'butt');  // riga di carta che affiora
+      g.lineCap = 'round';
       // salti: arco tratteggiato fra la fine di un tratto e l'inizio del successivo
       g.setLineDash([2, 4.5]); g.strokeStyle = `rgba(${rgb},0.95)`; g.lineWidth = 2;
       for (let i = 1; i < F.length; i++) if (F[i][2]) { const ax = X(F[i - 1][0]), ay = Y[i - 1], bx = X(F[i][0]), by = Y[i]; g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo((ax + bx) / 2, Math.min(ay, by) - 16, bx, by); g.stroke(); }
@@ -656,8 +717,8 @@
       // macchia scura di partenza, schizzi radi e pallino all'arrivo
       { const x = X(F[0][0]), y = Y[0]; g.fillStyle = `rgba(${ink},0.95)`; g.beginPath(); g.ellipse(x, y, bw * 0.95, bw, 0, 0, Math.PI * 2); g.fill();
         for (let i = 8; i < F.length; i += 14) { const h = hsh(i, 3.3); if (h > 0.4) continue; g.fillStyle = `rgba(${rgb},0.9)`; g.beginPath(); g.arc(X(F[i][0]) + (h - 0.2) * 8, Y[i] + (hsh(i, 1.9) > 0.5 ? -1 : 1) * (bw + 3 + 6 * h), 1 + 1.4 * h, 0, Math.PI * 2); g.fill(); } }
-      const e = F.length - 1; g.fillStyle = meta.color; g.strokeStyle = '#0c0c12'; g.lineWidth = 1.8; g.beginPath(); g.arc(X(F[e][0]), Y[e], 5, 0, Math.PI * 2); g.fill(); g.stroke();
-      if (ids.length > 1) { const rk = rank(id); if (rk < 9) { g.fillStyle = '#0c0c12'; g.font = 'bold 10px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(rk + 1), X(F[e][0]), Y[e] + 0.5); } }
+      const e = F.length - 1; g.fillStyle = meta.color; g.strokeStyle = INK; g.lineWidth = 1.8; g.beginPath(); g.arc(X(F[e][0]), Y[e], 5, 0, Math.PI * 2); g.fill(); g.stroke();
+      if (ids.length > 1) { const rk = rank(id); if (rk < 9) { g.fillStyle = INK; g.font = 'bold 10px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(rk + 1), X(F[e][0]), Y[e] + 0.5); } }
     });
     drawPortalMarks();
   }
@@ -999,7 +1060,9 @@
   }
 
   function stopRaceLoops() { if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; }
-  function showResults(st) { stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
+  let lastStandings = null;
+  I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
+  function showResults(st) { lastStandings = st; stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
   els.btnRematch.addEventListener('click', () => { if (Net.isHost) { wheels = {}; keepTrack = true; Net.broadcast({ type: 'restartToDraw' }); enterDrawPhase(); } });
   els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
   document.body.dataset.screen = 'menu'; I18n.init(); applyInvite(); if (typeof Sfx !== 'undefined') Sfx.init();

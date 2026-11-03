@@ -262,6 +262,8 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
 @keyframes note-pop { 0% { transform: translateX(-50%) rotate(-1.2deg) scale(0.6); opacity: 0; } 100% { transform: translateX(-50%) rotate(-1.2deg) scale(1); opacity: 1; } }
 
 /* tracciato finale: foglio a quadretti con la corsa di ognuno a pennellate */
+#screen-results .card { max-width: 640px; }
+@media (max-height: 480px) { #screen-results .card { max-width: 500px; padding: 14px 18px; } #screen-results .section-title { margin: 0 0 6px; font-size: 1.4rem; } .results-trace { margin: 2px 0 8px; } .results-list { margin-bottom: 6px; } }   /* il tracciato finale ha bisogno di spazio per i nomi dei biomi */
 .results-trace { display: block; width: 100%; height: auto; margin: 4px 0 14px; border: 2px solid var(--ink); border-radius: 12px; background: #f0f4f8; box-shadow: 2px 3px 0 var(--ink); }
 
 /* classifica finale */
