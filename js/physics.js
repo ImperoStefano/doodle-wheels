@@ -912,12 +912,53 @@ const Sim = (() => {
     r.dF = r.dR = false;
   }
 
+  // Antiribaltamento: la bici si rimette in piedi da sola, in poco tempo, in volo come a terra. Interviene quando il telaio è inclinato oltre FLIP_A0 (≈43°; la guida
+  // normale resta sotto, quindi non cambia) o quando STA per arrivarci: l'angolo previsto tiene conto di quanto in fretta ruota (impennata che sale, giro in volo).
+  // L'angolo è "avvolto": a testa in giù la strada più breve per tornare su è quella giusta. Non teletrasporta nulla e non tocca le ruote.
+  const FLIP_A0 = 0.75, FLIP_MAXW = 0.16, FLIP_LOOK = 8;
+  function antiFlip(r) {
+    const ch = r.chassis, TAU = Math.PI * 2;
+    const a = ch.angle - TAU * Math.round(ch.angle / TAU), m = Math.abs(a);
+    const w = Matter.Body.getAngularVelocity(ch);
+    const s = (m < 0.15 ? w : a) >= 0 ? 1 : -1;                        // verso in cui si sta inclinando (o ruotando, se è ancora dritta)
+    const eff = m + FLIP_LOOK * Math.max(0, w * s);                       // angolo fra ~8 passi (0,13 s) se continua a ruotare così
+    if (eff <= FLIP_A0) return;
+    const ex = Math.min(eff - FLIP_A0, 1.6);
+    const target = -s * Math.min(FLIP_MAXW, 0.02 + 0.1 * ex);           // rad per passo a 60 Hz, verso la posizione in piedi
+    const gain = Math.min(0.8, 0.15 + 0.45 * ex);                         // quanto in fretta ci si arriva
+    Matter.Body.setAngularVelocity(ch, w + (target - w) * gain);
+  }
+  // Ribaltata davvero (a testa in giù da più di FLIP_HARD_MS): la bici intera ruota rigida attorno al telaio fino a tornare in piedi, in circa un terzo di secondo,
+  // alzandosi un poco perché le ruote non finiscano nel terreno. Corpo e ruote restano alla distanza giusta, quindi gli assi non si deformano.
+  const FLIP_HARD = 1.9, FLIP_END = 0.45, FLIP_HARD_STEPS = 3, FLIP_RATE = 0.2, FLIP_LIFT = 5;
+  function rightBike(r) {
+    const ch = r.chassis, TAU = Math.PI * 2;
+    const a = ch.angle - TAU * Math.round(ch.angle / TAU);
+    if (r.righting) { if (Math.abs(a) < FLIP_END) { r.righting = false; r.flipN = 0; return false; } }   // già in manovra: si va avanti fino a quasi in piedi
+    else {
+      if (Math.abs(a) < FLIP_HARD) { r.flipN = 0; return false; }
+      if ((r.flipN = (r.flipN || 0) + 1) < FLIP_HARD_STEPS) return false;
+      r.righting = true;
+    }
+    const d = -(a > 0 ? 1 : -1) * Math.min(FLIP_RATE, Math.abs(a)), c = Math.cos(d), sn = Math.sin(d), px = ch.position.x, py = ch.position.y;
+    for (const b of [r.fw, r.rw]) {
+      const dx = b.position.x - px, dy = b.position.y - py;
+      Matter.Body.setPosition(b, { x: px + dx * c - dy * sn, y: py + dx * sn + dy * c - FLIP_LIFT });
+    }
+    Matter.Body.setPosition(ch, { x: px, y: py - FLIP_LIFT });
+    Matter.Body.setAngle(ch, ch.angle + d);
+    for (const b of [ch, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x * 0.6, y: Math.min(0, b.velocity.y) * 0.6 });
+    Matter.Body.setAngularVelocity(ch, 0);
+    return true;
+  }
+
   function stepRacer(r, elapsed) {
     if (r.finished) return;
 
     driveRacer(r, elapsed, true);
     meltStep(r, elapsed);
     scaleStep(r, elapsed);
+    if (!rightBike(r)) antiFlip(r);
     checkPortals(r, elapsed);
 
     // progress = furthest x reached IN THE DIRECTION OF TRAVEL (dir·x); if it hasn't improved enough for STALL_MS, hop
