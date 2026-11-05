@@ -3,7 +3,7 @@
 const I18n = (() => {
   const D = {
     it: {
-      'menu.sub': 'Disegna la tua ruota e affronta ostacoli dinamici.<br>Sfida fino a 4 amici in tempo reale (5 giocatori in tutto).',
+      'menu.credit': 'Ideato e sviluppato da', 'menu.sub': 'Disegna la tua ruota e affronta ostacoli dinamici.<br>Sfida fino a 4 amici in tempo reale (5 giocatori in tutto).',
       'menu.name': 'Il tuo nome', 'menu.name.ph': 'Inserisci il nome...', 'menu.host': 'Crea Nuova Gara', 'share.btn': 'Invita', 'sound.all': 'Musica ed effetti', 'sound.fx': 'Solo effetti (musica spenta)', 'sound.off': 'Audio spento', 'full.title': 'Schermo intero', 'share.label': 'Invita gli amici: copia il link e mandalo in chat', 'share.labelRoom': 'Link d\'invito: si apre già col codice', 'share.copy': 'Copia', 'share.copied': 'Copiato ✓', 'share.toastGame': 'Link copiato! Incollalo in chat per invitare i tuoi amici.', 'share.toastRoom': 'Invito copiato! Chi lo apre trova già il codice della gara.', 'share.text': 'Vieni a giocare a Doodle Wheels con me!', 'share.codeText': 'Vieni a correre con me a Doodle Wheels! Codice gara:', 'share.fromLink': 'Codice dal link: aggiungi il tuo nome e premi Unisciti.',
       'menu.code.ph': 'CODICE', 'menu.join': 'Unisciti',
       'menu.err.name': 'Nome richiesto.', 'menu.err.namecode': 'Nome e codice (4 lettere) richiesti.', 'menu.err.net': 'Errore di rete.',
@@ -14,6 +14,7 @@ const I18n = (() => {
       'draw.title': 'Disegna il tuo assetto', 'draw.hint': 'Traccia una linea chiusa. Tonda per la velocità, irregolare per far presa su ostacoli difficili.',
       'draw.clear': 'Pulisci', 'draw.send': 'Invia Forma', 'draw.wait': 'In attesa...', 'draw.ready': 'Ruote pronte: {got}/{n}',
       'race.landscape': 'Consigliata visuale orizzontale', 'race.change': 'Cambia Forma ({n})',
+      'race.jump': 'Salta', 'race.slow': 'Sei lento! Prova un\'altra forma', 'race.hint': 'Spazio, ↑ o tocca per saltare',
       'race.go': 'VIA!', 'race.you': 'tu', 'race.lastcall': '🏁 Primo al traguardo! Ancora {s}s per arrivare', 'race.hostleft': 'L\'host ha chiuso.',
       'pit.title': 'Pit Stop!', 'pit.hint': 'Disegna in fretta, la gara non si ferma.', 'pit.cancel': 'Annulla', 'pit.apply': 'Applica Ora',
       'res.title': 'Traguardo', 'res.rematch': 'Rigioca Stessa Pista', 'res.new': 'Nuova Pista', 'res.rank': '{n}°', 'res.dnf': 'DNF',
@@ -26,7 +27,7 @@ const I18n = (() => {
       'doc.title': 'Doodle Wheels — corsa online',
     },
     en: {
-      'menu.sub': 'Draw your wheel and take on dynamic obstacles.<br>Challenge up to 4 friends in real time (5 players in total).',
+      'menu.credit': 'Designed & built by', 'menu.sub': 'Draw your wheel and take on dynamic obstacles.<br>Challenge up to 4 friends in real time (5 players in total).',
       'menu.name': 'Your name', 'menu.name.ph': 'Enter your name...', 'menu.host': 'Create New Race', 'share.btn': 'Invite', 'sound.all': 'Music and effects', 'sound.fx': 'Effects only (music off)', 'sound.off': 'Sound off', 'full.title': 'Full screen', 'share.label': 'Invite friends: copy the link and send it in a chat', 'share.labelRoom': 'Invite link: opens with the code filled in', 'share.copy': 'Copy', 'share.copied': 'Copied ✓', 'share.toastGame': 'Link copied! Paste it in a chat to invite your friends.', 'share.toastRoom': 'Invite copied! Whoever opens it finds the race code already filled in.', 'share.text': 'Come play Doodle Wheels with me!', 'share.codeText': 'Come race me in Doodle Wheels! Race code:', 'share.fromLink': 'Code from the link: add your name and press Join.',
       'menu.code.ph': 'CODE', 'menu.join': 'Join',
       'menu.err.name': 'Name required.', 'menu.err.namecode': 'Name and code (4 letters) required.', 'menu.err.net': 'Network error.',
@@ -37,6 +38,7 @@ const I18n = (() => {
       'draw.title': 'Draw your wheel', 'draw.hint': 'Draw a closed line. Round for speed, irregular to grip on tough obstacles.',
       'draw.clear': 'Clear', 'draw.send': 'Submit Shape', 'draw.wait': 'Waiting...', 'draw.ready': 'Wheels ready: {got}/{n}',
       'race.landscape': 'Landscape view recommended', 'race.change': 'Change Shape ({n})',
+      'race.jump': 'Jump', 'race.slow': 'You\'re slow! Try another shape', 'race.hint': 'Space, ↑ or tap to jump',
       'race.go': 'GO!', 'race.you': 'you', 'race.lastcall': '🏁 First at the finish! {s}s left to arrive', 'race.hostleft': 'The host has left.',
       'pit.title': 'Pit Stop!', 'pit.hint': 'Draw quickly, the race doesn\'t stop.', 'pit.cancel': 'Cancel', 'pit.apply': 'Apply Now',
       'res.title': 'Finish', 'res.rematch': 'Race Same Track', 'res.new': 'New Track', 'res.rank': '{n}', 'res.dnf': 'DNF',

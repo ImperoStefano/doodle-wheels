@@ -142,12 +142,13 @@ const Props = (() => {
       if (!ZONE_LABEL[z.key]) continue; const label = I18n.t('sign.' + z.key);
       const y = gy - Terrain.height(z.start + 150);
       ctx.save(); ctx.translate(sx, y);
-      ctx.fillStyle = '#6b4a2a'; ctx.fillRect(-4, -92, 8, 94); ctx.strokeStyle = '#3f2a14'; ctx.lineWidth = 1.5; ctx.strokeRect(-4, -92, 8, 94);
+      ctx.fillStyle = '#6b3a2a'; ctx.fillRect(-4, -92, 8, 94);
       ctx.font = '700 17px Kalam, "Comic Sans MS", cursive';
       const tw = ctx.measureText(label).width + 34, bw = Math.max(96, tw);
-      ctx.fillStyle = '#d9a35c'; ctx.strokeStyle = '#6b4a2a'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.moveTo(-bw / 2, -112); ctx.lineTo(bw / 2 - 8, -112); ctx.lineTo(bw / 2 + 12, -96); ctx.lineTo(bw / 2 - 8, -80); ctx.lineTo(-bw / 2, -80); ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#4a2f12'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, -4, -95);
+      const board = dy => { ctx.beginPath(); ctx.moveTo(-bw / 2, -112 + dy); ctx.lineTo(bw / 2 - 8, -112 + dy); ctx.lineTo(bw / 2 + 12, -96 + dy); ctx.lineTo(bw / 2 - 8, -80 + dy); ctx.lineTo(-bw / 2, -80 + dy); ctx.closePath(); ctx.fill(); };
+      ctx.lineJoin = 'round'; ctx.fillStyle = 'rgba(45,62,72,0.22)'; board(4);
+      ctx.fillStyle = '#f8f4dc'; board(0);
+      ctx.fillStyle = '#027a71'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, -4, -95);
       ctx.restore();
     }
   }

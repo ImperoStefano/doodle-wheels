@@ -92,6 +92,9 @@ const Sfx = (() => {
   const portalOut = d => { tone(d > 0 ? 440 : 360, 0.16, 'sine', 0.14, 0, d > 0 ? 760 : 600); puff('bandpass', 1200, 0.9, 0.2, 0.07, 0, 500); pluck(hz(84), 0.5, 0.07, 0.06); };
   // ruota che entra nella lava: sfrigolio (rumore filtrato che sale e si spegne) + un "blop" grave
   const sizzle = () => { duck(0.8, 0.2, 0.5); puff('bandpass', 2600, 1.4, 0.55, 0.075, 0, 900); puff('bandpass', 1500, 0.9, 0.38, 0.06, 0.05, 600); tone(150, 0.25, 'sine', 0.13, 0, 70); };
+  // salto: un "boing" morbido che sale + un soffio d'aria (mai più di uno ogni 150 ms)
+  let lastJump = 0;
+  const jump = () => { const n = now(); if (n - lastJump < 150) return; lastJump = n; tone(210, 0.16, 'sine', 0.16, 0, 520); tone(420, 0.1, 'sine', 0.05, 0.02, 760); puff('bandpass', 900, 0.8, 0.12, 0.04, 0, 1600); };
   const redraw = () => { pluck(hz(72), 0.4, 0.1); pluck(hz(74), 0.5, 0.1, 0.09); };
 
   // ---- rotolamento continuo ----------------------------------------------------------------------------
@@ -260,5 +263,5 @@ const Sfx = (() => {
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('button, .btn'); if (t && t.id !== 'btn-sound') { unlock(); click(); } }, true);
     document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) ctx.suspend(); else if (!muted) { ctx.resume(); if (mode === 'all') musicStart(); } });
   }
-  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, sizzle, giant, thud, portal, portalOut, update, silence, setMuted, mood, raceStart, get muted() { return muted; }, get mode() { return mode; } };
+  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, jump, sizzle, giant, thud, portal, portalOut, update, silence, setMuted, mood, raceStart, get muted() { return muted; }, get mode() { return mode; } };
 })();

@@ -18,6 +18,7 @@
     countdown: document.getElementById('countdown-overlay'), hudFill: document.getElementById('hud-progress-fill'),
     hudBoard: document.getElementById('hud-leaderboard'), minimap: document.getElementById('minimap-canvas'),
     lastCall: document.getElementById('lastcall'),
+    btnJump: document.getElementById('btn-jump'), slowHint: document.getElementById('slow-hint'), ctrlHint: document.getElementById('ctrl-hint'),
     resultsList: document.getElementById('results-list'), btnRematch: document.getElementById('btn-rematch'),
     btnBackMenu: document.getElementById('btn-back-menu'),
   };
@@ -208,6 +209,23 @@
     else { Net.send({ type: 'wheelUpdate', vertices: v }); }
   });
 
+  // ---- Salto: Spazio / ↑ / W, tocco o clic sulla pista, pulsante a schermo (ottimizzato per desktop e telefono) ----
+  // L'host decide (a terra, con una pausa fra un salto e l'altro): qui si manda solo la richiesta, al massimo ~5 al secondo.
+  let lastJumpTry = 0;
+  function tryJump() {
+    if (document.body.dataset.screen !== 'race' || !raceLoopHandle || els.redrawModal.style.display === 'flex') return;
+    const t = performance.now(); if (t - lastJumpTry < 180) return; lastJumpTry = t;
+    if (Net.isHost) Sim.jump(Net.myId); else Net.send({ type: 'jump' });
+  }
+  window.addEventListener('keydown', e => {
+    if (e.repeat || (e.code !== 'Space' && e.code !== 'ArrowUp' && e.code !== 'KeyW') || document.body.dataset.screen !== 'race') return;
+    const tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable)) return;
+    e.preventDefault(); if (tg && tg.tagName === 'BUTTON' && tg.blur) tg.blur(); tryJump();
+  });
+  els.raceCanvas.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' && e.button !== 0) return; tryJump(); });
+  if (els.btnJump) els.btnJump.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); els.btnJump.classList.add('press'); tryJump(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => { if (els.btnJump) els.btnJump.addEventListener(ev, () => els.btnJump.classList.remove('press')); });
+
   Net.on('data', ({ from, data }) => {
     if (data.type === 'goToDraw') enterDrawPhase();
     if (data.type === 'wheel' && Net.isHost) receiveWheel(from, data.vertices);
@@ -217,6 +235,7 @@
     if (data.type === 'lastCall') showLastCall(data.ms);
     if (data.type === 'restartToDraw') enterDrawPhase();
     if (data.type === 'wheelUpdate' && Net.isHost && raceMeta[from]) { Sim.updateRacerWheel(from, data.vertices); raceMeta[from].vertices = data.vertices; clearMelt(raceMeta[from]); Net.broadcast({ type: 'wheelUpdated', id: from, vertices: data.vertices }); }
+    if (data.type === 'jump' && Net.isHost) Sim.jump(from);
     if (data.type === 'wheelUpdated') { if (raceMeta[data.id]) { raceMeta[data.id].vertices = data.vertices; clearMelt(raceMeta[data.id]); } }
     if (data.type === 'melt' && !Net.isHost) applyMelt(data.id, data.f, data.r);
   });
@@ -273,7 +292,7 @@
     els.drawWait.textContent = I18n.t('draw.ready', { got, n: ids.length });
     if (ids.length > 0 && got >= ids.length) {
       raceStarting = true;
-      const start = Date.now() + 3500 + (Intro.DUR || 0) + 300;  // intro col pennello, poi 3-2-1
+      const start = Date.now() + 3500 + 1500;  // breve attesa (la fisica finisce di prepararsi), poi 3-2-1
       // "Rigioca stessa pista" riusa il percorso appena giocato; altrimenti ne nasce uno nuovo della lunghezza scelta
       const track = (keepTrack && currentLayout) ? currentLayout : Terrain.generateRandomLayout(Terrain.LENGTHS[trackLen] || Terrain.LENGTHS.lunga);
       currentLayout = track; keepTrack = false;
@@ -295,7 +314,8 @@
   function redrawsForTrack() { const n = Math.max(0, (Terrain.ZONES ? Terrain.ZONES.length : 0) - 2); return n <= 7 ? 2 : n <= 11 ? 4 : 6; }
 
   function startCountdown(startTime) {
-    showScreen('race'); if (typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'block';
+    showScreen('race'); if (typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'flex';
+    if (els.btnJump) els.btnJump.style.display = 'flex'; resetSlow(); for (const k in jnSeen) delete jnSeen[k];
     raceMeta = {}; Object.values(Net.players).forEach(p => raceMeta[p.id] = { color: p.color, name: p.name, vertices: wheels[p.id] || preRaceDrawer.fallbackCircle() });
     // l'host tara in anticipo ogni ruota (a fette, durante l'intro): così su terreno normale vanno tutte alla pari
     if (Net.isHost) { Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {})); Sim.prepareAsync(); }   // mondo fisico costruito a fette durante l'intro
@@ -305,16 +325,14 @@
     placeGrid();
     const me = latestRacers[Net.myId]; smoothCamX = me ? me.x - viewW * 0.34 : 0; particles = []; cam.dy = 0; cam.vx = 0; cam.lead = 0.34; lastCamTs = 0;
     startRenderLoop();
-    Intro.init(); Intro.play(startTime);
 
     resetPortals(); resetTrails(); let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false; aud.ang = undefined;
     const tick = setInterval(() => {
       const left = startTime - Date.now();
-      if (left <= 3000 && Intro.isRunning()) Intro.stop();   // il 3-2-1 non si sovrappone mai all'intro
       const cd = left > 3000 ? -1 : left > 2000 ? 3 : left > 1000 ? 2 : left > 0 ? 1 : 0;
       if (cd !== lastCd) { lastCd = cd; if (cd >= 0 && typeof Sfx !== 'undefined') Sfx.beep(cd === 0 ? 0 : cd); }
       if (left > 3000) els.countdown.textContent = ''; else if (left > 2000) els.countdown.textContent = '3'; else if (left > 1000) els.countdown.textContent = '2'; else if (left > 0) els.countdown.textContent = '1';
-      else { els.countdown.textContent = I18n.t('race.go'); clearInterval(tick); setTimeout(() => els.countdown.textContent = '', 700); Scenery.announce(performance.now());
+      else { els.countdown.textContent = I18n.t('race.go'); clearInterval(tick); setTimeout(() => els.countdown.textContent = '', 700); Scenery.announce(performance.now()); raceT0 = performance.now(); showCtrlHint();
              if (Net.isHost) beginRace(); }
     }, 50);
   }
@@ -384,7 +402,7 @@
           for (const id in b.m) {
             const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
-            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, jn: rb.jn, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
           }
           return;
@@ -398,7 +416,7 @@
       if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }   // portale (teletrasporto) o nuovo arrivato o salto (rimessa in pista): niente scivolata
       latestRacers[id] = {
         id, finished: rb.finished, finishTime: rb.finishTime,
-        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, jn: rb.jn, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
         fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
         rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
       };
@@ -540,88 +558,55 @@
     T.last = [x, y];
   }
   const mixRgb = (rgb, k) => rgb.split(',').map(v => Math.round(+v * k)).join(',');
-  // scia a pennellata piena, come il riferimento: una fascia larga e satura nel colore del giocatore, più scura e "pozzata" dove nasce,
-  // con righe chiare di carta che affiorano, la coda che si sfilaccia in setole e schizzi/gocce sparsi
+  // scia piatta (stile illustrazione): un nastro pieno nel colore del giocatore, più largo vicino alla bici e sottile in coda, spezzato ai salti,
+  // con un filo crema al centro. Niente sfumature, schizzi o setole: si legge subito e non copre la pista.
   function drawTrail(ctx, camX, groundY, id, color) {
     const T = trails[id]; if (!T || T.p.length < 4) return;
-    const P = T.p, n = P.length, rgb = hexRgb(color), deep = mixRgb(rgb, 0.55), light = rgb.split(',').map(v => Math.round(+v + (255 - +v) * 0.62)).join(','), off = groundY - Sim.GROUND_Y;
+    const P = T.p, n = P.length, rgb = hexRgb(color), off = groundY - Sim.GROUND_Y;
     const S = []; for (let i = 0; i < n; i++) { let sx = 0, sy = 0, c = 0; for (let j = Math.max(0, i - 3); j <= Math.min(n - 1, i + 3); j++) { if (P[j][2] && j > i) break; sx += P[j][0]; sy += P[j][1]; c++; } S.push([sx / c - camX, sy / c + off - 2]); }
-    const W = i => { const age = (n - 1 - i) / (n - 1); return 34 * (0.55 + 0.45 * Math.sin(Math.min(1, age * 5 + 0.2) * Math.PI / 2)) * (1 - 0.72 * Math.pow(age, 1.6)) * (1 + 0.07 * Math.sin(P[i][3] * 0.33)); };
+    const W = i => { const age = (n - 1 - i) / (n - 1); return 22 * Math.min(1, (1 - age) * 3.2 + 0.08) * (1 - 0.6 * age); };
     ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    // 1) corpo pieno (poligono) dalla zona piena alla testa, spezzato ai salti
-    const i0 = Math.max(0, n - 1 - Math.floor(n * 0.62)); let seg = [];
+    const i0 = Math.max(0, n - 1 - Math.floor(n * 0.7)); let seg = [];
     const flush = () => {
       if (seg.length > 2) {
         ctx.beginPath(); for (let k = 0; k < seg.length; k++) { const i = seg[k]; ctx.lineTo(S[i][0], S[i][1] - W(i) / 2); }
-        for (let k = seg.length - 1; k >= 0; k--) { const i = seg[k]; ctx.lineTo(S[i][0], S[i][1] + W(i) / 2 + 1.5 * Math.sin(P[i][3] * 0.8)); }
-        ctx.closePath();
-        const x0 = S[seg[0]][0], x1 = S[seg[seg.length - 1]][0], gr = ctx.createLinearGradient(x0, 0, x1 === x0 ? x0 + 1 : x1, 0);
-        gr.addColorStop(0, `rgba(${rgb},0)`); gr.addColorStop(0.18, `rgba(${rgb},0.9)`); gr.addColorStop(0.7, `rgba(${rgb},0.97)`); gr.addColorStop(1, `rgba(${deep},1)`);
-        ctx.fillStyle = gr; ctx.fill();
+        for (let k = seg.length - 1; k >= 0; k--) { const i = seg[k]; ctx.lineTo(S[i][0], S[i][1] + W(i) / 2); }
+        ctx.closePath(); ctx.fillStyle = `rgba(${rgb},0.82)`; ctx.fill();
+        ctx.beginPath(); for (let k = 0; k < seg.length; k++) { const i = seg[k]; if (k) ctx.lineTo(S[i][0], S[i][1]); else ctx.moveTo(S[i][0], S[i][1]); }
+        ctx.strokeStyle = 'rgba(248,244,220,0.55)'; ctx.lineWidth = 2.4; ctx.stroke();
       }
       seg = [];
     };
     for (let i = i0; i < n; i++) { if (P[i][2] && seg.length) flush(); seg.push(i); }
     flush();
-    // 2) coda sfilacciata: setole spesse che si diradano
-    const NB = 11;
-    for (let b = 0; b < NB; b++) {
-      const lane = (b - (NB - 1) / 2) / ((NB - 1) / 2), al = Math.abs(lane), seed = hsh(b, id.length * 3.1), dry = 0.1 + 0.5 * seed;
-      ctx.strokeStyle = b % 3 === 1 ? `rgba(${deep},0.95)` : `rgba(${rgb},0.95)`; ctx.lineWidth = 3.4 + 1.6 * (1 - al);
-      ctx.beginPath(); let pen = false;
-      for (let i = 0; i <= Math.min(n - 1, i0 + 6); i++) {
-        const age = (n - 1 - i) / (n - 1); if (P[i][2]) pen = false;
-        const keep = hsh(Math.floor(P[i][3] / 2) * 0.91 + b * 1.7, b * 0.31 + 0.7) > (age - 0.38) * (1.5 + dry) - 0.1;
-        if (!keep) { pen = false; continue; }
-        const x = S[i][0], y = S[i][1] + lane * W(Math.min(n - 1, i + 8)) * 0.5 + 1.8 * Math.sin(P[i][3] * 0.5 + b);
-        if (!pen) { ctx.moveTo(x, y); pen = true; } else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    // 3) righe chiare (carta che affiora) lungo la pennellata: tratti lunghi
-    ctx.lineWidth = 1.5;
-    for (let b = 0; b < 9; b++) {
-      const lane = (hsh(b, id.length) - 0.5) * 1.7;
-      ctx.strokeStyle = `rgba(${light},${(0.35 + 0.35 * hsh(b, 4.4)).toFixed(2)})`; ctx.beginPath(); let pen = false;
-      for (let i = Math.max(1, i0); i < n; i++) {
-        if (P[i][2]) pen = false; const run = Math.floor(P[i][3] / (7 + 5 * hsh(b, 8.2))) + b * 13;
-        if (hsh(run, b + 0.3) > 0.42) { pen = false; continue; }
-        const x = S[i][0], y = S[i][1] + lane * W(i) * 0.5 + 0.9 * Math.sin(P[i][3] * 0.6 + b);
-        if (!pen) { ctx.moveTo(x, y); pen = true; } else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    // 4) inizio della pennellata (se la scia è ancora corta): macchia scura e "flick" di setole all'indietro
-    if (T.p[0][3] === 0) { const x = S[0][0], y = S[0][1];
-      ctx.fillStyle = `rgba(${deep},1)`; ctx.beginPath(); ctx.ellipse(x, y, 13, 14, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = `rgba(${deep},0.9)`; for (let k = 0; k < 5; k++) { const a = Math.PI + (hsh(k, 2.2) - 0.5) * 1.1, l = 18 + 40 * hsh(k, 5.5), dyk = (hsh(k, 7.7) - 0.5) * 16; ctx.lineWidth = 0.9 + hsh(k, 1.1); ctx.beginPath(); ctx.moveTo(x - 6, y + dyk); ctx.lineTo(x - 6 + Math.cos(a) * l, y + Math.sin(a) * l + dyk); ctx.stroke(); } }
-    // 5) schizzi e gocce sparsi lungo la pennellata
-    for (let i = n - 2, c = 0; i > 0 && c < 14; i -= 2) { const q = P[i], r1 = hsh(q[3], 9.1); if (r1 > 0.5) continue; const age = (n - 1 - i) / n, up = hsh(q[3], 2.7) > 0.5 ? -1 : 1, rr = (1 + 3.6 * hsh(q[3], 5.3)) * (1 - 0.5 * age);
-      ctx.fillStyle = `rgba(${r1 < 0.25 ? deep : rgb},0.92)`; ctx.beginPath(); ctx.ellipse(S[i][0] + (hsh(q[3], 1.3) - 0.5) * 22, S[i][1] + up * (W(i) * 0.5 + 6 + 40 * hsh(q[3], 6.6) * hsh(q[3], 6.6)), rr * 1.25, rr, 0, 0, Math.PI * 2); ctx.fill(); c++; }
     ctx.restore();
   }
-  // tracciato finale: foglio a quadretti con la pista vera disegnata a matita e acquerello. Il terreno è colorato per bioma (con il nome in una fascia sotto),
-  // laghi d'acqua e di lava e ponti si vedono, il tratto gigante è evidenziato; la corsa di ognuno è a pennellate (più spesse nel tratto gigante), con i salti
-  // tratteggiati e la bandierina al traguardo. Le linee sono quelle vere della gara, solo ammorbidite (media su ~100 px di pista) così i sobbalzi non le fanno
-  // sembrare tremolanti; con più giocatori ognuno ha la sua corsia (leggermente sfalsata), l'ultimo è sotto e il primo sopra, ogni pennellata ha un bordo chiaro.
-  function drawFinalTrace(standings) {
+  // ---- tracciato finale: una piccola illustrazione ad acquerello della pista ----------------------------------------------------------------
+  // Cielo con sole e nuvole, colline lontane, terreno colorato per bioma con i suoi "abitanti" (prato fiorito con i fiori veri della pista, pini innevati, cactus,
+  // alberi d'autunno, rocce di basalto), laghi lucenti, ponti con le assi, bandierina con i festoni. Sopra, la corsa di ognuno a pennellate: a fine gara si dipingono
+  // da sinistra a destra, poi i numeri d'arrivo compaiono e dal traguardo esplodono i coriandoli. Le linee sono quelle vere della gara, solo ammorbidite (media su
+  // ~100 px di pista); con più giocatori ognuno ha la sua corsia, l'ultimo è sotto e il primo sopra. Tutto lo sfondo si disegna una volta sola in una tela nascosta.
+  let ftRaf = 0;
+  const FT_PAL = { start: '#78ba8e', hills: '#438c67', ice: '#bfe3ea', gravel: '#ecbd6f', water: '#9fd3c2', ramps: '#e3937a', lava: '#6b3a2a', finish: '#78ba8e' };
+  const FT_BAND = { start: '#78ba8e', hills: '#438c67', ice: '#bfe3ea', gravel: '#ecbd6f', water: '#5bb5b0', ramps: '#e3937a', lava: '#fb5f35', finish: '#78ba8e' };
+  const FT_FLOWERS = ['#fb5f35', '#f5e594', '#e3937a', '#ecbd6f', '#f8f4dc'];
+  function drawFinalTrace(standings, animate) {
     const cv = els.resultsTrace; if (!cv) return;
+    if (ftRaf) { cancelAnimationFrame(ftRaf); ftRaf = 0; }
     const ids = Object.keys(trails).filter(id => trails[id].full.length > 1);
     if (!trailOn() || !ids.length) { cv.style.display = 'none'; return; }
     cv.style.display = 'block';
     const K = 2, CW = 660, CH = 330; if (cv.width !== CW * K) { cv.width = CW * K; cv.height = CH * K; }
     const g = cv.getContext('2d'), W = CW, H = CH, x0 = Terrain.TRACK_START + 200, x1 = Terrain.FINISH_X + 120, sx = (W - 56) / (x1 - x0);
     const gB = H - 34;                                   // fondo del terreno; sotto, la fascia con i nomi dei biomi
-    const X = x => 28 + (x - x0) * sx, sm = t => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
-    const INK = '#0c0c12';
-    // la scheda dei risultati arriva al massimo a 640 px (meno il margine interno): dalla larghezza prevista si sceglie il corpo dei testi, così restano leggibili anche sui telefoni
+    const X = x => 28 + (x - x0) * sx, sm = t => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); }, TX = cx => x0 + (cx - 28) / sx;
+    const INK = '#2d3e48', TAU = Math.PI * 2, A = (hex, a) => `rgba(${hexRgb(hex)},${a})`;
+    // la scheda dei risultati arriva al massimo a 640 px (500 sui telefoni in orizzontale): dalla larghezza prevista si sceglie il corpo dei testi, così restano leggibili
     const short = (window.innerHeight || 800) <= 480, dispW = Math.min(short ? 500 : 640, (window.innerWidth || 640) - 24) - (short ? 36 : 64), fz = Math.max(10.5, Math.min(17, 9.5 / Math.max(0.3, Math.min(1, dispW / CW))));
-    g.setTransform(K, 0, 0, K, 0, 0); g.clearRect(0, 0, W, H); g.fillStyle = '#f0f4f8'; g.fillRect(0, 0, W, H); g.fillStyle = '#d9e2ec';
-    for (let x = 0; x < W; x += 24) g.fillRect(x, 0, 1.5, H); for (let y = 0; y < H; y += 24) g.fillRect(0, y, W, 1.5);
     // profilo: la riva (levigata su ~60 px di pista, così dossi e fango non sporcano il disegno) meno la profondità esatta di laghi e canyon; passo di 14 px
     const STEP = 14, raw = []; for (let x = x0 - 160; x <= x1 + 160; x += STEP) { const b = Terrain.baseHeight(x); raw.push([x, b, Math.max(0, b - Terrain.naturalHeight(x))]); }
     const P = raw.map((q, i) => { let s = 0, c = 0; for (let j = Math.max(0, i - 9); j <= Math.min(raw.length - 1, i + 9); j++) { const w = Math.exp(-Math.pow((j - i) / 3.5, 2)); s += raw[j][1] * w; c += w; } const B = s / c; return [q[0], B - q[2], B]; }).filter(q => q[0] >= x0 && q[0] <= x1);
-    const hAt = x => P[Math.max(0, Math.min(P.length - 1, Math.round((x - P[0][0]) / STEP)))][1];
+    const pAt = x => P[Math.max(0, Math.min(P.length - 1, Math.round((x - P[0][0]) / STEP)))], hAt = x => pAt(x)[1];
     // tratti giganti (dal portale gigante al portale grande), solo se la pista li ha
     const GR = []; (Terrain.PORTALS || []).forEach(p => { if (p.kind !== 'grow') return; const b = Terrain.PORTALS.find(e => e.kind === 'big' && e.grow === p.id); if (b) GR.push([p.x, b.x]); });
     const gk = x => { let k = 0; for (const [ga, gb] of GR) k = Math.max(k, sm((x - (ga - 45)) / 90) * (1 - sm((x - (gb - 110)) / 220))); return k; };
@@ -638,66 +623,126 @@
     });
     const lift = 13, laneGap = ids.length > 1 ? Math.min(6.5, 22 / (ids.length - 1)) : 0, bw0 = ids.length > 3 ? 5.5 : ids.length > 1 ? 6.5 : 8;
     let lo = 1e9, hi = -1e9; P.forEach(q => { lo = Math.min(lo, q[1]); hi = Math.max(hi, q[1]); }); hi = Math.max(hi, altMax);
-    const topPad = 30 + lift + laneGap * (ids.length - 1) + bw0 * (GR.length ? 1.9 : 1) / 2, sy = (gB - 12 - topPad) / Math.max(150, hi - lo), baseY = gB - 12 + lo * sy, Yh = h => baseY - h * sy;
-    const path = () => { g.beginPath(); P.forEach(([x, h], i) => { if (i) g.lineTo(X(x), Yh(h)); else g.moveTo(X(x), Yh(h)); }); };
-    const zs = Terrain.ZONES.filter(z => z.end > x0 && z.start < x1);
-    // 1) il terreno, colorato per bioma (acquerello leggero)
+    const topPad = 34 + lift + laneGap * (ids.length - 1) + bw0 * (GR.length ? 1.9 : 1) / 2, sy = (gB - 12 - topPad) / Math.max(150, hi - lo), baseY = gB - 12 + lo * sy, Yh = h => baseY - h * sy;
+    const zs = Terrain.ZONES.filter(z => z.end > x0 && z.start < x1), ZC = z => FT_PAL[z.key] || '#94a3b8';
+    for (const id of ids) { const R = runs[id], lane = order.indexOf(id), dy = -lift - lane * laneGap; R.Y = R.H2.map(h => Yh(h) + dy); R.kk = R.F.map(q => GR.length ? gk(q[0]) : 0); }
+    const winner = order[0];
+
+    // ======= sfondo piatto, stile illustrazione (si disegna una volta sola in una tela nascosta) =======
+    const cache = document.createElement('canvas'); cache.width = CW * K; cache.height = CH * K; const s = cache.getContext('2d'); s.setTransform(K, 0, 0, K, 0, 0);
+    s.lineCap = 'round'; s.lineJoin = 'round';
+    const CRM = '#f8f4dc', TEAL = '#027a71', TEALD = '#015a53', MINT = '#78ba8e', GRN = '#438c67', BRN = '#6a3a22';
+    const edge = (c, dy, wob) => { c.beginPath(); P.forEach(([x, h], i) => { const yy = Yh(h) + dy + (wob ? (hsh(i, 9.1) - 0.5) * wob : 0); if (i) c.lineTo(X(x), yy); else c.moveTo(X(x), yy); }); };
+    const rr = (c, x, y, w, h, r) => { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); };
+    const star = (c, x, y, r, col) => { c.fillStyle = col; c.beginPath(); c.moveTo(x, y - r); c.quadraticCurveTo(x, y, x + r, y); c.quadraticCurveTo(x, y, x, y + r); c.quadraticCurveTo(x, y, x - r, y); c.quadraticCurveTo(x, y, x, y - r); c.fill(); };
+    // cielo crema, sole pieno, nuvole piatte, tre gabbiani
+    s.fillStyle = '#eeebcb'; s.fillRect(0, 0, W, H);
+    s.fillStyle = '#fb5f35'; s.beginPath(); s.arc(W - 62, 46, 22, 0, TAU); s.fill();
+    for (let i = 0; i < 4; i++) { const cx = 60 + i * (W - 150) / 3 + (hsh(i, 3.3) - 0.5) * 60, cy = 26 + hsh(i, 5.5) * 36, k = 0.8 + hsh(i, 7.1) * 0.5;
+      s.fillStyle = CRM; [[-18, 2, 9], [-7, -6, 11], [7, -4, 10], [19, 2, 8], [0, 3, 10]].forEach(([dx, dyy, r]) => { s.beginPath(); s.arc(cx + dx * k, cy + dyy * k, r * k, 0, TAU); s.fill(); }); }
+    s.strokeStyle = '#2d3e48'; s.lineWidth = 1.8; [[W * 0.3, 40], [W * 0.3 + 16, 48], [W * 0.3 - 14, 50]].forEach(([bx, by]) => { s.beginPath(); s.moveTo(bx - 6, by - 2); s.quadraticCurveTo(bx - 3, by - 5, bx, by); s.quadraticCurveTo(bx + 3, by - 5, bx + 6, by - 2); s.stroke(); });
+    // fasce di colline lontane (giallo, ocra, salmone) come nell'illustrazione
+    [[0.52, 22, 1.3, '#f8eeb0'], [0.34, 18, 3.1, '#f3d79a'], [0.18, 14, 5.2, '#eeb9a6']].forEach(([lv, am, ph, col]) => {
+      const yb = Yh(lo + (hi - lo) * lv); s.fillStyle = col; s.beginPath(); s.moveTo(0, gB);
+      for (let x = 0; x <= W; x += 6) s.lineTo(x, yb - am * (0.5 + 0.5 * Math.sin(x / 80 + ph)));
+      s.lineTo(W, gB); s.closePath(); s.fill(); });
+    // terreno: un colore pieno per bioma e una fascia più scura più sotto
     zs.forEach(z => {
-      const xa = Math.max(x0, z.start), xb = Math.min(x1, z.end), pts = P.filter(q => q[0] >= xa && q[0] <= xb); if (pts.length < 2) return;
-      g.beginPath(); g.moveTo(X(pts[0][0]), gB); pts.forEach(([x, h]) => g.lineTo(X(x), Yh(h))); g.lineTo(X(pts[pts.length - 1][0]), gB); g.closePath();
-      g.fillStyle = `rgba(${hexRgb(z.color || '#94a3b8')},${z.key === 'lava' ? 0.3 : 0.24})`; g.fill();
+      const xa = Math.max(x0, z.start), xb = Math.min(x1, z.end), pts = P.filter(q => q[0] >= xa - STEP && q[0] <= xb + STEP); if (pts.length < 2) return;
+      let top = 1e9; pts.forEach(q => { top = Math.min(top, Yh(q[1])); });
+      s.save(); s.beginPath(); s.rect(X(xa), 0, X(xb) - X(xa) + 0.6, H); s.clip();
+      s.beginPath(); s.moveTo(X(pts[0][0]), gB); pts.forEach(([x, h]) => s.lineTo(X(x), Yh(h))); s.lineTo(X(pts[pts.length - 1][0]), gB); s.closePath(); s.fillStyle = ZC(z); s.fill();
+      s.clip(); s.fillStyle = 'rgba(45,62,72,0.10)'; s.fillRect(X(xa), top + (gB - top) * 0.55, X(xb) - X(xa) + 1, gB);
+      s.restore();
     });
-    // 2) laghi: acqua e lava sopra il fondo, fino al pelo
+    // laghi: acqua e lava piene, con un filo chiaro sul pelo
+    const lakes = [];
     zs.forEach(z => {
       if ((z.key !== 'water' && z.key !== 'lava') || !z.gap) return;
       const off = z.key === 'lava' ? 26 : 28, pts = P.filter(q => q[0] >= z.start && q[0] <= z.end), lvAt = new Map(pts.map(q => [q[0], q[2] - off])), lv = x => lvAt.get(x);
       let run = []; const flush = () => {
-        if (run.length > 1) { g.beginPath(); run.forEach(([x], i) => { const yy = Yh(lv(x)); if (i) g.lineTo(X(x), yy); else g.moveTo(X(x), yy); }); for (let i = run.length - 1; i >= 0; i--) g.lineTo(X(run[i][0]), Yh(run[i][1])); g.closePath();
-          g.fillStyle = z.key === 'lava' ? 'rgba(239,68,68,0.7)' : 'rgba(59,130,246,0.5)'; g.fill();
-          g.strokeStyle = z.key === 'lava' ? '#f97316' : '#2563eb'; g.lineWidth = z.key === 'lava' ? 2 : 1.5; g.beginPath(); run.forEach(([x], i) => { const yy = Yh(lv(x)); if (i) g.lineTo(X(x), yy); else g.moveTo(X(x), yy); }); g.stroke(); }
+        if (run.length > 1) {
+          const yT = Yh(lv(run[Math.floor(run.length / 2)][0])), yB = Math.max(...run.map(q => Yh(q[1])));
+          s.beginPath(); run.forEach(([x], i) => { const yy = Yh(lv(x)); if (i) s.lineTo(X(x), yy); else s.moveTo(X(x), yy); }); for (let i = run.length - 1; i >= 0; i--) s.lineTo(X(run[i][0]), Yh(run[i][1])); s.closePath();
+          s.fillStyle = z.key === 'lava' ? '#fb5f35' : '#5bb5b0'; s.fill();
+          s.save(); s.clip(); s.fillStyle = z.key === 'lava' ? '#c7411f' : '#027a71'; s.fillRect(X(run[0][0]) - 2, yT + (yB - yT) * 0.6, X(run[run.length - 1][0]) - X(run[0][0]) + 4, yB); s.restore();
+          s.strokeStyle = z.key === 'lava' ? '#f5e594' : CRM; s.lineWidth = 2.2; s.beginPath(); run.forEach(([x], i) => { const yy = Yh(lv(x)); if (i) s.lineTo(X(x), yy); else s.moveTo(X(x), yy); }); s.stroke();
+          lakes.push({ kind: z.key, xa: X(run[0][0]), xb: X(run[run.length - 1][0]), yT, yB });
+        }
         run = [];
       };
       pts.forEach(q => { if (q[1] < lv(q[0])) run.push(q); else flush(); }); flush();
     });
-    // 3) tratto gigante: striscia gialla sotto le pennellate, con i due bordi tratteggiati e la scritta
+    // filo chiaro sul bordo del terreno (come il labbro dei prati dell'illustrazione)
+    s.strokeStyle = 'rgba(248,244,220,0.7)'; s.lineWidth = 2.2; edge(s, 0, 0); s.stroke();
+    // gli "abitanti" di ogni bioma: forme piatte, rade
+    const tree = (cx, y, h, col, round) => { s.strokeStyle = BRN; s.lineWidth = 1.5; s.beginPath(); s.moveTo(cx, y + 0.5); s.lineTo(cx, y - h * 0.5); s.stroke(); s.fillStyle = col; s.beginPath(); if (round) s.arc(cx, y - h * 0.72, h * 0.34, 0, TAU); else s.ellipse(cx, y - h * 0.68, h * 0.2, h * 0.36, 0, 0, TAU); s.fill(); };
+    zs.forEach(z => {
+      const xa = Math.max(x0, z.start), xb = Math.min(x1, z.end);
+      for (let cx = X(xa) + 6, i = 0; cx < X(xb) - 6; i++, cx += 12 + hsh(i, z.index + 1.3) * 18) {
+        const tx = TX(cx); if (z.gap && tx > z.gap.g0 - 25 && tx < z.gap.g1 + 25) continue;
+        const y = Yh(hAt(tx)), r1 = hsh(i, z.index * 2.1 + 0.7), r2 = hsh(i, z.index * 3.7 + 1.9);
+        if (z.key === 'hills' || z.key === 'start' || z.key === 'finish') {
+          if (r1 < 0.34) tree(cx, y, 14 + r2 * 7, r2 > 0.5 ? TEAL : '#a3d4ad', r2 <= 0.5);
+        } else if (z.key === 'ice') {
+          if (r1 < 0.5) { const h = 10 + r2 * 7; s.fillStyle = TEAL; s.beginPath(); s.moveTo(cx - 3.6, y + 0.5); s.lineTo(cx, y - h); s.lineTo(cx + 3.6, y + 0.5); s.closePath(); s.fill(); s.fillStyle = CRM; s.beginPath(); s.moveTo(cx - 1.6, y - h * 0.62); s.lineTo(cx, y - h); s.lineTo(cx + 1.6, y - h * 0.62); s.closePath(); s.fill(); }
+        } else if (z.key === 'gravel') {
+          if (r1 < 0.28) { s.strokeStyle = GRN; s.lineWidth = 2.6; s.beginPath(); s.moveTo(cx, y + 0.5); s.lineTo(cx, y - 10); s.stroke(); s.lineWidth = 1.8; s.beginPath(); s.moveTo(cx, y - 3.4); s.lineTo(cx - 3.2, y - 3.4); s.lineTo(cx - 3.2, y - 7); s.moveTo(cx, y - 5.2); s.lineTo(cx + 3.2, y - 5.2); s.lineTo(cx + 3.2, y - 8); s.stroke(); }
+          else if (r1 > 0.82) { s.fillStyle = '#c9633f'; s.beginPath(); s.ellipse(cx, y - 0.6, 2.4 + r2 * 1.6, 1.6, 0, Math.PI, TAU); s.fill(); }
+        } else if (z.key === 'water') {
+          if (r1 < 0.3) { s.strokeStyle = TEAL; s.lineWidth = 1.4; s.beginPath(); s.moveTo(cx, y + 0.5); s.lineTo(cx + (r2 - 0.5) * 2, y - 8 - r2 * 5); s.stroke(); s.fillStyle = '#c9633f'; s.beginPath(); s.ellipse(cx + (r2 - 0.5) * 2, y - 9 - r2 * 5, 1.2, 2.5, 0, 0, TAU); s.fill(); }
+        } else if (z.key === 'ramps') {
+          if (r1 < 0.34) tree(cx, y, 13 + r2 * 7, ['#fb5f35', '#ecbd6f', '#f5e594'][Math.floor(hsh(i, 6.6 + z.index) * 3)], true);
+        } else if (z.key === 'lava') {
+          if (r1 < 0.4) { const hh = 7 + r2 * 9, ww = 3.6 + r2 * 3; s.fillStyle = '#2d3e48'; s.beginPath(); s.moveTo(cx - ww, y + 0.5); s.lineTo(cx - ww * 0.15, y - hh); s.lineTo(cx + ww, y + 0.5); s.closePath(); s.fill(); }
+        }
+      }
+    });
+    // i fiori veri della pista, radi
+    { let lastFx = -99; (Terrain.FLOWERS || []).forEach(f => { if (f.x < x0 || f.x > x1) return; const cx = X(f.x); if (cx - lastFx < 9) return; lastFx = cx; const y = Yh(hAt(f.x)), col = FT_FLOWERS[f.hue % 5], h = 3 + Math.min(5, f.stemScale * 2.4);
+      s.strokeStyle = GRN; s.lineWidth = 1.1; s.beginPath(); s.moveTo(cx, y + 0.5); s.lineTo(cx, y - h); s.stroke();
+      s.fillStyle = col; s.beginPath(); s.arc(cx, y - h, 2, 0, TAU); s.fill(); s.fillStyle = '#f5e594'; s.beginPath(); s.arc(cx, y - h, 0.8, 0, TAU); s.fill(); }); }
+    // ninfee sul pelo dell'acqua
+    (Terrain.LILIES || []).forEach(l => { if (l.x < x0 || l.x > x1) return; const q = pAt(l.x), y = Yh(q[2] - 28), cx = X(l.x); if (q[1] >= q[2] - 28) return; s.fillStyle = MINT; s.beginPath(); s.ellipse(cx, y + 0.6, 3.4 * l.size, 1.4 * l.size, 0, 0, TAU); s.fill(); if (l.bloom) { s.fillStyle = '#e3937a'; s.beginPath(); s.arc(cx, y - 0.6, 1.3, 0, TAU); s.fill(); } });
+    // ponti: impalcato marrone piatto con un filo crema sopra e i due pali
+    (Terrain.BRIDGES || []).forEach(b => {
+      if (b.end < x0 || b.start > x1) return; const arch = Math.min(1, 6 / (Math.max(1, Math.abs(b.peak)) * sy)), pts = [];
+      for (let x = Math.max(x0, b.start); x <= Math.min(x1, b.end); x += 8) { const q = pAt(x); pts.push([x, q[2] + (Terrain.height(x) - Terrain.baseHeight(x)) * arch]); }
+      if (pts.length < 2) return; const dk = () => { s.beginPath(); pts.forEach(([x, h], i) => { if (i) s.lineTo(X(x), Yh(h)); else s.moveTo(X(x), Yh(h)); }); };
+      s.strokeStyle = CRM; s.lineWidth = 6; dk(); s.stroke(); s.strokeStyle = BRN; s.lineWidth = 3.4; dk(); s.stroke();
+      s.strokeStyle = BRN; s.lineWidth = 2; [pts[0], pts[pts.length - 1]].forEach(([x, h]) => { s.beginPath(); s.moveTo(X(x), Yh(h) - 2); s.lineTo(X(x), Yh(h) + 8); s.stroke(); });
+    });
+    // tratto gigante: fascia gialla piena e trasparente con un'etichetta crema
     GR.forEach(([ga, gb]) => {
       const xa = Math.max(x0, ga), xb = Math.min(x1, gb); if (xb <= xa) return;
-      g.fillStyle = 'rgba(250,204,21,0.17)'; g.fillRect(X(xa), 18, X(xb) - X(xa), gB - 18);
-      g.strokeStyle = 'rgba(12,12,18,0.4)'; g.lineWidth = 1.2; g.setLineDash([3, 4]); [xa, xb].forEach(x => { g.beginPath(); g.moveTo(X(x), 18); g.lineTo(X(x), gB); g.stroke(); }); g.setLineDash([]);
-      g.fillStyle = 'rgba(12,12,18,0.8)'; g.font = `700 ${fz.toFixed(1)}px Kalam, cursive`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(I18n.t('crazy.grow'), (X(xa) + X(xb)) / 2, 5 + fz * 0.6);
+      s.fillStyle = 'rgba(245,229,148,0.5)'; s.fillRect(X(xa), 18, X(xb) - X(xa), gB - 18);
+      s.font = `700 ${fz.toFixed(1)}px Kalam, cursive`; const nm = I18n.t('crazy.grow'), tw = s.measureText(nm).width + 16, cx = (X(xa) + X(xb)) / 2;
+      rr(s, cx - tw / 2, 3, tw, fz + 8, (fz + 8) / 2); s.fillStyle = CRM; s.fill();
+      s.fillStyle = TEALD; s.textAlign = 'center'; s.textBaseline = 'middle'; s.fillText(nm, cx, 3 + (fz + 8) / 2 + 0.5);
     });
-    // 4) linea del terreno a matita e ponti (impalcato in legno con i due pali)
-    g.strokeStyle = 'rgba(16,42,67,0.65)'; g.lineWidth = 2; g.lineJoin = 'round'; path(); g.stroke();
-    (Terrain.BRIDGES || []).forEach(b => {
-      if (b.end < x0 || b.start > x1) return; const pts = [], arch = Math.min(1, 6 / (Math.max(1, Math.abs(b.peak)) * sy));   // la scala verticale è molto esagerata: l'arco resta basso, come un ponte e non una tenda
-       for (let x = Math.max(x0, b.start); x <= Math.min(x1, b.end); x += 8) { const q = P[Math.max(0, Math.min(P.length - 1, Math.round((x - P[0][0]) / STEP)))]; pts.push([x, q[2] + (Terrain.height(x) - Terrain.baseHeight(x)) * arch]); }
-      if (pts.length < 2) return; const dk = () => { g.beginPath(); pts.forEach(([x, h], i) => { if (i) g.lineTo(X(x), Yh(h)); else g.moveTo(X(x), Yh(h)); }); };
-      g.lineCap = 'round'; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 5.6; dk(); g.stroke(); g.strokeStyle = '#7c4a1d'; g.lineWidth = 2.8; dk(); g.stroke();
-      g.strokeStyle = '#7c4a1d'; g.lineWidth = 1.6; [pts[0], pts[pts.length - 1]].forEach(([x, h]) => { g.beginPath(); g.moveTo(X(x), Yh(h)); g.lineTo(X(x), Yh(h) + 7); g.stroke(); });
-    });
-    // 5) fascia dei biomi, con il nome (solo se ci sta)
+    // traguardo: palo, bandiera a scacchi, festoni
+    const fx = X(Terrain.FINISH_X), fy = Yh(hAt(Terrain.FINISH_X)), fh = 36;
+    { s.strokeStyle = INK; s.lineWidth = 2.2; s.beginPath(); s.moveTo(fx, fy + 1); s.lineTo(fx, fy - fh); s.stroke();
+      const fw = 22, fhh = 14, cols = 4, rows = 3; for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const wv = Math.sin(c * 0.9) * 1.3; s.fillStyle = (r + c) % 2 ? INK : CRM; s.fillRect(fx + 1 + c * fw / cols, fy - fh + 1 + r * fhh / rows + wv, fw / cols + 0.4, fhh / rows + 0.4); }
+      const bun = ['#fb5f35', '#f5e594', '#5bb5b0', '#78ba8e', '#e3937a', '#ecbd6f'], bx0 = fx, by0 = fy - fh + 1, bx1 = fx - 62, by1 = fy - 8;
+      s.strokeStyle = 'rgba(45,62,72,0.55)'; s.lineWidth = 1; s.beginPath(); s.moveTo(bx0, by0); s.quadraticCurveTo((bx0 + bx1) / 2, Math.max(by0, by1) + 6, bx1, by1); s.stroke();
+      for (let k = 1; k <= 6; k++) { const t = k / 7, px = (1 - t) * (1 - t) * bx0 + 2 * (1 - t) * t * ((bx0 + bx1) / 2) + t * t * bx1, py = (1 - t) * (1 - t) * by0 + 2 * (1 - t) * t * (Math.max(by0, by1) + 6) + t * t * by1; s.fillStyle = bun[k - 1]; s.beginPath(); s.moveTo(px - 3.4, py); s.lineTo(px + 3.4, py); s.lineTo(px, py + 7); s.closePath(); s.fill(); } }
+    // fascia dei biomi: pastiglie piene con il nome
     const bY = gB + 7, bH = H - 5 - bY;
-    g.font = `700 ${fz.toFixed(1)}px Kalam, cursive`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    s.font = `700 ${fz.toFixed(1)}px Kalam, cursive`; s.textAlign = 'center'; s.textBaseline = 'middle';
     zs.forEach(z => {
       const xa = X(Math.max(x0, z.start)), xb = X(Math.min(x1, z.end)); if (xb - xa < 4) return;
-      g.fillStyle = `rgba(${hexRgb(z.color || '#94a3b8')},0.55)`; g.strokeStyle = 'rgba(16,42,67,0.6)'; g.lineWidth = 1.2;
-      g.beginPath(); if (g.roundRect) g.roundRect(xa + 0.6, bY, xb - xa - 1.2, bH, 4); else g.rect(xa + 0.6, bY, xb - xa - 1.2, bH); g.fill(); g.stroke();
+      rr(s, xa + 0.8, bY, xb - xa - 1.6, bH, bH / 2); s.fillStyle = FT_BAND[z.key] || '#94a3b8'; s.fill();
       if (z.key === 'start' || z.key === 'finish') return;
-      let nm = I18n.t('sign.' + z.key); if (g.measureText(nm).width + 8 >= xb - xa) nm = nm.split(' ')[0];   // se non ci sta tutto il nome, la prima parola
-      if (g.measureText(nm).width + 8 < xb - xa) { g.fillStyle = 'rgba(12,12,18,0.85)'; g.fillText(nm, (xa + xb) / 2, bY + bH / 2 + 0.5); }
+      let nm = I18n.t('sign.' + z.key); if (s.measureText(nm).width + 10 >= xb - xa) nm = nm.split(' ')[0];
+      if (s.measureText(nm).width + 10 < xb - xa) { s.fillStyle = z.key === 'hills' ? CRM : '#2d3e48'; s.fillText(nm, (xa + xb) / 2, bY + bH / 2 + 0.8); }
     });
-    // portali (anelli d'inchiostro): neri gli specchi, tratteggiate le uscite; il gigante e il grande sono già nella striscia gialla
-    const drawPortalMarks = () => {
-    (Terrain.PORTALS || []).forEach(p => { if (p.kind === 'grow' || p.kind === 'big' || p.x < x0 || p.x > x1) return; const gx = X(p.x), gy = Yh(hAt(p.x)) - 12; g.strokeStyle = p.kind === 'shift' ? 'rgba(16,42,67,0.75)' : INK; g.lineWidth = p.kind === 'mirror' ? 3 : 1.8; g.setLineDash(p.kind === 'exit' ? [3, 3] : []); g.beginPath(); g.ellipse(gx, gy, 4.4, 12, 0, 0, Math.PI * 2); g.save(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth += 3; g.setLineDash([]); g.stroke(); g.restore(); g.stroke(); });
-    g.setLineDash([]);
-    };
-    // traguardo: bandierina
-    const fx = X(Terrain.FINISH_X), fy = Yh(hAt(Terrain.FINISH_X));
-    g.strokeStyle = INK; g.lineWidth = 2.2; g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx, fy - 32); g.stroke(); g.fillStyle = INK; g.beginPath(); g.moveTo(fx, fy - 32); g.lineTo(fx + 16, fy - 26); g.lineTo(fx, fy - 20); g.closePath(); g.fill();
-    // le corse, dall'ultimo al primo (il vincitore resta in vista)
-    order.slice().reverse().forEach(id => {
-      const meta = raceMeta[id]; if (!meta) return; const lane = order.indexOf(id), { F, H2 } = runs[id], rgb = hexRgb(meta.color), ink = mixRgb(rgb, 0.4);
-      const dy = -lift - lane * laneGap, Y = H2.map(h => Yh(h) + dy), bw = bw0, kk = F.map(q => GR.length ? gk(q[0]) : 0);
+
+    // ======= le corse (si ridisegnano a ogni fotogramma, tagliate al punto in cui è arrivato il pennello) =======
+    const sparks = [], conf = []; let confMade = false, lastT = 0;
+    const headAt = (R, xp) => { const F = R.F; if (xp < F[0][0]) return null; let i = 0; while (i < F.length - 1 && F[i + 1][0] <= xp) i++; if (i >= F.length - 1 || F[i + 1][2]) return [X(F[i][0]), R.Y[i], i, i >= F.length - 1]; const t = (xp - F[i][0]) / Math.max(1, F[i + 1][0] - F[i][0]); return [X(xp), R.Y[i] + (R.Y[i + 1] - R.Y[i]) * t, i, false]; };
+    const drawRun = id => {
+      const meta = raceMeta[id]; if (!meta) return; const { F, Y, kk } = runs[id], rgb = hexRgb(meta.color), ink = mixRgb(rgb, 0.4), bw = bw0;
       g.lineJoin = 'round';
       // un tratto di pennellata: largo bw (più largo nel tratto gigante). Tutto il percorso in un colpo solo se non ci sono giganti; altrimenti segmento per segmento
       const stroke = (col, w, off, cap) => {
@@ -705,22 +750,51 @@
         if (!GR.length) { g.lineWidth = w; g.beginPath(); let pen = false; for (let i = 0; i < F.length; i++) { const xx = X(F[i][0]), yy = Y[i] + off; if (F[i][2]) pen = false; if (!pen) { g.moveTo(xx, yy); pen = true; } else g.lineTo(xx, yy); } g.stroke(); return; }
         for (let i = 1; i < F.length; i++) { if (F[i][2]) continue; const f = 1 + 0.85 * (kk[i - 1] + kk[i]) / 2; g.lineWidth = w * f; g.beginPath(); g.moveTo(X(F[i - 1][0]), Y[i - 1] + off * f); g.lineTo(X(F[i][0]), Y[i] + off * f); g.stroke(); }
       };
-      stroke('rgba(255,255,255,0.95)', bw + 3.2, 0);              // bordo chiaro: separa dalle altre corsie
-      stroke(`rgba(${rgb},1)`, bw, 0);                            // corpo della pennellata piena
-      stroke(`rgba(${ink},0.5)`, bw * 0.34, bw * 0.28, 'butt');   // ombra sul lato basso
-      stroke('rgba(255,255,255,0.55)', 0.9, -bw * 0.22, 'butt');  // riga di carta che affiora
+      stroke('#f8f4dc', bw + 3.6, 0);                             // bordino crema: separa dalle altre corsie
+      stroke(`rgba(${rgb},1)`, bw, 0);                            // nastro pieno nel colore del giocatore
       g.lineCap = 'round';
       // salti: arco tratteggiato fra la fine di un tratto e l'inizio del successivo
       g.setLineDash([2, 4.5]); g.strokeStyle = `rgba(${rgb},0.95)`; g.lineWidth = 2;
       for (let i = 1; i < F.length; i++) if (F[i][2]) { const ax = X(F[i - 1][0]), ay = Y[i - 1], bx = X(F[i][0]), by = Y[i]; g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo((ax + bx) / 2, Math.min(ay, by) - 16, bx, by); g.stroke(); }
       g.setLineDash([]);
-      // macchia scura di partenza, schizzi radi e pallino all'arrivo
-      { const x = X(F[0][0]), y = Y[0]; g.fillStyle = `rgba(${ink},0.95)`; g.beginPath(); g.ellipse(x, y, bw * 0.95, bw, 0, 0, Math.PI * 2); g.fill();
-        for (let i = 8; i < F.length; i += 14) { const h = hsh(i, 3.3); if (h > 0.4) continue; g.fillStyle = `rgba(${rgb},0.9)`; g.beginPath(); g.arc(X(F[i][0]) + (h - 0.2) * 8, Y[i] + (hsh(i, 1.9) > 0.5 ? -1 : 1) * (bw + 3 + 6 * h), 1 + 1.4 * h, 0, Math.PI * 2); g.fill(); } }
-      const e = F.length - 1; g.fillStyle = meta.color; g.strokeStyle = INK; g.lineWidth = 1.8; g.beginPath(); g.arc(X(F[e][0]), Y[e], 5, 0, Math.PI * 2); g.fill(); g.stroke();
-      if (ids.length > 1) { const rk = rank(id); if (rk < 9) { g.fillStyle = INK; g.font = 'bold 10px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(rk + 1), X(F[e][0]), Y[e] + 0.5); } }
-    });
-    drawPortalMarks();
+      // macchia scura di partenza e schizzi radi
+      { const x = X(F[0][0]), y = Y[0]; g.fillStyle = '#f8f4dc'; g.beginPath(); g.arc(x, y, bw * 0.95 + 1.8, 0, TAU); g.fill(); g.fillStyle = `rgb(${rgb})`; g.beginPath(); g.arc(x, y, bw * 0.95, 0, TAU); g.fill(); }
+    };
+    const portalMarks = xp => { (Terrain.PORTALS || []).forEach(p => { if (p.kind === 'grow' || p.kind === 'big' || p.x < x0 || p.x > xp) return; const gx = X(p.x), gy = Yh(hAt(p.x)) - 12; g.strokeStyle = p.kind === 'shift' ? 'rgba(16,42,67,0.75)' : INK; g.lineWidth = p.kind === 'mirror' ? 3 : 1.8; g.setLineDash(p.kind === 'exit' ? [3, 3] : []); g.beginPath(); g.ellipse(gx, gy, 4.4, 12, 0, 0, TAU); g.save(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth += 3; g.setLineDash([]); g.stroke(); g.restore(); g.stroke(); }); g.setLineDash([]); };
+    const frame = (p, tAfter, dt) => {
+      g.setTransform(K, 0, 0, K, 0, 0); g.drawImage(cache, 0, 0, W, H);
+      const xp = x0 + sm(p) * (x1 - x0);
+      g.save(); g.beginPath(); g.rect(0, 0, p >= 1 ? W : X(xp) + 1, H); g.clip();
+      order.slice().reverse().forEach(drawRun); g.restore();
+      portalMarks(p >= 1 ? x1 + 1 : xp);
+      // la testa del pennello mentre dipinge, con scintille
+      if (p < 1) order.slice().reverse().forEach(id => { const h = headAt(runs[id], xp); if (!h || h[3]) return; const meta = raceMeta[id]; if (!meta) return;
+        g.fillStyle = '#f8f4dc'; g.beginPath(); g.arc(h[0], h[1], bw0 * 0.9 + 3, 0, TAU); g.fill(); g.fillStyle = meta.color; g.beginPath(); g.arc(h[0], h[1], bw0 * 0.75 + 1, 0, TAU); g.fill();
+        if (Math.random() < 0.5) sparks.push({ x: h[0], y: h[1], vx: (Math.random() - 0.5) * 30, vy: -10 - Math.random() * 24, life: 0, max: 0.45 + Math.random() * 0.3, r: 1.6 + Math.random() * 2, col: id === winner ? '#f5e594' : '#f8f4dc' }); });
+      sparks.forEach(q => { q.life += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 40 * dt; }); for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].life > sparks[i].max) sparks.splice(i, 1);
+      sparks.forEach(q => { const a = 1 - q.life / q.max; g.globalAlpha = Math.max(0, a); star(g, q.x, q.y, q.r * (0.6 + 0.6 * a), q.col); }); g.globalAlpha = 1;
+      // arrivo: pallini, numeri e medaglia d'oro per chi vince
+      if (p >= 1) order.slice().reverse().forEach(id => { const meta = raceMeta[id]; if (!meta) return; const { F, Y } = runs[id], e = F.length - 1, k = sm(tAfter / 0.45), ex = X(F[e][0]), ey = Y[e];
+        if (id === winner && ids.length > 1 || (id === winner && tAfter < 9)) { g.strokeStyle = `rgba(251,95,53,${(0.95 * k).toFixed(2)})`; g.lineWidth = 2.6; g.beginPath(); g.arc(ex, ey, 5 + 5.5 * k, 0, TAU); g.stroke(); star(g, ex + 9 * k, ey - 9 * k, 3.4 * k, '#f5e594'); star(g, ex - 8 * k, ey - 10 * k, 2.4 * k, '#ecbd6f'); }
+        g.fillStyle = '#f8f4dc'; g.beginPath(); g.arc(ex, ey, 7.4 + 0.8 * k, 0, TAU); g.fill(); g.fillStyle = meta.color; g.beginPath(); g.arc(ex, ey, 5.6 + 0.8 * k, 0, TAU); g.fill();
+        if (ids.length > 1) { const rk = rank(id); if (rk < 9) { g.fillStyle = '#f8f4dc'; g.font = 'bold 10px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(rk + 1), ex, ey + 0.5); } } });
+      // coriandoli dal traguardo
+      if (animate && p >= 1) {
+        if (!confMade) { confMade = true; const cols = order.map(id => raceMeta[id] && raceMeta[id].color).filter(Boolean).concat(['#f5e594', '#fb5f35', '#5bb5b0', '#f8f4dc', '#ecbd6f']); for (let i = 0; i < 90; i++) conf.push({ x: fx + (Math.random() - 0.5) * 16, y: fy - fh, vx: (Math.random() - 0.5) * 150, vy: -90 - Math.random() * 150, rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 10, w: 3 + Math.random() * 3, h: 1.6 + Math.random() * 1.6, col: cols[i % cols.length] }); }
+        conf.forEach(c => { c.x += c.vx * dt; c.y += c.vy * dt; c.vy += 150 * dt; c.vx *= 0.992; c.rot += c.vr * dt; const a = Math.max(0, Math.min(1, (3.2 - tAfter) / 1.2)); if (a <= 0) return; g.globalAlpha = a; g.save(); g.translate(c.x, c.y); g.rotate(c.rot); g.fillStyle = c.col; g.fillRect(-c.w / 2, -c.h / 2, c.w, c.h * Math.abs(Math.cos(c.rot * 1.3)) + 0.6); g.restore(); }); g.globalAlpha = 1;
+      }
+    };
+    const still = !animate || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    if (still) { frame(1, 99, 0); return; }
+    const T0 = performance.now() + 450, TDRAW = 2400, TEND = TDRAW + 3400;
+    frame(0, 0, 0); lastT = performance.now();
+    const loop = now => {
+      const el = now - T0, dt = Math.min(0.05, Math.max(0, (now - lastT) / 1000)); lastT = now;
+      if (el < 0) { ftRaf = requestAnimationFrame(loop); return; }
+      if (el >= TEND) { frame(1, 99, 0); ftRaf = 0; return; }
+      frame(Math.min(1, el / TDRAW), Math.max(0, (el - TDRAW) / 1000), dt); ftRaf = requestAnimationFrame(loop);
+    };
+    ftRaf = requestAnimationFrame(loop);
   }
 
   // alone luminoso della bici immune ai portali (dopo un salto): nel colore del giocatore, pulsa e si spegne negli ultimi 600 ms
@@ -827,10 +901,48 @@
   }
 
   window.__dw = { racers: () => latestRacers, portals: () => pst, trails, meta: () => raceMeta, drawFinalTrace };   // solo per i test
+  // ---- Lentezza: la propria bici va piano per un po' → lampeggia e il pulsante suggerisce di cambiare forma ----
+  // px/tick (60 Hz): con il motore al massimo si sta sopra 5; sotto 2.4 si arranca (fango, salita, forma sbagliata). Isteresi per non sfarfallare.
+  const SLOW_ON = 2.4, SLOW_OFF = 3.6, SLOW_HOLD_MS = 1100, SLOW_FREE_MS = 3200;
+  let raceT0 = 0, slowOn = false, slowSince = 0, fastSince = 0, ctrlHintT = 0;
+  const jnSeen = {};
+  function setSlow(on) {
+    if (on === slowOn) return; slowOn = on;
+    els.btnRedrawTrigger.classList.toggle('blink', on);
+    els.slowHint.style.display = on ? 'block' : 'none';
+    if (on && typeof Sfx !== 'undefined' && Sfx.click) { try { Sfx.click(); } catch (e) {} }
+  }
+  function resetSlow() { slowSince = fastSince = 0; setSlow(false); }
+  function updateSlow(me, now) {
+    const can = me && !me.finished && myRedrawsLeft > 0 && raceT0 && now - raceT0 > SLOW_FREE_MS && els.redrawModal.style.display !== 'flex' && !(me.im > 0) && (me.sc || 1) < 1.2;
+    if (!can) { slowSince = fastSince = 0; setSlow(false); return; }
+    const v = Math.abs(me.vx || 0);
+    if (!slowOn) { if (v < SLOW_ON) { if (!slowSince) slowSince = now; else if (now - slowSince > SLOW_HOLD_MS) setSlow(true); } else slowSince = 0; }
+    else { if (v > SLOW_OFF) { if (!fastSince) fastSince = now; else if (now - fastSince > 500) { fastSince = 0; slowSince = 0; setSlow(false); } } else fastSince = 0; }
+  }
+  // suggerimento sui comandi: compare al "VIA" per qualche secondo, poi sfuma
+  function showCtrlHint() {
+    if (!els.ctrlHint) return; clearTimeout(ctrlHintT);
+    els.ctrlHint.style.display = 'block'; els.ctrlHint.classList.remove('fade'); void els.ctrlHint.offsetWidth;
+    ctrlHintT = setTimeout(() => { els.ctrlHint.classList.add('fade'); ctrlHintT = setTimeout(hideCtrlHint, 900); }, 5200);
+  }
+  function hideCtrlHint() { clearTimeout(ctrlHintT); if (els.ctrlHint) els.ctrlHint.style.display = 'none'; }
+  // salto di qualcuno (contatore dall'host): nuvoletta di polvere dalle ruote; per la propria bici anche il suono
+  function jumpFx(id, r) {
+    const seen = jnSeen[id]; jnSeen[id] = r.jn || 0;
+    if (seen === undefined || !r.jn || r.jn === seen) return;
+    for (const wx of [r.fwX, r.rwX]) {
+      const wy = wx === r.fwX ? r.fwY : r.rwY;
+      for (let q = 0; q < 5 && particles.length < 190; q++) particles.push({ x: wx + (Math.random() - 0.5) * 50, y: wy + 46, vx: (Math.random() - 0.5) * 3.2, vy: -Math.random() * 1.6, g: -0.01, dl: 0.03, life: 0.9, size: 7 + Math.random() * 11, col: DUST });
+    }
+    if (id === Net.myId && typeof Sfx !== 'undefined' && Sfx.jump) { try { Sfx.jump(); } catch (e) {} }
+  }
+
   function renderRace(ts) {
     const t0 = performance.now();
     interpolateRacers(t0);
     const me = latestRacers[Net.myId];
+    updateSlow(me, t0);
     zoomFor(me, t0);   // ruote giganti: la telecamera si allontana (cambia viewW/viewH)
     const w = viewW, h = viewH;
     updateCamera(Math.min(0.1, (ts - (lastCamTs || ts)) / 1000), w, h); lastCamTs = ts;
@@ -872,25 +984,28 @@
     Object.entries(latestRacers).sort((a, b) => (a[0] === Net.myId) - (b[0] === Net.myId)).forEach(([id, r]) => {
       const meta = raceMeta[id]; if (!meta) return;
       const cy = (y) => y - Sim.GROUND_Y + groundY, cx = r.x - camX;
+      jumpFx(id, r);
       if (cx < -250 || cx > w + 250) return;
+      const blink = slowOn && id === Net.myId; if (blink) { ctx2d.save(); ctx2d.globalAlpha = 0.38 + 0.62 * (0.5 + 0.5 * Math.sin(t0 / 85)); }
       let sc = 1; const ar = arrAt[id];
       if (ar) { const tt = t0 - ar.t0; sc = tt < 130 ? 0.001 : Math.max(0.001, Math.min(1.15, easeOutBack(Math.min(1, (tt - 130) / 420)))); }
       if (sc !== 1) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(sc, sc); ctx2d.translate(-cx, -cy(r.y)); }
       if (r.im > 0) drawGlow(ctx2d, cx, cy(r.y), meta.color, r.im, t0);
       const gs = r.sc || 1, bigB = gs > 1.01;   // la bici cresce insieme alle ruote
       if (bigB) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(gs, gs); ctx2d.translate(-cx, -cy(r.y)); }
-      drawBike(cx, cy(r.y), r.angle, meta.color);
       if (bigB) ctx2d.restore();
       const hR = wheelHeat(id, 'r', r.rwX, r.rwY), hF = wheelHeat(id, 'f', r.fwX, r.fwY);
       drawWheel(r.rwX - camX, cy(r.rwY), r.rwAngle, meta.vr || meta.vertices, meta.color, id === Net.myId, hR, meta.vr ? meta.mr : null, id, r.sc);
       drawWheel(r.fwX - camX, cy(r.fwY), r.fwAngle, meta.vf || meta.vertices, meta.color, id === Net.myId, hF, meta.vf ? meta.mf : null, id, r.sc);
       lavaDrips(id, r, meta, hR, hF);
       if (bigB) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(gs, gs); ctx2d.translate(-cx, -cy(r.y)); }
+      drawBike(cx, cy(r.y), r.angle, meta.color);   // il telaio sta sopra le ruote, come in una bici vista di lato
       drawRider(cx, cy(r.y), r.angle, meta.color, meta.name, id === Net.myId);
       if (bigB) ctx2d.restore();
       if (bigB && gs > 1.3) giantDust(r, gs);
       if (r.im > 0) drawGlow(ctx2d, cx, cy(r.y), meta.color, r.im, t0, true);
       if (sc !== 1) ctx2d.restore();
+      if (blink) ctx2d.restore();
 
       const zk = Terrain.zoneKeyAt(r.x);
       const wet = zk === 'water' && Terrain.isWater(r.x);
@@ -927,19 +1042,23 @@
     if (qSlow > 90 && Scenery.quality < 2) { Scenery.setQuality(Scenery.quality + 1); Flora.setQuality(Scenery.quality); qSlow = 0; }
   }
 
+  // ---- stile illustrazione: forme piatte, colori pieni, un bordino crema al posto del contorno scuro ----------------------------------
+  const CREAM = '#f8f4dc', SLATE = '#2d3e48', SUN = '#fb5f35', TAU2 = Math.PI * 2;
+  const rrect = (c, x, y, w, h, r) => { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); };
   function drawBike(x, y, a, c) {
     ctx2d.save(); ctx2d.translate(x, y); ctx2d.rotate(a); ctx2d.lineCap = 'round'; ctx2d.lineJoin = 'round';
-    ctx2d.shadowColor = 'rgba(0,0,0,0.4)'; ctx2d.shadowBlur = 10; ctx2d.shadowOffsetY = 8;
-    ctx2d.lineWidth = 7; ctx2d.strokeStyle = c; ctx2d.beginPath();
-    ctx2d.moveTo(-90, 0); ctx2d.lineTo(0, 0); ctx2d.lineTo(-20, -55); ctx2d.lineTo(-90, 0);
-    ctx2d.moveTo(0, 0); ctx2d.lineTo(55, -45); ctx2d.lineTo(-20, -55); ctx2d.stroke();
-    ctx2d.shadowColor = 'transparent';
-    ctx2d.strokeStyle = '#94a3b8'; ctx2d.lineWidth = 6; ctx2d.beginPath(); ctx2d.moveTo(90, 0); ctx2d.lineTo(55, -45); ctx2d.stroke();
-    ctx2d.strokeStyle = '#1e293b'; ctx2d.lineWidth = 5; ctx2d.beginPath(); ctx2d.moveTo(55, -45); ctx2d.lineTo(45, -70); ctx2d.lineTo(60, -80); ctx2d.stroke();
-    ctx2d.fillStyle = c; ctx2d.beginPath(); ctx2d.arc(60, -80, 7, 0, Math.PI * 2); ctx2d.fill();
-    ctx2d.strokeStyle = '#1e293b'; ctx2d.lineWidth = 5; ctx2d.beginPath(); ctx2d.moveTo(-20, -55); ctx2d.lineTo(-25, -75); ctx2d.stroke();
-    ctx2d.fillStyle = '#1e293b'; ctx2d.beginPath(); ctx2d.ellipse(-30, -78, 16, 5, Math.PI/12, 0, 2*Math.PI); ctx2d.fill();
-    ctx2d.fillStyle = '#475569'; ctx2d.beginPath(); ctx2d.arc(0, 0, 10, 0, Math.PI * 2); ctx2d.fill();
+    const dk = `rgb(${mixRgb(hexRgb(c), 0.72)})`;
+    const frame = () => { ctx2d.beginPath(); ctx2d.moveTo(-90, 0); ctx2d.lineTo(0, 0); ctx2d.lineTo(-20, -55); ctx2d.lineTo(-90, 0); ctx2d.moveTo(0, 0); ctx2d.lineTo(55, -45); ctx2d.lineTo(-20, -55); };
+    const fork = () => { ctx2d.beginPath(); ctx2d.moveTo(90, 0); ctx2d.lineTo(55, -45); };
+    const bars = () => { ctx2d.beginPath(); ctx2d.moveTo(55, -45); ctx2d.lineTo(45, -70); ctx2d.lineTo(60, -80); };
+    // bordino crema sotto, poi il telaio nel colore del giocatore (un tono più scuro), forcella e manubrio in ardesia
+    ctx2d.strokeStyle = CREAM; ctx2d.lineWidth = 15; frame(); ctx2d.stroke(); fork(); ctx2d.stroke(); bars(); ctx2d.stroke();
+    ctx2d.strokeStyle = dk; ctx2d.lineWidth = 8; frame(); ctx2d.stroke();
+    ctx2d.strokeStyle = SLATE; ctx2d.lineWidth = 7; fork(); ctx2d.stroke(); ctx2d.lineWidth = 6; bars(); ctx2d.stroke();
+    ctx2d.fillStyle = c; ctx2d.beginPath(); ctx2d.arc(60, -80, 8, 0, TAU2); ctx2d.fill();
+    ctx2d.strokeStyle = SLATE; ctx2d.lineWidth = 6; ctx2d.beginPath(); ctx2d.moveTo(-20, -55); ctx2d.lineTo(-25, -75); ctx2d.stroke();
+    ctx2d.fillStyle = SLATE; ctx2d.beginPath(); ctx2d.ellipse(-30, -78, 17, 6, Math.PI / 12, 0, TAU2); ctx2d.fill();
+    ctx2d.fillStyle = CREAM; ctx2d.beginPath(); ctx2d.arc(0, 0, 11, 0, TAU2); ctx2d.fill(); ctx2d.fillStyle = SLATE; ctx2d.beginPath(); ctx2d.arc(0, 0, 5, 0, TAU2); ctx2d.fill();
     ctx2d.restore();
   }
 
@@ -986,23 +1105,21 @@
   function drawWheel(x, y, a, v, c, isMe, heat, mArr, id, sc) {
     ctx2d.save(); ctx2d.translate(x, y); ctx2d.rotate(a);
     if (sc && sc !== 1) ctx2d.scale(sc, sc);   // portale gigante: stessa forma, più grande (i tratti restano della stessa grossezza)
-    const ls = sc && sc !== 1 ? 1 / sc : 1;
-
-    // Raggi adattabili dinamicamente alla forma tracciata
+    const ls = sc && sc !== 1 ? 1 / sc : 1, dark = `rgb(${mixRgb(hexRgb(c), 0.7)})`, melted = !!mArr;
+    const trace = () => { if (melted) smoothPath(v); else { ctx2d.beginPath(); v.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y)); ctx2d.closePath(); } };
+    ctx2d.lineJoin = 'round'; ctx2d.lineCap = 'round';
+    // 1) bordino crema (come un adesivo): stacca la ruota da qualunque sfondo, al posto del vecchio contorno scuro
+    trace(); ctx2d.lineWidth = (isMe ? 11 : 8) * ls; ctx2d.strokeStyle = CREAM; ctx2d.stroke();
+    // 2) corpo pieno, opaco, nel colore del giocatore
+    ctx2d.fillStyle = c; ctx2d.fill();
+    // 3) la stessa forma ridotta, un tono più scuro: dà volume senza sfumature
+    ctx2d.save(); ctx2d.scale(0.64, 0.64); trace(); ctx2d.fillStyle = dark; ctx2d.fill(); ctx2d.restore();
+    // 4) raggi crema che mostrano la rotazione
     if (v && v.length > 0) {
-      ctx2d.lineWidth = 2 * ls;
-      ctx2d.strokeStyle = 'rgba(15,23,42,0.2)';
+      ctx2d.lineWidth = 3.2 * ls; ctx2d.strokeStyle = 'rgba(248,244,220,0.62)';
       const step = Math.max(1, Math.floor(v.length / 6));
-      for (let i = 0; i < v.length; i += step) {
-        let p = v[i];
-        ctx2d.beginPath(); ctx2d.moveTo(0, 0); ctx2d.lineTo(p.x, p.y); ctx2d.stroke();
-      }
+      for (let i = 0; i < v.length; i += step) { const p = v[i]; ctx2d.beginPath(); ctx2d.moveTo(0, 0); ctx2d.lineTo(p.x * 0.64, p.y * 0.64); ctx2d.stroke(); }
     }
-
-    const melted = !!mArr;
-    if (melted) smoothPath(v); else { ctx2d.beginPath(); v.forEach((p, i) => i === 0 ? ctx2d.moveTo(p.x, p.y) : ctx2d.lineTo(p.x, p.y)); ctx2d.closePath(); }
-    ctx2d.fillStyle = c; ctx2d.globalAlpha = 0.85; ctx2d.fill();
-    ctx2d.globalAlpha = 1; ctx2d.lineWidth = (isMe ? 4 : 2.5) * ls; ctx2d.strokeStyle = '#0f172a'; ctx2d.stroke();
     if (melted || heat > 0.02) {
       // bordo incandescente: dove il materiale è più sciolto (e mentre è nella lava) brilla d'arancio, con un alone; poi si raffredda
       const n = v.length, hh = Math.max(0.0, heat);
@@ -1018,15 +1135,22 @@
       }
       ctx2d.restore();
     }
-    ctx2d.beginPath(); ctx2d.arc(0, 0, 8, 0, Math.PI * 2); ctx2d.fillStyle = '#0f172a'; ctx2d.fill(); ctx2d.restore();
+    // 5) mozzo: disco crema con un punto d'ardesia
+    ctx2d.beginPath(); ctx2d.arc(0, 0, 10, 0, TAU2); ctx2d.fillStyle = CREAM; ctx2d.fill(); ctx2d.beginPath(); ctx2d.arc(0, 0, 4.6, 0, TAU2); ctx2d.fillStyle = SLATE; ctx2d.fill(); ctx2d.restore();
   }
 
   function drawRider(x, y, a, c, n, isMe) {
     ctx2d.save(); ctx2d.translate(x, y); ctx2d.rotate(a); ctx2d.translate(-15, -105);
-    ctx2d.beginPath(); ctx2d.arc(0, 0, 18, 0, Math.PI * 2); ctx2d.fillStyle = '#fff'; ctx2d.fill();
-    ctx2d.lineWidth = 4; ctx2d.strokeStyle = c; ctx2d.stroke();
-    ctx2d.fillStyle = '#0f172a'; ctx2d.font = 'bold 12px "Space Grotesk"'; ctx2d.textAlign = 'center'; ctx2d.fillText((n||'?').trim().slice(0,2).toUpperCase(), 0, 5);
-    if (isMe) { ctx2d.rotate(-a); ctx2d.fillStyle = '#0f172a'; ctx2d.font = 'bold 14px "Kalam"'; ctx2d.fillText(I18n.t('race.you'), 0, -32); }
+    ctx2d.beginPath(); ctx2d.arc(0, 0, 19, 0, TAU2); ctx2d.fillStyle = CREAM; ctx2d.fill();
+    ctx2d.lineWidth = 5; ctx2d.strokeStyle = c; ctx2d.stroke();
+    ctx2d.fillStyle = SLATE; ctx2d.font = 'bold 12px "Space Grotesk"'; ctx2d.textAlign = 'center'; ctx2d.fillText((n || '?').trim().slice(0, 2).toUpperCase(), 0, 5);
+    if (isMe) {
+      // "tu": pastiglia arancio con codina, la stessa dell'elenco in alto a sinistra
+      ctx2d.rotate(-a); const t = I18n.t('race.you'); ctx2d.font = 'bold 15px "Kalam"'; ctx2d.textAlign = 'center';
+      const w = ctx2d.measureText(t).width + 18; rrect(ctx2d, -w / 2, -56, w, 24, 12); ctx2d.fillStyle = SUN; ctx2d.fill();
+      ctx2d.beginPath(); ctx2d.moveTo(-6, -33); ctx2d.lineTo(6, -33); ctx2d.lineTo(0, -25); ctx2d.closePath(); ctx2d.fill();
+      ctx2d.fillStyle = CREAM; ctx2d.fillText(t, 0, -39);
+    }
     ctx2d.restore();
   }
 
@@ -1040,29 +1164,42 @@
     });
   }
 
+  // minimappa a illustrazione: barra piatta a pastiglia con i biomi in colori pieni, laghi, ponti ad arco, bandierina e i giocatori come pallini col bordino crema
+  const MM_PAL = { start: '#78ba8e', hills: '#438c67', ice: '#bfe3ea', gravel: '#ecbd6f', water: '#5bb5b0', ramps: '#e3937a', lava: '#fb5f35', finish: '#78ba8e' };
   function drawMinimap() {
-    const w = minimapMetrics.w, h = minimapMetrics.h, tL = Terrain.FINISH_X; minimapCtx.clearRect(0, 0, w, h);
-    const toPx = (x) => (Math.max(0, Math.min(1, x / tL))) * (w - 10) + 5;
+    const w = minimapMetrics.w, h = minimapMetrics.h, tL = Terrain.FINISH_X, m = minimapCtx; m.clearRect(0, 0, w, h);
+    const pad = 10, bh = Math.max(9, Math.min(15, h * 0.34)), by = h * 0.64 - bh / 2, toPx = x => pad + Math.max(0, Math.min(1, x / tL)) * (w - pad * 2);
+    const me = latestRacers[Net.myId];
+    // pastiglia di fondo e biomi (ritagliati nella pastiglia)
+    rrect(m, pad - 3, by - 3, w - pad * 2 + 6, bh + 6, (bh + 6) / 2); m.fillStyle = '#e4deb6'; m.fill();
+    m.save(); rrect(m, pad, by, w - pad * 2, bh, bh / 2); m.clip();
     Terrain.ZONES.forEach(z => {
       const zS = Math.max(0, z.start), zE = Math.min(tL, z.end); if (zE <= zS) return;
-      minimapCtx.fillStyle = z.color; minimapCtx.fillRect(toPx(zS), h/2 - 4, Math.max(1, toPx(zE) - toPx(zS)), 8);
+      m.fillStyle = MM_PAL[z.key] || '#94a3b8'; m.fillRect(toPx(zS), by, Math.max(1, toPx(zE) - toPx(zS)), bh);
+      if (z.gap && (z.key === 'water' || z.key === 'lava')) { m.fillStyle = z.key === 'lava' ? '#fb5f35' : '#5bb5b0'; m.fillRect(toPx(z.gap.g0), by, toPx(z.gap.g1) - toPx(z.gap.g0), bh); m.fillStyle = z.key === 'lava' ? '#f5e594' : '#bfe3ea'; m.fillRect(toPx(z.gap.g0), by, toPx(z.gap.g1) - toPx(z.gap.g0), 2.4); }
     });
-    minimapCtx.strokeStyle = '#0f172a'; minimapCtx.lineWidth = 1.5; minimapCtx.strokeRect(5, h/2 - 4, w - 10, 8);
-    // i ponti come piccoli archi sopra la barra
-    minimapCtx.strokeStyle = '#7c4a1d'; minimapCtx.lineWidth = 2;
-    Terrain.BRIDGES.forEach(b => { const a = toPx(b.start), c = toPx(b.end); minimapCtx.beginPath(); minimapCtx.moveTo(a, h/2 - 4); minimapCtx.quadraticCurveTo((a + c) / 2, h/2 - 12, c, h/2 - 4); minimapCtx.stroke(); });
-    minimapCtx.fillStyle = '#0f172a'; minimapCtx.fillRect(w - 6, h/2 - 10, 2, 20);
-    Object.entries(latestRacers).forEach(([id, r]) => {
-      const meta = raceMeta[id]; if (!meta) return; const isMe = id === Net.myId;
-      minimapCtx.beginPath(); minimapCtx.arc(toPx(r.x), h/2, isMe ? 6 : 4, 0, Math.PI * 2);
-      minimapCtx.fillStyle = meta.color; minimapCtx.fill(); minimapCtx.lineWidth = 1.5; minimapCtx.strokeStyle = '#0f172a'; minimapCtx.stroke();
+    // strada già fatta da te: un velo scuro
+    if (me) { m.fillStyle = 'rgba(45,62,72,0.2)'; m.fillRect(pad, by, toPx(me.x) - pad, bh); }
+    m.restore();
+    // ponti: piccoli archi d'ardesia sopra la barra
+    m.strokeStyle = SLATE; m.lineWidth = 2.4; m.lineCap = 'round';
+    Terrain.BRIDGES.forEach(b => { const a = toPx(b.start), c = toPx(b.end); m.beginPath(); m.moveTo(a, by + 1); m.quadraticCurveTo((a + c) / 2, by - bh * 0.9, c, by + 1); m.stroke(); });
+    // traguardo: palo e bandierina
+    const fx = w - pad; m.strokeStyle = SLATE; m.lineWidth = 2.4; m.beginPath(); m.moveTo(fx, by + bh + 3); m.lineTo(fx, by - bh - 2); m.stroke(); m.fillStyle = SUN; m.beginPath(); m.moveTo(fx, by - bh - 2); m.lineTo(fx - 9, by - bh + 2); m.lineTo(fx, by - bh + 6); m.closePath(); m.fill();
+    // giocatori: tu per ultimo, sopra gli altri
+    const list = Object.entries(latestRacers).filter(([id]) => raceMeta[id]).sort((a, b) => (a[0] === Net.myId) - (b[0] === Net.myId));
+    list.forEach(([id, r]) => {
+      const isMe = id === Net.myId, cx = toPx(r.x), cy = by + bh / 2, rad = isMe ? 7.5 : 5.5;
+      m.fillStyle = CREAM; m.beginPath(); m.arc(cx, cy, rad + 3, 0, TAU2); m.fill();
+      m.fillStyle = raceMeta[id].color; m.beginPath(); m.arc(cx, cy, rad, 0, TAU2); m.fill();
+      if (isMe) { m.fillStyle = SUN; m.beginPath(); m.moveTo(cx - 5, cy - rad - 8); m.lineTo(cx + 5, cy - rad - 8); m.lineTo(cx, cy - rad - 2); m.closePath(); m.fill(); }
     });
   }
 
-  function stopRaceLoops() { if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; }
+  function stopRaceLoops() { if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
   I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
-  function showResults(st) { lastStandings = st; stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
+  function showResults(st) { lastStandings = st; stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st, true); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
   els.btnRematch.addEventListener('click', () => { if (Net.isHost) { wheels = {}; keepTrack = true; Net.broadcast({ type: 'restartToDraw' }); enterDrawPhase(); } });
   els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
   document.body.dataset.screen = 'menu'; I18n.init(); applyInvite(); if (typeof Sfx !== 'undefined') Sfx.init();

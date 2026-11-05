@@ -23,6 +23,8 @@ La minimappa in alto nella HUD mostra l'intero tracciato colorato per zona, il t
 2. Gli altri (fino a 4: il massimo è 5 giocatori in tutto) lo inseriscono per unirsi.
 3. Tutti disegnano la propria ruota entro 30 secondi, dentro il cerchio guida.
 4. Countdown 3-2-1, via! Le ruote rotolano con un motore costante — solo la forma determina chi va più veloce.
+   - **Salto**: Spazio, ↑ o W (tastiera), tocco/clic sulla pista o il pulsante *Salta* a schermo (telefono). Si salta solo con una ruota vicino al suolo e con una pausa di ~0,65 s fra un salto e l'altro; l'host decide (`Sim.jump` in `js/physics.js`), il client manda solo `{type:'jump'}`.
+   - **Sei lento?** Se la tua bici resta sotto ~2,4 px/tick per più di un secondo (e hai ancora cambi forma), la bici lampeggia, il pulsante *Cambia Forma* pulsa e compare il suggerimento (`updateSlow` in `js/game.js`).
 5. Classifica finale, si può rigiocare con le stesse persone.
 
 ## Architettura in breve
@@ -298,3 +300,18 @@ Il disegno a fine gara era una collina grigia con le pennellate sopra: non dicev
 - Resta lo stile: foglio a quadretti, linea a matita, pennellate con bordo chiaro, salti tratteggiati, numeri d'arrivo e bandierina.
 - Controllato (browser headless, non dispositivi reali): desktop, telefono in verticale e in orizzontale, classica (nessun portale) e meno classica, da 1 a 4 giocatori.
 - **Lingua:** nomi dei biomi e "Gigante!" vengono dalle traduzioni (italiano e inglese). Se si cambia lingua con i pulsanti IT/EN mentre si è nei risultati, la mappa si ridisegna subito nella lingua nuova. Sui telefoni in verticale un nome di una sola parola troppo lungo per la zona (es. "Ghiacciaio") non viene scritto.
+
+
+## Stile grafico "poster"
+
+`js/scenery.js` ha un interruttore `POSTER` (in alto): cielo crema quasi piatto, sole arancio pieno che respira piano, fasce collinari calde a onde (giallo → arancio → salmone → verde), alberi teal/menta con rametti sottili e stormi di gabbiani scuri che sbattono le ali. Con `POSTER = false` si torna al look precedente (cielo sfumato, sole con la faccina).
+
+
+## Ventisettesimo giro: redesign "stile illustrazione" + salto e lampeggio dello zip
+Dallo zip `doodle-wheels-modificati` sono stati fusi nella versione corrente (senza conflitti): **salto** (Spazio, ↑, W, tocco sullo schermo o pulsante "Salta"; ricarica 0,65 s, rete `{type:'jump'}`), **lampeggio quando si va piano** (sotto 2,4 px/passo per 1,1 s il pulsante "Cambia forma" lampeggia e compare "Sei lento! Prova un'altra forma") e lo stile "poster" della scenografia. Sopra, tutto il gioco è stato ridisegnato nello stile dell'illustrazione di riferimento: forme piene, palette calda e limitata (crema, arancio sole, giallo, ocra, salmone, teal, menta, verde, ardesia), nessun contorno scuro, nessuna sfumatura.
+- **Menu, lobby, disegno, risultati:** schede crema con bordino piatto sotto, pulsanti a pastiglia, codice stanza giallo, selettori (lunghezza, modalità) a pastiglie con la scelta in arancio, sfondo con sole, fasce a onde, colline e alberi.
+- **Gara:** HUD in una scheda crema con minimappa a pastiglia (zone colorate, laghi, ponti, bandierina, pallini con anello crema), classifica a pillole (la propria riga arancio), bici e ruote con bordino crema al posto del contorno nero, etichetta del giocatore a badge, scritta del bioma in una pastiglia crema, cartelli piatti, scia a nastro pieno con filo crema, terreno a colore pieno per bioma con due fasce più scure, lava e acqua a campiture piatte, primo piano di erba/cristalli/rocce nei colori della palette. Nessuna icona (il pulsante Salta ha solo testo).
+- **Mappa finale:** ridisegnata nello stesso stile (cielo crema, sole, tre fasce di colline, terreno per bioma, alberi piatti, laghi, ponti, traguardo con festoni, pastiglie dei biomi) e **animata**: le corse si dipingono da sinistra a destra, poi compaiono i numeri d'arrivo e dal traguardo escono i coriandoli (nessuna animazione se il sistema chiede movimento ridotto).
+- **Tolta l'animazione iniziale con il pennello** (`intro.js` eliminato): la gara parte con la griglia già visibile e, dopo circa 1,5 s di attesa (la fisica finisce di prepararsi), il 3-2-1. Prima si aspettavano circa 10 s in tutto, ora circa 5.
+- **Firma:** in fondo alla scheda del menu, "Ideato e sviluppato da Stefano Kolta" (in inglese "Designed & built by"), anche nei meta della pagina.
+- Misurato (browser headless e bot, non dispositivi reali): salto funzionante da tastiera (contatore a 1 e poi 2), lampeggio e suggerimento che compaiono dopo ~3 s di bici quasi ferma e spariscono quando riparte, 144 gare simulate senza ribaltamenti (angolo massimo 1,02 rad), console senza errori.
