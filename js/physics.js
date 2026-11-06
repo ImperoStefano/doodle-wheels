@@ -851,7 +851,7 @@ const Sim = (() => {
       if (q.kind !== 'grow' || r.pUsed[q.id]) continue;
       const big = P.find(e => e.kind === 'big' && e.grow === q.id); if (!big) continue;
       const end = big.x + BIG_HW;
-      if (r.dir !== 1 || x < q.x - GROW_HW) { continue; }
+      if ((r.dir !== 1 && !r.gEv[q.id]) || x < q.x - GROW_HW) { continue; }   // in retromarcia non si entra in un tratto gigante, ma se ci sei già dentro (specchio nel mezzo) resti gigante
       if (x >= end) { r.pUsed[q.id] = true; if (r.gEv[q.id] === 1) { r.gEv[q.id] = 2; portalEvent(r, 'n', 0, big.id); } continue; }
       const up = sm01((x - (q.x - GROW_HW)) / (2 * GROW_HW)), down = sm01((x - (big.x - BIG_HW)) / (2 * BIG_HW));
       target = 1 + (GROW - 1) * up * (1 - down);
@@ -860,6 +860,10 @@ const Sim = (() => {
       break;
     }
     r.scT = target;
+  }
+  // le ruote passano sopra il bordo alto dell'anello (le uscite non si scavalcano: riportano comunque la bici in avanti)
+  function overPortal(r, q) {
+    return GROUND_Y - Math.max(r.fw.bounds.max.y, r.rw.bounds.max.y) - Terrain.height(q.x) >= PORTAL_SKIP_H;
   }
   function checkPortals(r, elapsed) {
     const P = Terrain.PORTALS; if (!P || !P.length) return;
@@ -875,6 +879,7 @@ const Sim = (() => {
       if (portalUsed[q.id]) continue;   // già consumato: da chiunque, spariscono per tutti
       if (q.kind !== 'exit' && elapsed < r.immuneUntil) continue;   // immune: ci passa attraverso, il portale resta per gli altri
       if ((lx - q.x) * (x - q.x) > 0 || (lx === q.x && x === q.x)) continue;
+      if (q.kind !== 'exit' && overPortal(r, q)) continue;   // scavalcato col salto: il portale resta lì (per chi lo vuole prendere)
       if (q.kind === 'shift') {
         let d = 150 + Math.random() * 250; if (Math.random() < 0.5) d = -d;
         if (!Terrain.landOk(x + d)) d = -d; if (!Terrain.landOk(x + d)) continue;
@@ -958,16 +963,37 @@ const Sim = (() => {
   const JUMP_V = 16;         // px/tick verso l'alto (≈ 100 px di salto sopra la quota di marcia, con la gravità extra in volo)
   const JUMP_GAP = 22;       // px: distanza massima dal suolo per poter saltare (un attimo di tolleranza dopo un dosso)
   const JUMP_COOLDOWN = 650; // ms
+  const DJ_MIN_MS = 220;     // doppio salto: un secondo salto in aria, non prima di tanto dal primo
+  const DJ_POWER = 0.95;     // e un filo meno potente
+  const PORTAL_SKIP_H = 112; // px: si scavalca un portale se il fondo delle ruote passa a quest'altezza dal suolo o più (un salto ben tempestivo arriva a ~128, il doppio salto a ~225); l'anello è alto 2·PORTAL_RY + 3
   function jump(id) {
     const r = racers[id]; if (!r || !running || r.finished || r.righting) return false;
     const elapsed = performance.now() - startedAt;
-    if (elapsed < 400 || elapsed - r.jumpAt < JUMP_COOLDOWN) return false;
-    const gf = r.fw.gapNow, gr = r.rw.gapNow;
-    if (!(gf <= JUMP_GAP || gr <= JUMP_GAP)) return false;
-    const v = JUMP_V * Math.pow(r.sc || 1, 0.5);
+    if (elapsed < 400) return false;
+    const gf = r.fw.gapNow, gr = r.rw.gapNow, grounded = gf <= JUMP_GAP || gr <= JUMP_GAP;
+    if (grounded) { if (elapsed - r.jumpAt < JUMP_COOLDOWN) return false; r.airJ = 0; }
+    else if (r.airJ !== 1 || elapsed - r.jumpAt < DJ_MIN_MS) return false;   // in aria: solo il secondo salto, e solo dopo uno da terra
+    const v = JUMP_V * Math.pow(r.sc || 1, 0.5) * (grounded ? 1 : DJ_POWER);
     for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.min(b.velocity.y, 0) - v });
-    r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1;
+    r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = grounded ? 1 : 2; if (!grounded) r.ja = (r.ja || 0) + 1;
     return true;
+  }
+
+  // Burrone (patch 'ravine'): chi cade nel vuoto e resta sul fondo oltre RAVINE_RESCUE_MS viene riportato sul bordo opposto (in retromarcia, prima della rampa)
+  const RAVINE_RESCUE_MS = 1500;
+  function ravineStep(r, elapsed) {
+    const p = Terrain.ravineAt ? Terrain.ravineAt(r.chassis.position.x) : null;
+    if (!p) { r.pitAt = -1; return; }
+    const rim = Terrain.height(p.a + p.u2 + p.rr + 10), low = GROUND_Y - Math.max(r.fw.bounds.max.y, r.rw.bounds.max.y);
+    if (low >= rim - p.D * 0.55) { r.pitAt = -1; return; }   // non è davvero giù nel vuoto
+    if (!(r.pitAt >= 0)) { r.pitAt = elapsed; return; }
+    if (elapsed - r.pitAt < RAVINE_RESCUE_MS) return;
+    const dir = r.dir || 1, tx = dir === 1 ? p.a + p.u2 + p.rr + 70 : p.a + p.s - 120;
+    teleport(r, tx - r.chassis.position.x);
+    Matter.Body.setAngle(r.chassis, 0);
+    { const c = r.chassis.position, k = 80 * (r.sc || 1); Matter.Body.setPosition(r.fw, { x: c.x + k, y: c.y }); Matter.Body.setPosition(r.rw, { x: c.x - k, y: c.y }); }
+    for (const b of [r.chassis, r.fw, r.rw]) { Matter.Body.setVelocity(b, { x: 0, y: 0 }); Matter.Body.setAngularVelocity(b, 0); }
+    r.lx = r.chassis.position.x; r.pitAt = -1; r.bestX = dir * tx; r.hopBaseX = dir * tx; r.progressAt = elapsed; r.stallStreak = 0;
   }
 
   function stepRacer(r, elapsed) {
@@ -977,7 +1003,9 @@ const Sim = (() => {
     meltStep(r, elapsed);
     scaleStep(r, elapsed);
     if (!rightBike(r)) antiFlip(r);
+    if (r.airJ && elapsed - r.jumpAt > 150 && (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP)) r.airJ = 0;   // atterrata: il doppio salto si ricarica
     checkPortals(r, elapsed);
+    ravineStep(r, elapsed);
 
     // progress = furthest x reached IN THE DIRECTION OF TRAVEL (dir·x); if it hasn't improved enough for STALL_MS, hop
     const dir = r.dir || 1, px = dir * r.chassis.position.x;
@@ -1046,7 +1074,7 @@ const Sim = (() => {
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
       finished: r.finished, finishTime: r.finishTime,
-      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, jn: r.jn || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
+      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, jn: r.jn || 0, ja: r.ja || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
   }
 

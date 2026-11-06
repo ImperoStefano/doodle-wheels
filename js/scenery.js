@@ -28,35 +28,36 @@ const Scenery = (() => {
   const rnd = (a, b = 0, c = 0) => fract(Math.sin(a * 12.9898 + b * 78.233 + c * 37.719) * 43758.5453);
   const TAU = Math.PI * 2;
 
-  // Stile "poster" (illustrazione piatta): cielo crema, sole arancio pieno, fasce collinari calde a onde, alberi teal/menta con rami
-  // sottili, uccelli scuri che sbattono le ali. Mettere false per tornare al look precedente (cielo sfumato, sole con la faccina).
-  const POSTER = true;
+  // Stile "paesaggio" (illustrazione vettoriale a strati): cieli sfumati dal rosso-arancio al pesca o dal verde salvia al menta, sole grande e pallido,
+  // montagne a più piani con una faccia chiara e una in ombra, colline a fasce, chiome morbide a lobi e cipressi color melanzana.
+  // POSTER resta true perché il resto del disegno (acqua, lava, etichette) usa le campiture piatte; LAND accende gradienti e sfaccettature.
+  const POSTER = true, LAND = true;
   const PS = (a, b) => POSTER ? a : b;
 
   // ---------- biomi --------------------------------------------------------------------------
   // flora: [[tipo, peso], …] degli alberi/arbusti sulle creste più vicine
   const FL = { ROUND: 0, PINE: 1, SNOWPINE: 2, CACTUS: 3, BUSH: 4, PALM: 5, AUTUMN: 6, DEAD: 7 };
   const BIOME_DEFS = [
-    { name: 'Prato fiorito', skyT: PS('#eeecc9', '#69b9f0'), skyB: PS('#f4f0d3', '#d6f1ff'), ridge: PS(['#f6e593', '#eebe6e', '#e3917a', '#4a8f6b'], ['#cfe3f5', '#b0ddca', '#88cd97', '#5fb870']), shape: [1, 0, 0], amp: PS(1.15, 0.9), snow: 0,
-      flora: [[FL.ROUND, 5], [FL.BUSH, 3], [FL.PINE, 1]], dens: 0.8, soil: PS('#3a6f45', '#8b5a2b'), surf: PS('#78bb8d', '#3fc060'), fg: 0, part: 'meadow' },
-    { name: 'Colline', skyT: PS('#efe9c4', '#5eaeea'), skyB: PS('#f5eccb', '#d2eeff'), ridge: PS(['#f5e48f', '#edbd6c', '#e49a80', '#468b65'], ['#c8dff2', '#a9d3b6', '#8cc77c', '#6db55a']), shape: [0.75, 0.25, 0], amp: PS(1.25, 1.1), snow: 0,
-      flora: [[FL.ROUND, 4], [FL.PINE, 4], [FL.BUSH, 2]], dens: 0.85, soil: PS('#37693f', '#8a5a2a'), surf: PS('#74b887', '#4cbc4f'), fg: 0, part: 'meadow' },
-    { name: 'Ghiacciaio', skyT: PS('#e6efdc', '#7ec8ee'), skyB: PS('#eff4df', '#eaf8ff'), ridge: PS(['#f2f6e2', '#c9e6e4', '#92cdd2', '#5aa7b0'], ['#e2f2fb', '#c8e5f4', '#abd5ea', '#8fc4df']), shape: [0.05, 0.95, 0], amp: 1.5, snow: 1,
-      flora: [[FL.SNOWPINE, 6], [FL.BUSH, 1]], dens: 0.7, soil: PS('#6fb0bd', '#a9cfe3'), surf: PS('#f6fbf0', '#f1fbff'), fg: 2, part: 'snow' },
-    { name: 'Canyon', skyT: PS('#f3e3bd', '#72b6e6'), skyB: PS('#f8e6c6', '#fbe3c4'), ridge: PS(['#f7dc9c', '#ecbd6f', '#e3937a', '#c06b4c'], ['#f2d6b8', '#e3b58e', '#cc9066', '#b0714a']), shape: [0, 0.15, 0.85], amp: 1.05, snow: 0,
-      flora: [[FL.CACTUS, 5], [FL.BUSH, 3]], dens: 0.55, soil: PS('#d98b57', '#b87442'), surf: PS('#ecbd6f', '#d6b48a'), fg: 3, part: 'dust' },
-    { name: 'Laguna', skyT: PS('#e4ecc9', '#55c0e6'), skyB: PS('#eef2d4', '#d4f6f0'), ridge: PS(['#f5e594', '#a9d8b0', '#5bb5b0', '#2f968f'], ['#cdebf0', '#a6dad6', '#7fc9bd', '#57b7a2']), shape: [0.9, 0.1, 0], amp: 0.7, snow: 0,
-      flora: [[FL.PALM, 6], [FL.BUSH, 3]], dens: 0.75, soil: PS('#e0b068', '#8a6a44'), surf: PS('#f5e594', '#e6d095'), fg: 4, part: 'lagoon', water: PS('#4fb3ae', '#2eb5d6') },
-    { name: 'Bosco d\'autunno', skyT: PS('#f2e1b9', '#86bfe8'), skyB: PS('#f8e8c6', '#ffe6b8'), ridge: PS(['#f6e08e', '#ecbd6f', '#e3937a', '#b5583b'], ['#f4dcb9', '#eab97b', '#d9914a', '#bc6c2c']), shape: [0.85, 0.15, 0], amp: 1.0, snow: 0,
-      flora: [[FL.AUTUMN, 7], [FL.PINE, 1], [FL.BUSH, 2]], dens: 0.95, soil: PS('#c9633f', '#7c4b25'), surf: PS('#ecbd6f', '#dc8a2c'), fg: 5, part: 'leaves' },
-    { name: 'Traguardo!', skyT: PS('#f3e6cb', '#66bff7'), skyB: PS('#f9e3d8', '#ffe4f2'), ridge: PS(['#f7e79a', '#f2c476', '#e8938a', '#4a8f6b'], ['#d6e5f8', '#bfe0e0', '#98d6a4', '#6cc27c']), shape: [1, 0, 0], amp: PS(1.05, 0.8), snow: 0,
-      flora: [[FL.ROUND, 5], [FL.BUSH, 3]], dens: 0.7, soil: PS('#3a6f45', '#8b5a2b'), surf: PS('#78bb8d', '#3fc060'), fg: 0, part: 'confetti' },
-    { name: 'Vulcano', skyT: '#4a2840', skyB: '#ff8a4c', ridge: ['#8a5a63', '#6b4651', '#4d3340', '#33242f'], shape: [0.1, 0.9, 0], amp: 1.25, snow: 0,
-      flora: [[FL.DEAD, 6], [FL.BUSH, 1]], dens: 0.5, soil: PS('#3a2a32', '#2d2126'), surf: PS('#6b3a2a', '#46343a'), fg: 6, part: 'ember', water: '#ff6a1a' },
+    { name: 'Prato fiorito', skyT: '#86b794', skyB: '#d9ecd2', sun: '#f8e9b4', ridge: ['#bde0b6', '#8cc79c', '#4f9d76', '#287056'], shape: [0.3, 0.7, 0], amp: 1.3, snow: 0,
+      flora: [[FL.ROUND, 5], [FL.BUSH, 3], [FL.PINE, 1]], dens: 0.8, soil: '#3f8d5c', surf: '#a9d66b', fg: 0, part: 'meadow' },
+    { name: 'Colline', skyT: '#7fb3a2', skyB: '#dcedd2', sun: '#f9e8b0', ridge: ['#b0dcbc', '#78bba0', '#3f8d7b', '#25675f'], shape: [0.2, 0.8, 0], amp: 1.4, snow: 0,
+      flora: [[FL.ROUND, 4], [FL.PINE, 4], [FL.BUSH, 2]], dens: 0.85, soil: '#388659', surf: '#9fd070', fg: 0, part: 'meadow' },
+    { name: 'Ghiacciaio', skyT: '#9bb6df', skyB: '#ebeff7', sun: '#fcf1d2', ridge: ['#e8edf8', '#bdcbe9', '#8d9fd1', '#5f6fab'], shape: [0.05, 0.95, 0], amp: 1.6, snow: 1,
+      flora: [[FL.SNOWPINE, 6], [FL.BUSH, 1]], dens: 0.7, soil: '#7a8dc0', surf: '#f3f6fc', fg: 2, part: 'snow' },
+    { name: 'Canyon', skyT: '#df5859', skyB: '#f7ab7c', sun: '#f8e0a4', ridge: ['#cc869b', '#a26b8e', '#705f96', '#463f7b'], shape: [0, 0.4, 0.6], amp: 1.2, snow: 0,
+      flora: [[FL.CACTUS, 5], [FL.BUSH, 3]], dens: 0.55, soil: '#c2693b', surf: '#f3b94d', fg: 3, part: 'dust' },
+    { name: 'Laguna', skyT: '#f1ad8d', skyB: '#fbe3b8', sun: '#fcead0', ridge: ['#f7cfae', '#58d4c2', '#16b9a7', '#0e8f85'], shape: [0.8, 0.2, 0], amp: 0.95, snow: 0,
+      flora: [[FL.PALM, 6], [FL.BUSH, 3]], dens: 0.75, soil: '#d8924d', surf: '#f8da8c', fg: 4, part: 'lagoon', water: '#2fc4b8' },
+    { name: 'Bosco d\'autunno', skyT: '#e66b5d', skyB: '#f9c680', sun: '#fadca2', ridge: ['#eaa38c', '#c4617b', '#80407a', '#4c2b63'], shape: [0.6, 0.4, 0], amp: 1.15, snow: 0,
+      flora: [[FL.AUTUMN, 7], [FL.PINE, 1], [FL.BUSH, 2]], dens: 0.95, soil: '#8f3f46', surf: '#f1a540', fg: 5, part: 'leaves' },
+    { name: 'Traguardo!', skyT: '#f2a98d', skyB: '#fbe4bd', sun: '#fcead0', ridge: ['#fbd3b1', '#1acab5', '#0e9d8f', '#512b75'], shape: [0.7, 0.3, 0], amp: 1.1, snow: 0,
+      flora: [[FL.ROUND, 5], [FL.BUSH, 3]], dens: 0.7, soil: '#7b409d', surf: '#f06aa1', fg: 0, part: 'confetti' },
+    { name: 'Vulcano', skyT: '#4a2142', skyB: '#ff7d47', sun: '#ffd286', ridge: ['#a35c79', '#7b4569', '#523250', '#2f2139'], shape: [0.1, 0.9, 0], amp: 1.3, snow: 0,
+      flora: [[FL.DEAD, 6], [FL.BUSH, 1]], dens: 0.5, soil: '#2b2030', surf: '#6e3b3b', fg: 6, part: 'ember', water: '#ff6a1a' },
   ];
   const ZONE_TO_BIOME = { start: 0, hills: 1, ice: 2, gravel: 3, water: 4, ramps: 5, finish: 6, lava: 7 };
   const BIOMES = BIOME_DEFS.map(b => ({
-    name: b.name, skyT: hex(b.skyT), skyB: hex(b.skyB), ridge: b.ridge.map(hex),
+    name: b.name, skyT: hex(b.skyT), skyB: hex(b.skyB), sun: hex(b.sun), ridge: b.ridge.map(hex),
     wR: b.shape[0], wP: b.shape[1], wM: b.shape[2], amp: b.amp, snow: b.snow,
     flora: b.flora, dens: b.dens, soil: hex(b.soil), surf: hex(b.surf), fg: b.fg, part: b.part,
     water: hex(b.water || '#2eb5d6'),
@@ -105,22 +106,50 @@ const Scenery = (() => {
     const T = c => rgb(mix(hex(c), HAZE, fog));
     const circ = (x, y, r, col) => { g.fillStyle = col; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); };
     const trunk = (w, h, col = '#6b4426') => { g.fillStyle = T(col); g.fillRect(-w / 2, -h, w, h); };
-    if (POSTER && kind === FL.ROUND) {
-      // albero piatto: o ovale alto teal, o tondo menta; tronco sottile marrone con rametti a V
-      const wood = '#6a3a22', twig = (x, y, up, d) => { g.beginPath(); g.moveTo(x, y); g.lineTo(x + d * up * 0.55, y - up); g.stroke(); };
-      g.strokeStyle = T(wood); g.lineCap = 'round'; g.lineWidth = 3.4;
-      if (variant) {
-        g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -34); g.stroke(); twig(0, -18, 12, -1); twig(0, -24, 10, 1);
-        circ(0, -62, 27, T('#7dbf8f'));
-        g.beginPath(); g.moveTo(0, -34); g.lineTo(0, -44); g.stroke(); twig(0, -38, 11, -1); twig(0, -41, 9, 1);
-      } else {
-        g.fillStyle = T('#05766f'); g.beginPath(); g.ellipse(0, -66, 22, 44, 0, 0, TAU); g.fill();
-        g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -34); g.stroke(); twig(0, -20, 12, 1); twig(0, -27, 10, -1);
+    // chioma "a festoni": ellisse piena + cerchietti lungo il bordo; luce a sinistra, ombra a destra
+    const scallop = (cx, cy, rx, ry, n, lr, base, lite, dark) => {
+      const ring = col => { g.fillStyle = col; g.beginPath(); for (let i = 0; i < n; i++) { const a = i / n * TAU, x = cx + Math.cos(a) * rx, y = cy + Math.sin(a) * ry; g.moveTo(x + lr, y); g.arc(x, y, lr, 0, TAU); } g.ellipse(cx, cy, rx, ry, 0, 0, TAU); g.fill(); };
+      ring(base);
+      g.save(); g.beginPath(); g.ellipse(cx, cy, rx + lr, ry + lr, 0, 0, TAU); g.clip();
+      g.fillStyle = dark; g.beginPath(); g.rect(cx - rx * 3, cy - ry * 3, rx * 6, ry * 6); g.ellipse(cx - rx * 0.28, cy - ry * 0.22, rx * 1.02, ry * 1.04, 0, 0, TAU); g.fill('evenodd');
+      g.restore();
+      g.fillStyle = lite; for (let i = 0; i < n; i++) { const a = i / n * TAU; if (Math.cos(a) + Math.sin(a) < -0.55) { const x = cx + Math.cos(a) * rx * 0.96, y = cy + Math.sin(a) * ry * 0.96; g.beginPath(); g.arc(x, y, lr * 0.62, 0, TAU); g.fill(); } }
+    };
+    const stem = (h, bend, col, w) => { g.strokeStyle = T(col); g.lineCap = 'round'; g.lineWidth = w; g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(bend, -h * 0.5, bend * 0.4, -h); g.stroke(); };
+    // cipresso: goccia alta con metà chiara sul bordo
+    const cypress = (hgt, wid, col, edge) => {
+      g.fillStyle = T(col); g.beginPath(); g.moveTo(0, -hgt); g.bezierCurveTo(wid * 1.15, -hgt * 0.7, wid * 1.05, -hgt * 0.12, 0, -hgt * 0.02); g.bezierCurveTo(-wid * 1.05, -hgt * 0.12, -wid * 1.15, -hgt * 0.7, 0, -hgt); g.fill();
+      g.fillStyle = T(edge); g.beginPath(); g.moveTo(0, -hgt); g.bezierCurveTo(-wid * 1.15, -hgt * 0.7, -wid * 1.05, -hgt * 0.12, 0, -hgt * 0.02); g.bezierCurveTo(-wid * 0.55, -hgt * 0.3, -wid * 0.5, -hgt * 0.7, 0, -hgt); g.fill();
+    };
+    if (LAND && kind === FL.ROUND) {
+      if (variant) { stem(40, 5, '#6a3a22', 5); scallop(2, -66, 25, 22, 11, 9, T('#2f8c64'), T('#8fd1a6'), T('#1f6f55')); }
+      else { stem(34, -4, '#6a3a22', 5); scallop(0, -58, 28, 26, 12, 10, T('#4aa876'), T('#a6dcb4'), T('#2f8764')); }
+    } else if (LAND && kind === FL.BUSH) {
+      const pal = variant ? ['#2f9a7d', '#9bdcc0', '#1f7a66'] : ['#5bbd8b', '#b4e5c6', '#37976f'];
+      scallop(0, -13, 26, 11, 9, 8, T(pal[0]), T(pal[1]), T(pal[2]));
+    } else if (LAND && (kind === FL.AUTUMN)) {
+      if (variant) { stem(38, 4, '#5a2c3a', 5); scallop(1, -64, 26, 23, 11, 9, T('#e9a043'), T('#f8d684'), T('#c77a2e')); }
+      else { stem(34, -4, '#5a2c3a', 5); scallop(0, -60, 28, 26, 12, 10, T('#e2603e'), T('#f6a07a'), T('#b8412f')); }
+    } else if (LAND && (kind === FL.PINE || kind === FL.SNOWPINE)) {
+      const snow = kind === FL.SNOWPINE;
+      if (snow) cypress(variant ? 112 : 100, variant ? 17 : 20, variant ? '#4a5aa0' : '#5a6bb0', variant ? '#a9b7e6' : '#bcc8ee');
+      else if (variant) cypress(110, 17, '#14634a', '#7fcaa0');
+      else cypress(104, 19, '#7b1f4b', '#f08a7a');
+      g.fillStyle = T('#5a2c3a'); g.fillRect(-2.5, -6, 5, 6);
+    } else if (LAND && kind === FL.PALM) {
+      g.strokeStyle = T('#6a3a22'); g.lineCap = 'round'; g.lineWidth = 6;
+      g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(10, -50, (variant ? -8 : 6), -88); g.stroke();
+      const tx = variant ? -8 : 6, ty = -88;
+      for (let i = 0; i < 7; i++) {
+        const a = -Math.PI * 0.95 + i * (Math.PI * 0.9 / 6);
+        g.save(); g.translate(tx, ty); g.rotate(a); g.fillStyle = T(i % 2 ? '#1a9a86' : '#0b7a6c');
+        g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(22, -16, 44, 4); g.quadraticCurveTo(22, -6, 0, 3); g.closePath(); g.fill(); g.restore();
       }
+      circ(tx - 2, ty + 3, 3.6, T('#7a4a22')); circ(tx + 4, ty + 4, 3.6, T('#7a4a22'));
+    } else if (POSTER && kind === FL.ROUND) {
+      g.fillStyle = T('#05766f'); g.beginPath(); g.ellipse(0, -66, 22, 44, 0, 0, TAU); g.fill();
     } else if (POSTER && kind === FL.BUSH) {
-      const pal = variant ? ['#78bb8d', '#9ccfa6'] : ['#7dbf8f', '#a3d4ad'];
-      g.fillStyle = T(pal[0]); g.beginPath(); g.ellipse(0, -13, 25, 16, 0, Math.PI, TAU); g.fill();
-      g.fillStyle = T(pal[1]); g.beginPath(); g.ellipse(-7, -17, 12, 8, 0, Math.PI, TAU); g.fill();
+      g.fillStyle = T('#7dbf8f'); g.beginPath(); g.ellipse(0, -13, 25, 16, 0, Math.PI, TAU); g.fill();
     } else if (kind === FL.ROUND || kind === FL.AUTUMN) {
       const pal = kind === FL.ROUND
         ? (variant ? ['#3f9d52', '#58b565', '#2e7f43'] : ['#4aa85a', '#68c070', '#35904a'])
@@ -225,14 +254,15 @@ const Scenery = (() => {
   ];
   function bakeClouds() {
     atlas.clouds = []; atlas.cloudsWarm = [];
-    [['#ffffff', atlas.clouds], ['#ffc6a6', atlas.cloudsWarm]].forEach(([col, out]) => {
+    [[LAND ? '#f9d3c6' : '#ffffff', atlas.clouds], [LAND ? '#f6b9a8' : '#ffc6a6', atlas.cloudsWarm]].forEach(([col, out]) => {
       CLOUD_SHAPES.forEach(shape => {
         const cv = mkCanvas(150, 90), g = cv.g;
         g.translate(30, 44);
-        g.fillStyle = 'rgba(120,150,190,0.30)';          // ombra morbida sotto
+        g.fillStyle = LAND ? '#e59a8f' : 'rgba(120,150,190,0.30)';          // ombra sotto (nel Paesaggio: salmone, a strati)
         g.beginPath(); shape.forEach(([x, y, r]) => { g.moveTo(x + r, y + 7); g.arc(x, y + 7, r, 0, TAU); }); g.fill();
         g.fillStyle = col;
         g.beginPath(); shape.forEach(([x, y, r]) => { g.moveTo(x + r, y); g.arc(x, y, r, 0, TAU); }); g.fill();
+        if (LAND) { g.fillStyle = 'rgba(255,240,232,0.7)'; g.beginPath(); shape.forEach(([x, y, r]) => { g.moveTo(x + r * 0.62, y - r * 0.3); g.arc(x - r * 0.1, y - r * 0.3, r * 0.62, 0, TAU); }); g.fill(); }
         out.push(cv.c);
       });
     });
@@ -463,21 +493,21 @@ const Scenery = (() => {
     // cielo
     const A = S.A, B = S.B;
     let sT = mix(A.skyT, B.skyT, t), sB = mix(A.skyB, B.skyB, t);
-    if (POSTER) { const em = (A.part === 'ember' ? 1 - t : 0) + (B.part === 'ember' ? t : 0); sT = mix(sT, sB, 0.8 * (1 - em)); }   // cielo quasi piatto (tranne il vulcano)
-    sT = mix(mix(sT, DUSK_T, S.warm * 0.6), NIGHT_T, S.night);
-    sB = mix(mix(sB, DUSK_B, S.warm * 0.65), NIGHT_B, S.night);
-    S.skyT = sT; S.skyB = sB;
+    if (POSTER && !LAND) { const em = (A.part === 'ember' ? 1 - t : 0) + (B.part === 'ember' ? t : 0); sT = mix(sT, sB, 0.8 * (1 - em)); }   // cielo quasi piatto (tranne il vulcano)
+    sT = mix(mix(sT, DUSK_T, S.warm * (LAND ? 0.3 : 0.6)), NIGHT_T, S.night);
+    sB = mix(mix(sB, DUSK_B, S.warm * (LAND ? 0.35 : 0.65)), NIGHT_B, S.night);
+    S.skyT = sT; S.skyB = sB; S.sunC = mix(A.sun, B.sun, t);
 
     // creste: forma e colori mescolati fra i due biomi, poi tinti dall'ora del giorno
     for (let l = 0; l < 4; l++) {
-      const R = RP[l], L = LAYER[l], am = A.amp + (B.amp - A.amp) * t;
+      const R = RP[l], L = LAYER[l], am = (A.amp + (B.amp - A.amp) * t) * (LAND ? 1.18 : 1);
       R.wR = A.wR + (B.wR - A.wR) * t; R.wP = A.wP + (B.wP - A.wP) * t; R.wM = A.wM + (B.wM - A.wM) * t;
       R.A = L.amp * S.hs * am; R.off = L.off * S.hs;
       R.f1 = L.f1; R.f2 = L.f2; R.f3 = L.f3; R.p1 = L.p1; R.p2 = L.p2; R.p3 = L.p3;
       let c = mix(A.ridge[l], B.ridge[l], t);
       c = tod(c, 0.3 - l * 0.04, 0.6);
       R.col = c;
-      R.colB = mix(c, sB, POSTER ? 0.08 : 0.5 - l * 0.1);
+      R.colB = mix(c, sB, LAND ? 0.5 - l * 0.1 : POSTER ? 0.08 : 0.5 - l * 0.1);
     }
     updateParticles(dt, dCam);
   }
@@ -515,7 +545,16 @@ const Scenery = (() => {
     }
 
     // sole piatto (stile poster): disco arancio-rosso che "respira" piano, con un alone che pulsa; più rosso verso il tramonto
-    if (POSTER) {
+    if (LAND) {
+      // sole enorme e pallido dietro le montagne: alone sfumato + disco morbido
+      const sx = S.sunX, sy = S.sunY, r = S.sunR * 2.3 * (1 + 0.015 * Math.sin(now * 1.2)), sc = S.sunC;
+      ctx.globalAlpha = 1 - S.night * 0.6;
+      const hg = ctx.createRadialGradient(sx, sy, r * 0.8, sx, sy, r * 2.1);
+      hg.addColorStop(0, rgb(mix(sc, S.skyB, 0.25)) .replace('rgb(', 'rgba(').replace(')', ',0.42)')); hg.addColorStop(1, rgb(sc).replace('rgb(', 'rgba(').replace(')', ',0)'));
+      ctx.fillStyle = hg; ctx.fillRect(sx - r * 2.2, sy - r * 2.2, r * 4.4, r * 4.4);
+      ctx.fillStyle = rgb(mix(sc, [255, 255, 255], 0.08)); ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (POSTER) {
       const sx = S.sunX, sy = S.sunY, r = S.sunR * 1.3, col = mix(SUN_COL, SUN_WARM, S.warm * 0.7), cs = rgb(col);
       ctx.fillStyle = cs; ctx.globalAlpha = 1 - S.night * 0.4;
       ctx.beginPath(); ctx.arc(sx, sy, r * (1 + 0.02 * Math.sin(now * 1.4)), 0, TAU); ctx.fill();
@@ -554,8 +593,8 @@ const Scenery = (() => {
 
     // uccelli (solo di giorno): nel look poster sono gabbiani scuri e spessi, in stormi da tre che sbattono le ali
     if (S.day > 0.3 && quality < 2) {
-      ctx.strokeStyle = POSTER ? `rgba(36,52,58,${(0.95 * S.day).toFixed(2)})` : `rgba(40,50,80,${(0.6 * S.day).toFixed(2)})`;
-      ctx.lineWidth = POSTER ? 3.4 : 2; ctx.lineCap = 'round';
+      ctx.strokeStyle = LAND ? `rgba(96,44,84,${(0.8 * S.day).toFixed(2)})` : POSTER ? `rgba(36,52,58,${(0.95 * S.day).toFixed(2)})` : `rgba(40,50,80,${(0.6 * S.day).toFixed(2)})`;
+      ctx.lineWidth = LAND ? 2.6 : POSTER ? 3.4 : 2; ctx.lineCap = 'round';
       const bp = new Path2D(), nf = POSTER ? 3 : 1;
       for (let i = 0; i < BIRDS.length; i++) {
         const b = BIRDS[i], span = w + 400;
@@ -647,7 +686,26 @@ const Scenery = (() => {
 
     // ombre sui versanti lontani dal sole: un solo poligono per tratto, sfumato in basso (niente bande)
     const sh = R.wP + R.wM;
-    if (sh > 0.4 && quality < 1) {
+    if (LAND && quality < 3) {
+      // montagne a facce: per ogni cima, il versante lontano dal sole è un triangolo scuro, quello vicino uno chiaro
+      const dir = S.p < 0.5 ? 1 : -1, dark = new Path2D(), lite = new Path2D(), minH = 8 * S.hs;
+      for (let i = 1; i < n - 1; i++) {
+        const y = ysBuf[i];
+        if (!(y < ysBuf[i - 1] && y <= ysBuf[i + 1])) continue;
+        let a = i; while (a > 0 && ysBuf[a - 1] >= ysBuf[a]) a--;
+        let b = i; while (b < n - 1 && ysBuf[b + 1] >= ysBuf[b]) b++;
+        if (Math.min(ysBuf[a], ysBuf[b]) - y < minH) continue;
+        const xp = x0 + i * step, lean = 0.12 * (b - a) * step * dir;
+        const side = (from, to, yBase, P) => { P.moveTo(xp, y); const st = to > from ? 1 : -1; for (let k = from + st; k !== to + st; k += st) P.lineTo(x0 + k * step, ysBuf[k]); P.lineTo(x0 + to * step, yBase); P.lineTo(xp + lean, yBase); P.closePath(); };
+        const yb = Math.max(ysBuf[a], ysBuf[b]) + 2;
+        if (dir > 0) { side(i, b, Math.min(yb, gy + 6), dark); side(i, a, Math.min(yb, gy + 6), lite); }
+        else { side(i, a, Math.min(yb, gy + 6), dark); side(i, b, Math.min(yb, gy + 6), lite); }
+      }
+      const na = S.night * 0.12;
+      ctx.fillStyle = `rgba(72,30,104,${(0.24 + na - l * 0.025).toFixed(3)})`; ctx.fill(dark);
+      ctx.fillStyle = `rgba(255,238,214,${(0.2 * (1 - S.night * 0.8) - l * 0.015).toFixed(3)})`; ctx.fill(lite);
+    }
+    if (!LAND && sh > 0.4 && quality < 1) {
       const dir = S.p < 0.5 ? 1 : -1, shade = new Path2D();
       for (let i = 0; i < n - 1;) {
         const d = (ysBuf[i + 1] - ysBuf[i]) * dir;
@@ -770,7 +828,18 @@ const Scenery = (() => {
     }
 
     // 2. strati e sassi sepolti (dentro il terreno)
-    if (POSTER && quality < 2) {
+    if (LAND && quality < 2) {
+      // colline in primo piano a fasce ondulate: terreno → ocra → ruggine → marrone → blu notte (mescolate al colore del bioma)
+      ctx.save(); ctx.clip();
+      const BANDS = [[34, [236, 189, 111], 0.42, 0.010], [100, [206, 98, 56], 0.5, 0.0075], [178, [112, 56, 44], 0.62, 0.0062], [270, [29, 37, 64], 0.82, 0.005]];
+      BANDS.forEach(([off, tc, k, fq], bi) => {
+        ctx.beginPath();
+        for (let i = 0; i < n; i++) { const x = i * step, y = gy - surf[i] + off + 12 * Math.sin((x + camX) * fq + bi * 1.9) + 5 * Math.sin((x + camX) * fq * 2.7 + bi); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+        ctx.lineTo(xLast, h + 6); ctx.lineTo(0, h + 6); ctx.closePath();
+        ctx.fillStyle = zoneGrad(ctx, z => tod(mix(BIOMES[z.biome].soil, tc, k), 0.25, 0.5)); ctx.fill();
+      });
+      ctx.restore();
+    } else if (POSTER && quality < 2) {
       // due fasce ondulate piatte, appena più scure del terreno (come le colline dell'illustrazione); niente sassi
       ctx.save(); ctx.clip();
       ctx.fillStyle = 'rgba(45,62,72,0.09)';

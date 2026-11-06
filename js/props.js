@@ -181,6 +181,7 @@ const Props = (() => {
       else if (p.kind === 'bowl') bowlDip(ctx, p, camX, x0, x1, H, sub, t);
       else if (p.kind === 'jump') inkJump(ctx, p, camX, x0, x1, H, sub, t);
       else if (p.kind === 'drop') inkDrop(ctx, p, camX, x0, x1, H, sub, t);
+      else if (p.kind === 'ravine') ravineDraw(ctx, p, camX, x0, x1, H, sub, t);
     }
   }
   // ---- utilità comuni dei terreni: strati spessi con gradiente ed estremità che si assottigliano --------------
@@ -334,6 +335,54 @@ const Props = (() => {
     }
     inkSplat(ctx, camX, x0, x1, H, p.a + p.u1 + p.ex + p.pw / 2, 14, p.pw * 0.75, p.a * 0.013);
   }
+  // Burrone vero: rampa di lancio in legno/pietra con frecce, vuoto profondo con pareti stratificate, bordo di arrivo ripido
+  function ravineDraw(ctx, p, camX, x0, x1, H, sub, t) {
+    const wood = p.zkey === 'ramps';
+    // ---- il vuoto: parete di fondo scura a strati, dal bordo di arrivo fino al fondo ----
+    const pa = p.a + p.u1 - 2, pb = p.a + p.u2 + p.rr + 3;
+    if (pb >= x0 && pa <= x1) {
+      const l = Math.max(pa, x0), r = Math.min(pb, x1), yTop = H(p.a + p.u2 + p.rr + 6), yBot = H(p.a + p.u1 + p.ex + p.pw / 2) + 14;
+      const g = ctx.createLinearGradient(0, yTop, 0, yBot);
+      g.addColorStop(0, '#6a4252'); g.addColorStop(0.35, '#432a43'); g.addColorStop(1, '#1b1228');
+      ctx.beginPath();
+      for (let x = l; x <= r + 0.1; x += 4) { const y = Math.max(H(x), yTop), X = x - camX; if (x === l) ctx.moveTo(X, yTop - 1); ctx.lineTo(X, y + 2); }
+      ctx.lineTo(r - camX, yTop - 1); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+      // strati di roccia sulla parete di fondo
+      ctx.save(); ctx.clip();
+      for (let k = 1; k < 6; k++) {
+        const y = yTop + (yBot - yTop) * (k / 6) + 2 * Math.sin(k * 3.1);
+        ctx.strokeStyle = k % 2 ? 'rgba(255,214,190,0.10)' : 'rgba(10,6,20,0.28)'; ctx.lineWidth = 2 + (k % 3); ctx.beginPath();
+        for (let x = l; x <= r + 0.1; x += 12) { const yy = y + 3 * Math.sin(x * 0.04 + k * 1.7); if (x === l) ctx.moveTo(x - camX, yy); else ctx.lineTo(x - camX, yy); }
+        ctx.stroke();
+      }
+      ctx.restore();
+      // spigolo di roccia chiaro lungo le due pareti
+      lineOff(ctx, camX, l, r, H, () => 0, 4); ctx.strokeStyle = 'rgba(255,225,195,0.35)'; ctx.lineWidth = 2.2; ctx.stroke();
+    }
+    // ---- rampa di lancio ----
+    const ka = p.a + p.s + 10, kb = p.a + p.u1 + 6;
+    if (kb >= x0 && ka <= x1) {
+      const l = Math.max(ka, x0), r = Math.min(kb, x1), tp = x => sm01((x - ka) / 40) * sm01((kb - x) / 10);
+      fillSlab(ctx, camX, l, r, H, () => -5, x => 5 + 8 * tp(x), wood ? [[0, '#e0ae6c'], [0.5, '#b88140'], [1, '#6e4a22']] : [[0, '#cfc7ba'], [0.5, '#9a9286'], [1, '#5a544c']], 4);
+      ctx.strokeStyle = wood ? 'rgba(80,50,20,0.5)' : 'rgba(60,56,50,0.45)'; ctx.lineWidth = 1.2;
+      for (let wx = ka + 16; wx < kb - 6; wx += 24) { if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.beginPath(); ctx.moveTo(wx - camX, y - 4); ctx.lineTo(wx - camX, y + 10); ctx.stroke(); }
+      lineOff(ctx, camX, l, r, H, () => -5, 5); ctx.strokeStyle = wood ? '#f6d9a4' : '#e6e0d4'; ctx.lineWidth = 2; ctx.stroke();
+      // frecce arancio sulla rampa (si salta qui) e strisce di avviso sul labbro
+      for (let k = 0; k < 3; k++) {
+        const wx = kb - 46 - k * 40; if (wx < x0 || wx > x1) continue; const y = H(wx) - 6, X = wx - camX;
+        ctx.fillStyle = '#fb5f35'; ctx.beginPath(); ctx.moveTo(X - 11, y + 1); ctx.lineTo(X, y - 8); ctx.lineTo(X + 11, y + 1); ctx.lineTo(X + 11, y + 5); ctx.lineTo(X, y - 4); ctx.lineTo(X - 11, y + 5); ctx.closePath(); ctx.fill();
+      }
+      for (let k = 0; k < 3; k++) { const wx = kb - 6 - k * 9; if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.fillStyle = k % 2 ? '#2d3e48' : '#f5e594'; ctx.fillRect(wx - camX - 3, y - 6, 6, 5); }
+    }
+    // cartello prima della rampa
+    const sx = p.a + p.s - 30;
+    if (sx > x0 - 40 && sx < x1 + 40) {
+      const X = sx - camX, Y = H(sx);
+      ctx.fillStyle = '#6b3a2a'; ctx.fillRect(X - 3, Y - 58, 6, 60);
+      ctx.fillStyle = '#f8f4dc'; ctx.beginPath(); ctx.moveTo(X - 24, Y - 90); ctx.lineTo(X + 24, Y - 90); ctx.lineTo(X + 24, Y - 54); ctx.lineTo(X - 24, Y - 54); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#fb5f35'; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(X - 12, Y - 60); ctx.lineTo(X, Y - 84); ctx.lineTo(X + 12, Y - 60); ctx.stroke();
+    }
+  }
   function inkDrop(ctx, p, camX, x0, x1, H, sub, t) {
     // la discesa è una larga pennellata nera con le gocce che colano; il piano più basso porta qualche schizzo
     const a = p.a + p.s - 8, b = p.a + p.s + p.ex + 26;
@@ -349,8 +398,17 @@ const Props = (() => {
   }
 
 
-  // ---- portali (modalità pazza): anelli d'inchiostro; si attraversano una volta sola e poi si dissolvono ----
-  //  salto  = carta chiara con vortice e freccia ↔ · specchio = nero con ⇄ bianco · uscita = anello tratteggiato con freccia a sinistra
+  // ---- portali (modalità pazza): anelli piatti, un colore e un simbolo per ogni effetto; si prendono una volta sola e poi si dissolvono ----
+  //  teletrasporto = verde acqua, freccia ↔ · specchio = arancio, freccia a U (da qui si torna indietro) · uscita = arancio tratteggiato, freccia ←
+  //  gigante = ocra, cerchio piccolo → grande · normale = ocra tratteggiato, cerchio grande → piccolo. Sopra ogni anello c'è anche il nome.
+  //  Un anello sta a 2·Terrain.PORTAL_RY + 3 px dal suolo: con un salto (o il doppio) le ruote lo scavalcano e il portale non scatta.
+  const PORTAL_STYLE = {
+    shift:  { col: '#027a71', dark: '#015a53', fill: '#d4ebdf' },
+    mirror: { col: '#2d3e48', dark: '#2d3e48', fill: '#dfe4dc' },
+    exit:   { col: '#2d3e48', dark: '#2d3e48', fill: '#e6e9df' },
+    grow:   { col: '#fb5f35', dark: '#c7411f', fill: '#fbe3d3' },
+    big:    { col: '#fb5f35', dark: '#c7411f', fill: '#fbe3d3' },
+  };
   function drawPortals(ctx, camX, w, gy, t, st, layer) {
     const P = Terrain.PORTALS; if (!P || !P.length) return;
     for (let i = 0; i < P.length; i++) {
@@ -361,66 +419,64 @@ const Props = (() => {
     }
   }
   function portalDraw(ctx, q, sx, by, t, k, d, st, layer) {
-    const Zx = q.kind === 'big' ? 3.0 : 1, Zy = q.kind === 'big' ? 2.4 : 1;   // il portale grande è davvero grande: ci passano le ruote giganti (×2,2)
-    const ry = 92 * k * Zy, rx = 42 * k * Zx, cy = by - ry - 3, seed = q.id * 1.7;
-    const ring = (n, f) => { ctx.beginPath(); for (let j = 0; j <= n; j++) { const a = f + (j / n) * TAU * (f === undefined ? 1 : 1); const wob = 1 + 0.05 * Math.sin(3 * a + t * 2 + seed) + 0.035 * Math.sin(5 * a - t * 3 + seed); const x = sx + Math.cos(a) * rx * wob, y = cy + Math.sin(a) * ry * wob; if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } };
-    const dim = q.kind === 'exit' && !(st.mirrored && st.myExit === q.id) ? 0.38 : q.kind === 'big' && !st.big ? 0.55 : 1;   // solo la propria uscita è in evidenza
+    const big = q.kind === 'big', sty = PORTAL_STYLE[q.kind] || PORTAL_STYLE.shift;
+    const grow = q.kind === 'grow';
+    const RY = Terrain.PORTAL_RY || 70;   // il portale grande è davvero grande: ci passano le ruote giganti (×2,2); anche l'anello del gigante è più alto degli altri
+    const ry = (big ? 220 : grow ? 92 : RY) * k, rx = (big ? 126 : grow ? 46 : 46) * k;
+    const cy = by - ry - 3, seed = q.id * 1.7, pulse = 1 + 0.03 * Math.sin(t * 2.4 + seed);
+    const dim = q.kind === 'exit' && !(st.mirrored && st.myExit === q.id) ? 0.42 : big && !st.big ? 0.6 : 1;   // solo la propria uscita è in evidenza
+    const ell = (a0, a1) => { ctx.beginPath(); ctx.ellipse(sx, cy, rx * pulse, ry * pulse, 0, a0, a1); };
     ctx.save(); ctx.globalAlpha = dim; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     if (layer === 'back') {
-      // pozza d'inchiostro alla base
-      ctx.fillStyle = 'rgba(12,12,18,0.55)'; ctx.beginPath(); ctx.ellipse(sx, by + 2, 34 * k, 5 * k, 0, 0, TAU); ctx.fill();
-      // riempimento
-      ring(36, 0);
-      ctx.fillStyle = q.kind === 'mirror' ? 'rgba(14,14,22,0.88)' : q.kind === 'shift' || q.kind === 'grow' ? 'rgba(250,247,238,0.82)' : 'rgba(250,247,238,0.45)'; ctx.fill();
-      ctx.save(); ctx.clip();
-      // vortice a spirale d'inchiostro, come nel riferimento: fasce ondulate piene e sovrapposte che scorrono verso il centro,
-      // una spirale al centro e un'ombra più chiara sul bordo (salto: nero su carta chiara · specchio: chiaro sul nero · uscita: leggero)
-      const dark = q.kind === 'mirror', ex = q.kind === 'exit' || q.kind === 'big', N = ex ? 4 : 7, col = dark ? '236,236,252' : '12,12,18';
-      const bands = [];
-      for (let j = 0; j < N; j++) bands.push({ j, f: 1 - ((j + t * 0.4) % N) / N });
-      bands.sort((p, q2) => q2.f - p.f);   // dalle più grandi alle più piccole
-      const blob = (e, ph, amp) => { ctx.beginPath(); for (let m = 0; m <= 30; m++) { const aa = m / 30 * TAU, wob = 1 + amp * Math.sin(3 * aa + t * 1.1 + ph + seed) + amp * 0.6 * Math.sin(5 * aa - t * 1.6 + ph * 1.7) + amp * 0.35 * Math.sin(2 * aa + t * 0.7 - ph); const x = sx + Math.cos(aa) * rx * e * wob, y = cy + Math.sin(aa) * ry * e * wob; if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); };
-      for (const bd of bands) {
-        const e = 0.08 + 1.02 * bd.f, shade = (dark ? (bd.j % 2 ? 0.1 : 0.2) : (bd.j % 2 ? 0.04 : 0.13)) * (ex ? 0.55 : 1) * Math.min(1, bd.f * 3);
-        blob(e, bd.j * 1.9, 0.10); ctx.fillStyle = `rgba(${col},${shade.toFixed(3)})`; ctx.fill();
-        ctx.strokeStyle = `rgba(${col},${(0.55 + 0.4 * bd.f).toFixed(3)})`; ctx.lineWidth = 1.4 + 2.2 * bd.f; ctx.stroke();
+      // ombra piatta alla base
+      ctx.fillStyle = 'rgba(45,62,72,0.16)'; ctx.beginPath(); ctx.ellipse(sx, by + 2, rx * 0.95, 6 * k, 0, 0, TAU); ctx.fill();
+      // riempimento chiaro (si vede la scena attraverso)
+      ell(0, TAU); ctx.fillStyle = sty.fill; ctx.globalAlpha = dim * 0.78; ctx.fill(); ctx.globalAlpha = dim;
+      // anello interno più scuro, che ruota a tratti: dà movimento senza sfumature
+      ctx.save(); ell(0, TAU); ctx.clip();
+      ctx.strokeStyle = sty.col; ctx.globalAlpha = dim * 0.35; ctx.lineWidth = 6; ctx.setLineDash([16, 12]); ctx.lineDashOffset = -t * 26;
+      ctx.beginPath(); ctx.ellipse(sx, cy, rx * 0.72, ry * 0.72, 0, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(sx, cy, rx * 0.44, ry * 0.44, 0, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      ctx.restore(); ctx.globalAlpha = dim;
+      // simbolo al centro
+      glyph(ctx, q.kind, sx, cy, k, sty, t, grow ? 1.15 : big ? 1.9 : 1);
+      // cerchio e puntini che girano attorno
+      ctx.fillStyle = sty.col;
+      for (let m = 0; m < 6; m++) { const a = m / 6 * TAU + t * 0.9 + seed; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * (rx + 14), cy + Math.sin(a) * (ry + 14), 3.2 * k, 0, TAU); ctx.fill(); }
+      // etichetta: pastiglia crema col nome, sopra l'anello
+      if (k > 0.5 && !(q.kind === 'exit' && dim < 1)) {
+        const name = I18n.t('portal.' + q.kind); ctx.font = '700 17px Kalam, "Comic Sans MS", cursive'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const tw = ctx.measureText(name).width + 22, ph = 26, px = sx - tw / 2, py = cy - ry - ph - 12 + Math.sin(t * 2 + seed) * 1.6;
+        ctx.fillStyle = 'rgba(45,62,72,0.2)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(px, py + 3, tw, ph, ph / 2) : ctx.rect(px, py + 3, tw, ph); ctx.fill();
+        ctx.fillStyle = '#f8f4dc'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(px, py, tw, ph, ph / 2) : ctx.rect(px, py, tw, ph); ctx.fill();
+        ctx.fillStyle = sty.dark; ctx.fillText(name, sx, py + ph / 2 + 1);
       }
-      if (!ex) {
-        ctx.strokeStyle = `rgba(${col},0.95)`; ctx.lineWidth = 2.6; ctx.beginPath();
-        for (let m = 0; m <= 46; m++) { const u = m / 46, aa = u * 8 + t * 2.2, rr = 0.02 + 0.3 * u; const x = sx + Math.cos(aa) * rx * rr, y = cy + Math.sin(aa) * ry * rr; if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
-        ctx.stroke();
-      }
-      ctx.restore();
-      // glifo al centro
-      ctx.strokeStyle = q.kind === 'mirror' ? '#f2f2ff' : '#0c0c12'; ctx.lineWidth = 3.4;
-      const gy0 = cy, a = 9 * k;
-      if (!ex) { ctx.fillStyle = q.kind === 'mirror' ? 'rgba(14,14,22,0.94)' : 'rgba(250,247,238,0.94)'; ctx.beginPath(); ctx.ellipse(sx, gy0, rx * 0.62, 21 * k, 0, 0, TAU); ctx.fill(); }
-      const arrow = (x0, y0, x1) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); const s = x1 > x0 ? -1 : 1; ctx.moveTo(x1 + s * 6, y0 - 5); ctx.lineTo(x1, y0); ctx.lineTo(x1 + s * 6, y0 + 5); ctx.stroke(); };
-      // gigante: anelli concentrici che si allargano · grande: anelli che si stringono (nessuna freccia)
-      const pulse = (dirOut, base) => { ctx.lineWidth = 3; for (let j = 0; j < 3; j++) { let u = ((t * 0.55 + j / 3) % 1); if (!dirOut) u = 1 - u; const e = 0.12 + 0.88 * u; ctx.globalAlpha *= 1; ctx.save(); ctx.globalAlpha = (0.25 + 0.75 * Math.sin(u * Math.PI)) * dim; ctx.beginPath(); ctx.ellipse(sx, gy0, base * rx * e, base * ry * 0.5 * e, 0, 0, TAU); ctx.stroke(); ctx.restore(); } };
-      if (q.kind === 'grow') pulse(true, 0.62);
-      else if (q.kind === 'big') pulse(false, 0.7);
-      else if (q.kind === 'shift') { arrow(sx, gy0, sx + a); arrow(sx, gy0, sx - a); }
-      else if (q.kind === 'mirror') { arrow(sx - a, gy0 - 8, sx + a); arrow(sx + a, gy0 + 8, sx - a); }
-      else arrow(sx + a, gy0, sx - a);
     }
-    // anello (nel livello "front" solo la metà destra, così la bici sembra entrare nel portale)
-    const ink = '#0c0c12';
-    ctx.strokeStyle = ink; ctx.lineWidth = layer === 'back' ? 7 * (0.5 + 0.5 * k) : 5.5 * (0.5 + 0.5 * k);
-    if (q.kind === 'exit' || q.kind === 'big') ctx.setLineDash([9, 7]);
-    if (layer === 'back') { ring(36, 0); ctx.stroke(); }
-    else { ctx.beginPath(); for (let j = 0; j <= 18; j++) { const a = -Math.PI / 2 + (j / 18) * Math.PI, wob = 1 + 0.05 * Math.sin(3 * a + t * 2 + seed) + 0.035 * Math.sin(5 * a - t * 3 + seed); const x = sx + Math.cos(a) * rx * wob, y = cy + Math.sin(a) * ry * wob; if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.stroke(); }
-    ctx.setLineDash([]);
-    if (layer === 'back') {
-      // sbavatura d'inchiostro attorno al bordo e puntini che girano (come i granelli del riferimento)
-      ctx.fillStyle = 'rgba(12,12,18,0.07)'; ctx.beginPath(); for (let m = 0; m <= 36; m++) { const aa = m / 36 * TAU, wob = 1.16 + 0.07 * Math.sin(4 * aa + t * 1.2 + seed); const x = sx + Math.cos(aa) * rx * wob, y = cy + Math.sin(aa) * ry * wob; if (m === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.fill();
-      ctx.fillStyle = 'rgba(12,12,18,0.7)';
-      for (let m = 0; m < 12; m++) { const aa = m * 0.52 + t * (0.5 + (m % 3) * 0.15) + seed, rr = 1.2 + 0.22 * ((m * 5) % 4) / 3; ctx.beginPath(); ctx.arc(sx + Math.cos(aa) * rx * rr, cy + Math.sin(aa) * ry * rr, 1.2 + (m % 3) * 0.7, 0, TAU); ctx.fill(); }
-      // gocce che colano dal bordo basso
-      ctx.fillStyle = ink;
-      for (let j = 0; j < 3; j++) { const dx = (j - 1) * rx * 0.6, ph = (t * 0.35 + j * 0.37 + seed) % 1, ln = 6 + 14 * ph; ctx.beginPath(); ctx.ellipse(sx + dx, by - 3 + ln * 0.4, 2.2, 3 + ln * 0.35, 0, 0, TAU); ctx.fill(); }
-      // dissolvenza: schizzi che cadono
-      if (d > 0) for (let j = 0; j < 9; j++) { const a = j * 0.7 + seed, rr = 14 + d * 46 * (0.6 + 0.4 * ((j * 7) % 5) / 4); ctx.globalAlpha = 1 - d; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * rr, by - 70 + Math.sin(a) * rr * 1.3 + d * d * 50, 3.2 * (1 - d) + 1, 0, TAU); ctx.fill(); }
+    // anello: pieno (tratteggiato per uscita e "normale"); nel livello "front" solo la metà destra, così la bici sembra entrare nel portale
+    const lw = (layer === 'back' ? 10 : 8) * (0.5 + 0.5 * k), dashed = q.kind === 'exit' || big;
+    const path = () => { if (layer === 'back') ell(0, TAU); else ell(-Math.PI / 2, Math.PI / 2); };
+    ctx.strokeStyle = '#f8f4dc'; ctx.lineWidth = lw + 7; path(); ctx.stroke();   // bordino crema: l'anello si legge su qualunque sfondo
+    ctx.strokeStyle = sty.col; ctx.lineWidth = lw; if (dashed) ctx.setLineDash([14, 10]); path(); ctx.stroke(); ctx.setLineDash([]);
+    if (layer === 'back') { ctx.strokeStyle = '#f8f4dc'; ctx.lineWidth = 2.2; ctx.globalAlpha = dim * 0.9; ctx.beginPath(); ctx.ellipse(sx, cy, rx * pulse - 7, ry * pulse - 7, 0, -2.5, -1.3); ctx.stroke(); }   // riflesso piatto sul bordo
+    // dissolvenza: puntini che si allargano
+    if (layer === 'back' && d > 0) { ctx.fillStyle = sty.col; for (let j = 0; j < 9; j++) { const a = j * 0.7 + seed, rr = 18 + d * 50 * (0.6 + 0.4 * ((j * 7) % 5) / 4); ctx.globalAlpha = 1 - d; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * rr * 0.8, cy + Math.sin(a) * rr * 1.2, 3.6 * (1 - d) + 1, 0, TAU); ctx.fill(); } }
+    ctx.restore();
+  }
+  // simboli al centro dell'anello: forme piene e linee spesse nel colore scuro del portale
+  function glyph(ctx, kind, x, y, k, sty, t, sc) {
+    ctx.save(); ctx.translate(x, y); ctx.scale(k * sc, k * sc); ctx.strokeStyle = sty.dark; ctx.fillStyle = sty.dark; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const head = (hx, hy, dir) => { ctx.beginPath(); ctx.moveTo(hx - dir * 11, hy - 10); ctx.lineTo(hx, hy); ctx.lineTo(hx - dir * 11, hy + 10); ctx.stroke(); };
+    if (kind === 'shift') {            // ↔
+      ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(20, 0); ctx.stroke(); head(-22, 0, -1); head(22, 0, 1);
+    } else if (kind === 'mirror') {    // inversione a U: si va e si torna
+      ctx.beginPath(); ctx.moveTo(14, 20); ctx.lineTo(14, -4); ctx.arc(0, -4, 14, 0, Math.PI, true); ctx.lineTo(-14, 16); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-24, 8); ctx.lineTo(-14, 20); ctx.lineTo(-4, 8); ctx.stroke();
+    } else if (kind === 'exit') {      // ←|
+      ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-18, 0); ctx.stroke(); head(-20, 0, -1); ctx.beginPath(); ctx.moveTo(26, -14); ctx.lineTo(26, 14); ctx.stroke();
+    } else if (kind === 'grow') {      // cerchio piccolo → cerchio grande
+      ctx.beginPath(); ctx.arc(-20, 0, 5, 0, TAU); ctx.fill(); ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(4, 0); ctx.stroke(); ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(22, 0, 13, 0, TAU); ctx.stroke();
+    } else if (kind === 'big') {       // cerchio grande → cerchio piccolo
+      ctx.beginPath(); ctx.arc(-22, 0, 13, 0, TAU); ctx.stroke(); ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(10, 0); ctx.stroke(); ctx.beginPath(); ctx.arc(22, 0, 5, 0, TAU); ctx.fill();
     }
     ctx.restore();
   }

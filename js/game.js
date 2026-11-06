@@ -315,7 +315,7 @@
 
   function startCountdown(startTime) {
     showScreen('race'); if (typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'flex';
-    if (els.btnJump) els.btnJump.style.display = 'flex'; resetSlow(); for (const k in jnSeen) delete jnSeen[k];
+    if (els.btnJump) els.btnJump.style.display = 'flex'; resetSlow(); for (const k in jnSeen) delete jnSeen[k]; for (const k in jaSeen) delete jaSeen[k];
     raceMeta = {}; Object.values(Net.players).forEach(p => raceMeta[p.id] = { color: p.color, name: p.name, vertices: wheels[p.id] || preRaceDrawer.fallbackCircle() });
     // l'host tara in anticipo ogni ruota (a fette, durante l'intro): così su terreno normale vanno tutte alla pari
     if (Net.isHost) { Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {})); Sim.prepareAsync(); }   // mondo fisico costruito a fette durante l'intro
@@ -402,7 +402,7 @@
           for (const id in b.m) {
             const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
-            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, jn: rb.jn, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, jn: rb.jn, ja: rb.ja, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
           }
           return;
@@ -416,7 +416,7 @@
       if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }   // portale (teletrasporto) o nuovo arrivato o salto (rimessa in pista): niente scivolata
       latestRacers[id] = {
         id, finished: rb.finished, finishTime: rb.finishTime,
-        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, jn: rb.jn, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, jn: rb.jn, ja: rb.ja, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
         fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
         rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
       };
@@ -636,8 +636,9 @@
     const rr = (c, x, y, w, h, r) => { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); };
     const star = (c, x, y, r, col) => { c.fillStyle = col; c.beginPath(); c.moveTo(x, y - r); c.quadraticCurveTo(x, y, x + r, y); c.quadraticCurveTo(x, y, x, y + r); c.quadraticCurveTo(x, y, x - r, y); c.quadraticCurveTo(x, y, x, y - r); c.fill(); };
     // cielo crema, sole pieno, nuvole piatte, tre gabbiani
-    s.fillStyle = '#eeebcb'; s.fillRect(0, 0, W, H);
-    s.fillStyle = '#fb5f35'; s.beginPath(); s.arc(W - 62, 46, 22, 0, TAU); s.fill();
+    const skyG = s.createLinearGradient(0, 0, 0, H); skyG.addColorStop(0, '#f0836b'); skyG.addColorStop(0.6, '#f8c4a0'); skyG.addColorStop(1, '#fbe3bd');
+    s.fillStyle = skyG; s.fillRect(0, 0, W, H);
+    s.fillStyle = 'rgba(251,230,190,0.9)'; s.beginPath(); s.arc(W - 70, 58, 46, 0, TAU); s.fill();
     for (let i = 0; i < 4; i++) { const cx = 60 + i * (W - 150) / 3 + (hsh(i, 3.3) - 0.5) * 60, cy = 26 + hsh(i, 5.5) * 36, k = 0.8 + hsh(i, 7.1) * 0.5;
       s.fillStyle = CRM; [[-18, 2, 9], [-7, -6, 11], [7, -4, 10], [19, 2, 8], [0, 3, 10]].forEach(([dx, dyy, r]) => { s.beginPath(); s.arc(cx + dx * k, cy + dyy * k, r * k, 0, TAU); s.fill(); }); }
     s.strokeStyle = '#2d3e48'; s.lineWidth = 1.8; [[W * 0.3, 40], [W * 0.3 + 16, 48], [W * 0.3 - 14, 50]].forEach(([bx, by]) => { s.beginPath(); s.moveTo(bx - 6, by - 2); s.quadraticCurveTo(bx - 3, by - 5, bx, by); s.quadraticCurveTo(bx + 3, by - 5, bx + 6, by - 2); s.stroke(); });
@@ -760,7 +761,7 @@
       // macchia scura di partenza e schizzi radi
       { const x = X(F[0][0]), y = Y[0]; g.fillStyle = '#f8f4dc'; g.beginPath(); g.arc(x, y, bw * 0.95 + 1.8, 0, TAU); g.fill(); g.fillStyle = `rgb(${rgb})`; g.beginPath(); g.arc(x, y, bw * 0.95, 0, TAU); g.fill(); }
     };
-    const portalMarks = xp => { (Terrain.PORTALS || []).forEach(p => { if (p.kind === 'grow' || p.kind === 'big' || p.x < x0 || p.x > xp) return; const gx = X(p.x), gy = Yh(hAt(p.x)) - 12; g.strokeStyle = p.kind === 'shift' ? 'rgba(16,42,67,0.75)' : INK; g.lineWidth = p.kind === 'mirror' ? 3 : 1.8; g.setLineDash(p.kind === 'exit' ? [3, 3] : []); g.beginPath(); g.ellipse(gx, gy, 4.4, 12, 0, 0, TAU); g.save(); g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth += 3; g.setLineDash([]); g.stroke(); g.restore(); g.stroke(); }); g.setLineDash([]); };
+    const portalMarks = xp => { (Terrain.PORTALS || []).forEach(p => { if (p.kind === 'grow' || p.kind === 'big' || p.x < x0 || p.x > xp) return; const gx = X(p.x), gy = Yh(hAt(p.x)) - 12; g.strokeStyle = p.kind === 'shift' ? '#027a71' : INK; g.lineWidth = p.kind === 'mirror' ? 3 : 2.2; g.setLineDash(p.kind === 'exit' ? [3, 3] : []); g.beginPath(); g.ellipse(gx, gy, 4.4, 12, 0, 0, TAU); g.save(); g.strokeStyle = '#f8f4dc'; g.lineWidth += 3; g.setLineDash([]); g.stroke(); g.restore(); g.stroke(); }); g.setLineDash([]); };
     const frame = (p, tAfter, dt) => {
       g.setTransform(K, 0, 0, K, 0, 0); g.drawImage(cache, 0, 0, W, H);
       const xp = x0 + sm(p) * (x1 - x0);
@@ -905,7 +906,7 @@
   // px/tick (60 Hz): con il motore al massimo si sta sopra 5; sotto 2.4 si arranca (fango, salita, forma sbagliata). Isteresi per non sfarfallare.
   const SLOW_ON = 2.4, SLOW_OFF = 3.6, SLOW_HOLD_MS = 1100, SLOW_FREE_MS = 3200;
   let raceT0 = 0, slowOn = false, slowSince = 0, fastSince = 0, ctrlHintT = 0;
-  const jnSeen = {};
+  const jnSeen = {}, jaSeen = {};
   function setSlow(on) {
     if (on === slowOn) return; slowOn = on;
     els.btnRedrawTrigger.classList.toggle('blink', on);
@@ -929,8 +930,12 @@
   function hideCtrlHint() { clearTimeout(ctrlHintT); if (els.ctrlHint) els.ctrlHint.style.display = 'none'; }
   // salto di qualcuno (contatore dall'host): nuvoletta di polvere dalle ruote; per la propria bici anche il suono
   function jumpFx(id, r) {
-    const seen = jnSeen[id]; jnSeen[id] = r.jn || 0;
+    const seen = jnSeen[id], aSeen = jaSeen[id]; jnSeen[id] = r.jn || 0; jaSeen[id] = r.ja || 0;
     if (seen === undefined || !r.jn || r.jn === seen) return;
+    if ((r.ja || 0) !== (aSeen || 0)) {   // secondo salto in aria: un anello di sbuffi crema sotto la bici
+      const cx = (r.fwX + r.rwX) / 2, cy = (r.fwY + r.rwY) / 2 + 26;
+      for (let q = 0; q < 10 && particles.length < 190; q++) { const a = Math.PI * (0.1 + 0.8 * q / 9); particles.push({ x: cx + Math.cos(a) * 30, y: cy + Math.sin(a) * 10, vx: Math.cos(a) * 3.4, vy: 0.4 + Math.random() * 0.8, g: -0.01, dl: 0.04, life: 0.8, size: 6 + Math.random() * 7, col: DUST }); }
+    } else
     for (const wx of [r.fwX, r.rwX]) {
       const wy = wx === r.fwX ? r.fwY : r.rwY;
       for (let q = 0; q < 5 && particles.length < 190; q++) particles.push({ x: wx + (Math.random() - 0.5) * 50, y: wy + 46, vx: (Math.random() - 0.5) * 3.2, vy: -Math.random() * 1.6, g: -0.01, dl: 0.03, life: 0.9, size: 7 + Math.random() * 11, col: DUST });
