@@ -210,11 +210,12 @@
   });
 
   // ---- Salto: Spazio / ↑ / W, tocco o clic sulla pista, pulsante a schermo (ottimizzato per desktop e telefono) ----
-  // L'host decide (a terra, con una pausa fra un salto e l'altro): qui si manda solo la richiesta, al massimo ~5 al secondo.
+  // L'host decide (a terra, con una pausa fra un salto e l'altro): qui si manda subito la richiesta (anti-rimbalzo 45 ms).
   let lastJumpTry = 0;
   function tryJump() {
     if (document.body.dataset.screen !== 'race' || !raceLoopHandle || els.redrawModal.style.display === 'flex') return;
-    const t = performance.now(); if (t - lastJumpTry < 180) return; lastJumpTry = t;
+    const t = performance.now(); if (t - lastJumpTry < 45) return; lastJumpTry = t;   // solo anti-rimbalzo: l'host decide pause e doppio salto (un doppio tocco veloce deve passare)
+    try { if (navigator.vibrate) navigator.vibrate(8); } catch (_) {}
     if (Net.isHost) Sim.jump(Net.myId); else Net.send({ type: 'jump' });
   }
   window.addEventListener('keydown', e => {

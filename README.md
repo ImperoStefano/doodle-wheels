@@ -338,3 +338,9 @@ Dallo zip `doodle-wheels-modificati` sono stati fusi nella versione corrente (se
 - **Più rampe e dossi corti:** fino a due ostacoli corti per zona (trampolini, conche, gradini, dossi), probabilità più alte; più ponti sospesi sulla ghiaia e sull'acqua.
 - **Vulcano:** il ponte di basalto sul lago di lava ora compare di rado (circa 7% invece del 34%).
 - Controllato con bot headless (non dispositivi reali): 24/24 gare complete su piste casuali, crazy-bot 30/30, nessun ribaltamento irrecuperabile, schermate dei burroni.
+
+
+## Trentunesimo giro: salto più reattivo e scavalco dei portali permissivo
+- **Scavalco dei portali:** prima serviva passare sul portale con le ruote ad almeno 112 px da terra, cioè quasi solo al culmine del salto (finestra di pochi px). Ora basta essere in aria dopo un salto con le ruote ad almeno 34 px dal suolo (`PORTAL_SKIP_H`, `overPortal` in `physics.js`): il salto singolo scavalca il portale a qualsiasi distanza da 90 a 300 px dal salto (testato con cerchio e stella, anche col doppio salto). I lanci naturali da una rampa senza salto non scavalcano.
+- **Doppio salto:** `DJ_MIN_MS` da 220 a 130 ms e, se il secondo tocco arriva troppo presto, viene **ricordato per 250 ms** e parte appena possibile. Sul client l'anti-rimbalzo passava da 180 ms: un doppio tocco veloce veniva scartato; ora è 45 ms (solo per evitare doppi eventi). Verificato in browser con secondo tocco dopo 60, 120, 200 e 300 ms: il doppio salto parte sempre.
+- **Tocco:** sui telefoni c'è anche una breve vibrazione (8 ms) al salto, dove il browser la supporta.

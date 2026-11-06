@@ -863,7 +863,7 @@ const Sim = (() => {
   }
   // le ruote passano sopra il bordo alto dell'anello (le uscite non si scavalcano: riportano comunque la bici in avanti)
   function overPortal(r, q) {
-    return GROUND_Y - Math.max(r.fw.bounds.max.y, r.rw.bounds.max.y) - Terrain.height(q.x) >= PORTAL_SKIP_H;
+    return r.airJ >= 1 && GROUND_Y - Math.max(r.fw.bounds.max.y, r.rw.bounds.max.y) - Terrain.height(q.x) >= PORTAL_SKIP_H;
   }
   function checkPortals(r, elapsed) {
     const P = Terrain.PORTALS; if (!P || !P.length) return;
@@ -963,16 +963,17 @@ const Sim = (() => {
   const JUMP_V = 16;         // px/tick verso l'alto (≈ 100 px di salto sopra la quota di marcia, con la gravità extra in volo)
   const JUMP_GAP = 22;       // px: distanza massima dal suolo per poter saltare (un attimo di tolleranza dopo un dosso)
   const JUMP_COOLDOWN = 650; // ms
-  const DJ_MIN_MS = 220;     // doppio salto: un secondo salto in aria, non prima di tanto dal primo
+  const DJ_MIN_MS = 130;     // doppio salto: un secondo salto in aria, non prima di tanto dal primo
   const DJ_POWER = 0.95;     // e un filo meno potente
-  const PORTAL_SKIP_H = 112; // px: si scavalca un portale se il fondo delle ruote passa a quest'altezza dal suolo o più (un salto ben tempestivo arriva a ~128, il doppio salto a ~225); l'anello è alto 2·PORTAL_RY + 3
+  const PORTAL_SKIP_H = 34; // px: si scavalca un portale se il fondo delle ruote passa a quest'altezza dal suolo o più (un salto ben tempestivo arriva a ~128, il doppio salto a ~225); l'anello è alto 2·PORTAL_RY + 3
   function jump(id) {
     const r = racers[id]; if (!r || !running || r.finished || r.righting) return false;
     const elapsed = performance.now() - startedAt;
     if (elapsed < 400) return false;
     const gf = r.fw.gapNow, gr = r.rw.gapNow, grounded = gf <= JUMP_GAP || gr <= JUMP_GAP;
-    if (grounded) { if (elapsed - r.jumpAt < JUMP_COOLDOWN) return false; r.airJ = 0; }
-    else if (r.airJ !== 1 || elapsed - r.jumpAt < DJ_MIN_MS) return false;   // in aria: solo il secondo salto, e solo dopo uno da terra
+    if (grounded) { if (elapsed - r.jumpAt < JUMP_COOLDOWN) { if (r.airJ === 1 && elapsed - r.jumpAt < 260) { r.djWant = elapsed; r.djId = id; } return false; } r.airJ = 0; }
+    else if (r.airJ !== 1) return false;   // in aria: solo il secondo salto, e solo dopo uno da terra
+    else if (elapsed - r.jumpAt < DJ_MIN_MS) { r.djWant = elapsed; r.djId = id; return false; }   // troppo presto: lo ricordo ~250 ms e parte appena si può
     const v = JUMP_V * Math.pow(r.sc || 1, 0.5) * (grounded ? 1 : DJ_POWER);
     for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.min(b.velocity.y, 0) - v });
     r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = grounded ? 1 : 2; if (!grounded) r.ja = (r.ja || 0) + 1;
@@ -1003,6 +1004,7 @@ const Sim = (() => {
     meltStep(r, elapsed);
     scaleStep(r, elapsed);
     if (!rightBike(r)) antiFlip(r);
+    if (r.djWant) { if (elapsed - r.djWant > 250) r.djWant = 0; else if (elapsed - r.jumpAt >= DJ_MIN_MS && r.fw.gapNow > JUMP_GAP && r.rw.gapNow > JUMP_GAP) { r.djWant = 0; jump(r.djId); } }
     if (r.airJ && elapsed - r.jumpAt > 150 && (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP)) r.airJ = 0;   // atterrata: il doppio salto si ricarica
     checkPortals(r, elapsed);
     ravineStep(r, elapsed);
