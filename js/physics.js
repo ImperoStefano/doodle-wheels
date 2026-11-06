@@ -839,7 +839,7 @@ const Sim = (() => {
   function teleport(r, dx) {
     const cx = r.chassis.position.x + dx; let top = 1e9;
     for (let x = cx - 140; x <= cx + 140; x += 20) top = Math.min(top, GROUND_Y - Terrain.height(x));   // il punto più alto del terreno sotto la bici
-    const dy = (top - 150) - r.chassis.position.y;
+    const dy = (top - 150 - 90 * Math.max(0, (r.sc || 1) - 1)) - r.chassis.position.y;   // ruote giganti: si parte più in alto, altrimenti affondano nel terreno
     for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.translate(b, { x: dx, y: dy });
   }
   // Portale gigante: la taglia dipende da DOVE sei rispetto agli anelli, non da un istante. Cresce mentre attraversi l'anello (da 1 a GROW lungo il suo
@@ -881,6 +881,7 @@ const Sim = (() => {
       if ((lx - q.x) * (x - q.x) > 0 || (lx === q.x && x === q.x)) continue;
       if (q.kind !== 'exit' && overPortal(r, q)) continue;   // scavalcato col salto: il portale resta lì (per chi lo vuole prendere)
       if (q.kind === 'shift') {
+        if ((r.sc || 1) > 1.02 || (r.scT || 1) > 1.02) continue;   // niente teletrasporto mentre si cresce o si è giganti (la ruota ricostruita sul terreno nuovo si incastra): l'anello resta lì
         let d = 150 + Math.random() * 250; if (Math.random() < 0.5) d = -d;
         if (!Terrain.landOk(x + d)) d = -d; if (!Terrain.landOk(x + d)) continue;
         portalUsed[q.id] = true; teleport(r, d); r.lx = r.chassis.position.x;
@@ -962,22 +963,36 @@ const Sim = (() => {
   // e con una pausa fra un salto e l'altro, così non si "vola" tenendo premuto. Le ruote giganti saltano un po' più forte.
   const JUMP_V = 16;         // px/tick verso l'alto (≈ 100 px di salto sopra la quota di marcia, con la gravità extra in volo)
   const JUMP_GAP = 22;       // px: distanza massima dal suolo per poter saltare (un attimo di tolleranza dopo un dosso)
-  const JUMP_COOLDOWN = 650; // ms
+  const JUMP_COOLDOWN = 500; // ms
   const DJ_MIN_MS = 130;     // doppio salto: un secondo salto in aria, non prima di tanto dal primo
   const DJ_POWER = 0.95;     // e un filo meno potente
   const PORTAL_SKIP_H = 34; // px: si scavalca un portale se il fondo delle ruote passa a quest'altezza dal suolo o più (un salto ben tempestivo arriva a ~128, il doppio salto a ~225); l'anello è alto 2·PORTAL_RY + 3
+  const JUMP_BUF_MS = 240;   // un tocco "troppo presto" (pausa dopo un salto, doppio salto prematuro, atterraggio imminente) viene ricordato e parte appena si può
+  const COYOTE_MS = 110;     // pochi istanti dopo aver lasciato il suolo (dosso, bordo di rampa) si può ancora fare il primo salto
+  function jumpTry(r, elapsed) {
+    const grounded = r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP;
+    if (grounded) r.lastGroundAt = elapsed;
+    const coyote = !grounded && r.airJ === 0 && elapsed - (r.lastGroundAt || 0) < COYOTE_MS;
+    let ok = false;
+    if (grounded || coyote) ok = elapsed - r.jumpAt >= JUMP_COOLDOWN;
+    else ok = r.airJ === 1 && elapsed - r.jumpAt >= DJ_MIN_MS;   // in aria: solo il secondo salto, e solo dopo uno da terra
+    if (!ok) return 0;
+    const air = !(grounded || coyote);
+    const v = JUMP_V * Math.pow(r.sc || 1, 0.4) * (air ? DJ_POWER : 1);   // (ruote giganti: un po' più forte, ma non in proporzione alla taglia)
+    // da terra: spinta sopra la velocità verticale attuale; in aria (doppio salto): la velocità verso l'alto diventa almeno v, SENZA sommarsi a quella che c'è
+    // già (sommate, un secondo tocco ravvicinato lanciava la bici altissima, soprattutto con le ruote giganti)
+    for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: air ? Math.min(b.velocity.y, -v) : Math.min(b.velocity.y, 0) - v });
+    r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = air ? 2 : 1; if (air) r.ja = (r.ja || 0) + 1;
+    return 1;
+  }
   function jump(id) {
     const r = racers[id]; if (!r || !running || r.finished || r.righting) return false;
     const elapsed = performance.now() - startedAt;
     if (elapsed < 400) return false;
-    const gf = r.fw.gapNow, gr = r.rw.gapNow, grounded = gf <= JUMP_GAP || gr <= JUMP_GAP;
-    if (grounded) { if (elapsed - r.jumpAt < JUMP_COOLDOWN) { if (r.airJ === 1 && elapsed - r.jumpAt < 260) { r.djWant = elapsed; r.djId = id; } return false; } r.airJ = 0; }
-    else if (r.airJ !== 1) return false;   // in aria: solo il secondo salto, e solo dopo uno da terra
-    else if (elapsed - r.jumpAt < DJ_MIN_MS) { r.djWant = elapsed; r.djId = id; return false; }   // troppo presto: lo ricordo ~250 ms e parte appena si può
-    const v = JUMP_V * Math.pow(r.sc || 1, 0.5) * (grounded ? 1 : DJ_POWER);
-    for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.min(b.velocity.y, 0) - v });
-    r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = grounded ? 1 : 2; if (!grounded) r.ja = (r.ja || 0) + 1;
-    return true;
+    if (jumpTry(r, elapsed)) { r.jBuf = 0; return true; }
+    // rifiutato: se non è un secondo salto già fatto, lo ricordo per un attimo
+    if (r.airJ !== 2 || r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP) r.jBuf = elapsed;
+    return false;
   }
 
   // Burrone (patch 'ravine'): chi cade nel vuoto e resta sul fondo oltre RAVINE_RESCUE_MS viene riportato sul bordo opposto (in retromarcia, prima della rampa)
@@ -1004,7 +1019,8 @@ const Sim = (() => {
     meltStep(r, elapsed);
     scaleStep(r, elapsed);
     if (!rightBike(r)) antiFlip(r);
-    if (r.djWant) { if (elapsed - r.djWant > 250) r.djWant = 0; else if (elapsed - r.jumpAt >= DJ_MIN_MS && r.fw.gapNow > JUMP_GAP && r.rw.gapNow > JUMP_GAP) { r.djWant = 0; jump(r.djId); } }
+    if (r.jBuf) { if (elapsed - r.jBuf > JUMP_BUF_MS) r.jBuf = 0; else if (jumpTry(r, elapsed)) r.jBuf = 0; }
+    else if (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP) r.lastGroundAt = elapsed;
     if (r.airJ && elapsed - r.jumpAt > 150 && (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP)) r.airJ = 0;   // atterrata: il doppio salto si ricarica
     checkPortals(r, elapsed);
     ravineStep(r, elapsed);

@@ -323,7 +323,9 @@ const Terrain = (() => {
     const grows = nz <= 7 ? 2 : nz <= 11 ? 3 : 4;
     spread(grows, 'grow', x => { const R = 1400 + Math.round(rnd() * 500); return freeG(x - R - 70, x + 170) ? [x - R - 70, x + 170, R, [x - R, x]] : null; },
       (x, r) => { const R = r[2]; PORTALS.push({ id: id++, kind: 'grow', x: Math.round(x - R) }, { id: id++, kind: 'big', x: Math.round(x), grow: id - 2 }); });
-    spread(shifts, 'shift', x => freeS(x - 120, x + 120) ? [x - 120, x + 120, 0, [x]] : null, x => PORTALS.push({ id: id++, kind: 'shift', x: Math.round(x) }));
+    // gli anelli d'inchiostro non stanno dentro (né vicino) a un tratto gigante: crescere e teletrasportarsi insieme faceva incastrare la ruota
+    const nearGrow = (a, b) => taken.grow.some(t => b > t[0] - 450 && a < t[1] + 450);
+    spread(shifts, 'shift', x => freeS(x - 120, x + 120) && !nearGrow(x - 120, x + 120) ? [x - 120, x + 120, 0, [x]] : null, x => PORTALS.push({ id: id++, kind: 'shift', x: Math.round(x) }));
     PORTALS.sort((a, b) => a.x - b.x);
   }
   // il burrone (patch 'ravine') in cui si trova x, se x è nel vuoto o sulla parete di arrivo
@@ -335,6 +337,7 @@ const Terrain = (() => {
   // terreno su cui si può atterrare dopo un salto: non sul vuoto/ponte, non in acqua, dentro la pista
   function landOk(x) {
     if (x < TRACK_START + 500 || x > FINISH_X - 300) return false;
+    for (const q of PORTALS) if (q.kind === 'grow') { const bg = PORTALS.find(e => e.kind === 'big' && e.grow === q.id); if (bg && x > q.x - 300 && x < bg.x + 360) return false; }   // mai in un tratto gigante
     for (const z of ZONES) { if (z.gap && x > z.gap.g0 - 150 && x < z.gap.g1 + 150) return false; for (const p of z.patches || []) if (p.kind === 'ravine' && x > p.a + p.s - 60 && x < p.a + p.u2 + p.rr + 150) return false; }
     return true;
   }
