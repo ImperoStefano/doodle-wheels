@@ -457,7 +457,7 @@ const Props = (() => {
     const path = () => { if (layer === 'back') ell(0, TAU); else ell(-Math.PI / 2, Math.PI / 2); };
     ctx.strokeStyle = '#f8f4dc'; ctx.lineWidth = lw + 7; path(); ctx.stroke();   // bordino crema: l'anello si legge su qualunque sfondo
     ctx.strokeStyle = sty.col; ctx.lineWidth = lw; if (dashed) ctx.setLineDash([14, 10]); path(); ctx.stroke(); ctx.setLineDash([]);
-    if (layer === 'back') { ctx.strokeStyle = '#f8f4dc'; ctx.lineWidth = 2.2; ctx.globalAlpha = dim * 0.9; ctx.beginPath(); ctx.ellipse(sx, cy, rx * pulse - 7, ry * pulse - 7, 0, -2.5, -1.3); ctx.stroke(); }   // riflesso piatto sul bordo
+    if (layer === 'back') { ctx.strokeStyle = '#f8f4dc'; ctx.lineWidth = 2.2; ctx.globalAlpha = dim * 0.9; ctx.beginPath(); ctx.ellipse(sx, cy, Math.max(0.1, rx * pulse - 7), Math.max(0.1, ry * pulse - 7), 0, -2.5, -1.3); ctx.stroke(); }   // riflesso piatto sul bordo
     // dissolvenza: puntini che si allargano
     if (layer === 'back' && d > 0) { ctx.fillStyle = sty.col; for (let j = 0; j < 9; j++) { const a = j * 0.7 + seed, rr = 18 + d * 50 * (0.6 + 0.4 * ((j * 7) % 5) / 4); ctx.globalAlpha = 1 - d; ctx.beginPath(); ctx.arc(sx + Math.cos(a) * rr * 0.8, cy + Math.sin(a) * rr * 1.2, 3.6 * (1 - d) + 1, 0, TAU); ctx.fill(); } }
     ctx.restore();

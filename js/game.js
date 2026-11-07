@@ -403,7 +403,7 @@
           for (const id in b.m) {
             const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
-            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, jn: rb.jn, ja: rb.ja, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
           }
           return;
@@ -417,7 +417,7 @@
       if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }   // portale (teletrasporto) o nuovo arrivato o salto (rimessa in pista): niente scivolata
       latestRacers[id] = {
         id, finished: rb.finished, finishTime: rb.finishTime,
-        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, jn: rb.jn, ja: rb.ja, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
         fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
         rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
       };
@@ -840,7 +840,7 @@
   function setMirrorView(on) { els.raceWrap.classList.toggle('mirrored', on); }
   // portali consumati da qualcuno (lo dice l'host in ogni snapshot): spariscono per tutti, con la dissolvenza a schizzi
   function syncUsed(pu) { const n = performance.now(); for (let i = 0; i < pu.length; i++) if (!pst.gone[pu[i]]) pst.gone[pu[i]] = n; }
-  function resetPortals() { if (gzoom !== 1) applyZoom(1); shake = shX = shY = 0; for (const k in arrAt) delete arrAt[k]; for (const k in peSeen) delete peSeen[k]; pst.gone = {}; pst.mirrored = false; pst.big = false; pst.myExit = -1; pst.pe = 0; mirrorF = 1; mirT = 0; clearTimeout(noteTimer); els.portalNote.style.display = 'none'; setMirrorView(false); }
+  function resetPortals() { if (gzoom !== 1) applyZoom(1); shake = shX = shY = 0; for (const k in arrAt) delete arrAt[k]; for (const k in peSeen) delete peSeen[k]; pst.gone = {}; pst.mirrored = false; pst.big = false; pst.myExit = -1; pst.pe = 0; pst.ge = undefined; mirrorF = 1; mirT = 0; clearTimeout(noteTimer); els.portalNote.style.display = 'none'; setMirrorView(false); }
   // anello d'arrivo: dove la bici riappare dopo un salto. Si apre veloce, resta un attimo e si dissolve in schizzi (come i portali usati).
   const ARR_Q = { id: 9000, kind: 'shift', x: 0 };
   function drawArrivals(ctx, camX, w, gy, now, layer) {
@@ -895,9 +895,13 @@
       if (me.pt === 's') { els.portalFlash.classList.remove('go'); void els.portalFlash.offsetWidth; els.portalFlash.classList.add('go'); showNote(me.pd > 0 ? 'crazy.fwd' : 'crazy.back', 1800, (me.pd > 0 ? '+' : '−') + Math.round(Math.abs(me.pd))); }
       else if (me.pt === 'm') { const mp = Terrain.PORTALS.find(p => p.id === me.pi); pst.myExit = mp ? mp.exit : -1; showNote('crazy.mirror', 0); }
       else if (me.pt === 'x') { clearTimeout(noteTimer); els.portalNote.style.display = 'none'; }
-      else if (me.pt === 'g') { pst.big = true; showNote('crazy.grow', 1600); }
-      else if (me.pt === 'n') { pst.big = false; }
       if (typeof Sfx !== 'undefined') { Sfx.portal(me.pt, me.pd); if (me.pt === 's') setTimeout(() => { try { Sfx.portalOut(me.pd); } catch (e) {} }, 330); }
+    }
+    if (me.ge !== pst.ge) {   // portale gigante: evento a parte, non si perde se arriva insieme a un teletrasporto
+      const first = pst.ge === undefined; pst.ge = me.ge;
+      if (!first && me.gi >= 0) pst.gone[me.gi] = now;
+      if (me.gt === 'g') { pst.big = true; if (!first) { showNote('crazy.grow', 1600); if (typeof Sfx !== 'undefined') Sfx.portal('g', 0); } }
+      else if (me.gt === 'n') { pst.big = false; if (!first && typeof Sfx !== 'undefined') Sfx.portal('n', 0); }
     }
     const mir = me.dir === -1; if (mir !== pst.mirrored) { pst.mirrored = mir; setMirrorView(mir); }
   }
@@ -944,7 +948,18 @@
     if (id === Net.myId && typeof Sfx !== 'undefined' && Sfx.jump) { try { Sfx.jump(); } catch (e) {} }
   }
 
+  // Un errore di disegno in un singolo fotogramma non deve MAI fermare la gara: il ciclo si riprende da solo al fotogramma dopo
+  // (prima, un'eccezione qui impediva di richiedere il fotogramma successivo e lo schermo restava congelato).
+  let drawErrs = 0;
   function renderRace(ts) {
+    try { renderRaceFrame(ts); }
+    catch (e) {
+      if (drawErrs++ < 5) { try { console.error('draw', e); } catch (_) {} }
+      try { if (ctx2d && ctx2d.reset) ctx2d.reset(); applyZoom(gzoom); } catch (_) {}
+    }
+    raceLoopHandle = requestAnimationFrame(renderRace);
+  }
+  function renderRaceFrame(ts) {
     const t0 = performance.now();
     interpolateRacers(t0);
     const me = latestRacers[Net.myId];
@@ -1034,7 +1049,6 @@
     drawMinimap();
     if (Perf.on) Perf.frame(ts, performance.now() - t0);
     qualityGuard(ts, performance.now() - t0);
-    raceLoopHandle = requestAnimationFrame(renderRace);
   }
 
   // Se il dispositivo fatica davvero (fotogrammi lenti E disegno costoso) si abbassa la qualità dello

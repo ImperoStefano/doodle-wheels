@@ -836,6 +836,8 @@ const Sim = (() => {
   // Per-racer logic, runs at the fixed 60Hz step.
   // Portali (modalità pazza): attraversati lungo x fra due passi. L'host decide tutto, gli altri vedono solo gli effetti.
   function portalEvent(r, type, dx, id) { r.pe++; r.pt = type; r.pd = dx || 0; r.pi = id; }
+  // gli eventi del portale gigante hanno il loro contatore: se capitano nello stesso istante di un teletrasporto non si cancellano a vicenda
+  function growEvent(r, type, id) { r.ge = (r.ge || 0) + 1; r.gt = type; r.gi = id; }
   function teleport(r, dx) {
     const cx = r.chassis.position.x + dx; let top = 1e9;
     for (let x = cx - 140; x <= cx + 140; x += 20) top = Math.min(top, GROUND_Y - Terrain.height(x));   // il punto più alto del terreno sotto la bici
@@ -852,11 +854,11 @@ const Sim = (() => {
       const big = P.find(e => e.kind === 'big' && e.grow === q.id); if (!big) continue;
       const end = big.x + BIG_HW;
       if ((r.dir !== 1 && !r.gEv[q.id]) || x < q.x - GROW_HW) { continue; }   // in retromarcia non si entra in un tratto gigante, ma se ci sei già dentro (specchio nel mezzo) resti gigante
-      if (x >= end) { r.pUsed[q.id] = true; if (r.gEv[q.id] === 1) { r.gEv[q.id] = 2; portalEvent(r, 'n', 0, big.id); } continue; }
+      if (x >= end) { r.pUsed[q.id] = true; if (r.gEv[q.id] === 1) { r.gEv[q.id] = 2; growEvent(r, 'n', big.id); } continue; }
       const up = sm01((x - (q.x - GROW_HW)) / (2 * GROW_HW)), down = sm01((x - (big.x - BIG_HW)) / (2 * BIG_HW));
       target = 1 + (GROW - 1) * up * (1 - down);
-      if (!r.gEv[q.id] && x >= q.x) { r.gEv[q.id] = 1; portalEvent(r, 'g', 0, q.id); }
-      if (r.gEv[q.id] === 1 && x >= big.x) { r.gEv[q.id] = 2; portalEvent(r, 'n', 0, big.id); }
+      if (!r.gEv[q.id] && x >= q.x) { r.gEv[q.id] = 1; growEvent(r, 'g', q.id); }
+      if (r.gEv[q.id] === 1 && x >= big.x) { r.gEv[q.id] = 2; growEvent(r, 'n', big.id); }
       break;
     }
     r.scT = target;
@@ -881,7 +883,6 @@ const Sim = (() => {
       if ((lx - q.x) * (x - q.x) > 0 || (lx === q.x && x === q.x)) continue;
       if (q.kind !== 'exit' && overPortal(r, q)) continue;   // scavalcato col salto: il portale resta lì (per chi lo vuole prendere)
       if (q.kind === 'shift') {
-        if ((r.sc || 1) > 1.02 || (r.scT || 1) > 1.02) continue;   // niente teletrasporto mentre si cresce o si è giganti (la ruota ricostruita sul terreno nuovo si incastra): l'anello resta lì
         let d = 150 + Math.random() * 250; if (Math.random() < 0.5) d = -d;
         if (!Terrain.landOk(x + d)) d = -d; if (!Terrain.landOk(x + d)) continue;
         portalUsed[q.id] = true; teleport(r, d); r.lx = r.chassis.position.x;
@@ -1092,7 +1093,7 @@ const Sim = (() => {
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
       finished: r.finished, finishTime: r.finishTime,
-      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, jn: r.jn || 0, ja: r.ja || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
+      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
   }
 
