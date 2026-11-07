@@ -591,6 +591,30 @@
   const FT_PAL = { start: '#78ba8e', hills: '#438c67', ice: '#bfe3ea', gravel: '#ecbd6f', water: '#9fd3c2', ramps: '#e3937a', lava: '#6b3a2a', finish: '#78ba8e' };
   const FT_BAND = { start: '#78ba8e', hills: '#438c67', ice: '#bfe3ea', gravel: '#ecbd6f', water: '#5bb5b0', ramps: '#e3937a', lava: '#fb5f35', finish: '#78ba8e' };
   const FT_FLOWERS = ['#fb5f35', '#f5e594', '#e3937a', '#ecbd6f', '#f8f4dc'];
+  // Tooltip della pista finale: zona sotto il puntatore (mouse o dito), pastiglia evidenziata e nome con il colore della zona
+  let ftHoverState = null, ftHoverBound = false, ftHideT = 0;
+  function ftHover(cv, st) {
+    ftHoverState = st;
+    const tip = document.getElementById('ft-tip'), hl = document.getElementById('ft-hl'); if (!tip || !hl) return;
+    const hide = () => { tip.hidden = true; hl.hidden = true; clearTimeout(ftHideT); };
+    hide();
+    if (ftHoverBound) return; ftHoverBound = true;
+    const show = ev => {
+      const S = ftHoverState; if (!S) return;
+      const r = cv.getBoundingClientRect(), k = r.width / S.W, px = (ev.clientX - r.left) / k;
+      const z = S.zones.find(q => px >= q.a && px < q.b); if (!z) { hide(); return; }
+      const nm = I18n.t('sign.' + z.key);
+      tip.innerHTML = ''; const dot = document.createElement('i'); dot.style.background = z.col; const tx = document.createElement('span'); tx.textContent = nm; tip.append(dot, tx);
+      tip.hidden = false; hl.hidden = false;
+      const ox = cv.offsetLeft, oy = cv.offsetTop, sc = cv.offsetWidth / S.W;
+      hl.style.left = (ox + (z.a + 0.8) * sc) + 'px'; hl.style.top = (oy + S.bY * sc) + 'px'; hl.style.width = ((z.b - z.a - 1.6) * sc) + 'px'; hl.style.height = (S.bH * sc) + 'px'; hl.style.borderRadius = (S.bH * sc / 2) + 'px';
+      const tw = tip.offsetWidth, cx = Math.max(tw / 2 + 4, Math.min(cv.offsetWidth - tw / 2 - 4, ox + ((z.a + z.b) / 2) * sc));
+      tip.style.left = cx + 'px'; tip.style.top = (oy + S.bY * sc - 8) + 'px';
+      clearTimeout(ftHideT); if (ev.pointerType && ev.pointerType !== 'mouse') ftHideT = setTimeout(hide, 2800);   // col dito non c'è "uscita": sparisce da solo
+    };
+    cv.addEventListener('pointermove', show); cv.addEventListener('pointerdown', show);
+    cv.addEventListener('pointerleave', ev => { if (!ev.pointerType || ev.pointerType === 'mouse') hide(); });
+  }
   function drawFinalTrace(standings, animate) {
     const cv = els.resultsTrace; if (!cv) return;
     if (ftRaf) { cancelAnimationFrame(ftRaf); ftRaf = 0; }
@@ -735,10 +759,9 @@
     zs.forEach(z => {
       const xa = X(Math.max(x0, z.start)), xb = X(Math.min(x1, z.end)); if (xb - xa < 4) return;
       rr(s, xa + 0.8, bY, xb - xa - 1.6, bH, bH / 2); s.fillStyle = FT_BAND[z.key] || '#94a3b8'; s.fill();
-      if (z.key === 'start' || z.key === 'finish') return;
-      let nm = I18n.t('sign.' + z.key); if (s.measureText(nm).width + 10 >= xb - xa) nm = nm.split(' ')[0];
-      if (s.measureText(nm).width + 10 < xb - xa) { s.fillStyle = z.key === 'hills' ? CRM : '#2d3e48'; s.fillText(nm, (xa + xb) / 2, bY + bH / 2 + 0.8); }
     });
+    // niente scritte sulla fascia: il nome della zona compare passando il mouse (o toccando) sulla pista, con lo stesso colore della pastiglia
+    ftHover(cv, { W, bY, bH, zones: zs.map(z => ({ key: z.key, a: X(Math.max(x0, z.start)), b: X(Math.min(x1, z.end)), col: FT_BAND[z.key] || '#94a3b8' })) });
 
     // ======= le corse (si ridisegnano a ogni fotogramma, tagliate al punto in cui è arrivato il pennello) =======
     const sparks = [], conf = []; let confMade = false, lastT = 0;

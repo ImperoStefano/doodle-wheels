@@ -484,3 +484,12 @@ input[type="text"]:focus { border-color: var(--teal); }
 .signature::before { content: ''; width: 34px; height: 4px; border-radius: 4px; background: var(--sun); margin-bottom: 10px; }
 .sig-by { font-size: 0.64rem; font-weight: 700; letter-spacing: 0.26em; text-transform: uppercase; color: #8c9a95; }
 .sig-name { font-family: 'Kalam', cursive; font-weight: 700; font-size: 1.3rem; letter-spacing: 0.05em; color: var(--teal-d); line-height: 1.1; }
+
+/* pista finale: nome della zona al passaggio del mouse / al tocco (niente scritte sulla fascia) */
+.trace-wrap { position: relative; }
+.results-trace { cursor: default; touch-action: manipulation; }
+.ft-hl { position: absolute; z-index: 2; pointer-events: none; box-shadow: 0 0 0 2.5px var(--cream, #f8f4dc), 0 0 0 4.5px rgba(2, 90, 83, 0.55); background: rgba(255, 255, 255, 0.18); }
+.ft-tip { position: absolute; z-index: 3; pointer-events: none; transform: translate(-50%, -100%); display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 9px; border-radius: 999px; background: #fffdf2; color: #015a53; font-family: 'Kalam', cursive; font-weight: 700; font-size: 1.05rem; line-height: 1.1; white-space: nowrap; box-shadow: 0 3px 0 rgba(2, 90, 83, 0.22), 0 6px 14px rgba(45, 62, 72, 0.18); animation: ftTipIn 0.14s ease-out; }
+.ft-tip i { display: block; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 2px #fffdf2, 0 0 0 3.5px rgba(2, 90, 83, 0.35); }
+.ft-tip[hidden], .ft-hl[hidden] { display: none; }
+@keyframes ftTipIn { from { opacity: 0; transform: translate(-50%, -88%); } to { opacity: 1; transform: translate(-50%, -100%); } }
