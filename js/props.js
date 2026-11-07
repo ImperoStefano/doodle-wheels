@@ -182,6 +182,7 @@ const Props = (() => {
       else if (p.kind === 'jump') inkJump(ctx, p, camX, x0, x1, H, sub, t);
       else if (p.kind === 'drop') inkDrop(ctx, p, camX, x0, x1, H, sub, t);
       else if (p.kind === 'ravine') ravineDraw(ctx, p, camX, x0, x1, H, sub, t);
+      else if (p.kind === 'kicker') kickerDraw(ctx, p, camX, x0, x1, H, sub, t);
     }
   }
   // ---- utilità comuni dei terreni: strati spessi con gradiente ed estremità che si assottigliano --------------
@@ -381,6 +382,31 @@ const Props = (() => {
       ctx.fillStyle = '#6b3a2a'; ctx.fillRect(X - 3, Y - 58, 6, 60);
       ctx.fillStyle = '#f8f4dc'; ctx.beginPath(); ctx.moveTo(X - 24, Y - 90); ctx.lineTo(X + 24, Y - 90); ctx.lineTo(X + 24, Y - 54); ctx.lineTo(X - 24, Y - 54); ctx.closePath(); ctx.fill();
       ctx.strokeStyle = '#fb5f35'; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(X - 12, Y - 60); ctx.lineTo(X, Y - 84); ctx.lineTo(X + 12, Y - 60); ctx.stroke();
+    }
+  }
+  // Rampa di lancio isolata (patch 'kicker'): assi di legno/lastre sulla salita, frecce e cartello con tante frecce quanto è alta (1 piccola, 2 media, 3 grande)
+  function kickerDraw(ctx, p, camX, x0, x1, H, sub, t) {
+    const wood = p.zkey !== 'ice' && p.zkey !== 'gravel', n = (p.tier || 0) + 1;
+    const ka = p.a + p.s + 10, kb = p.a + p.u1 + 4;
+    if (kb >= x0 && ka <= x1) {
+      const l = Math.max(ka, x0), r = Math.min(kb, x1), tp = x => sm01((x - ka) / 46) * sm01((kb - x) / 12);
+      fillSlab(ctx, camX, l, r, H, () => -5, x => 5 + 8 * tp(x), wood ? [[0, '#e0ae6c'], [0.5, '#b88140'], [1, '#6e4a22']] : [[0, '#cfc7ba'], [0.5, '#9a9286'], [1, '#5a544c']], 4);
+      ctx.strokeStyle = wood ? 'rgba(80,50,20,0.5)' : 'rgba(60,56,50,0.45)'; ctx.lineWidth = 1.2;
+      for (let wx = ka + 16; wx < kb - 6; wx += 24) { if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.beginPath(); ctx.moveTo(wx - camX, y - 4); ctx.lineTo(wx - camX, y + 10); ctx.stroke(); }
+      lineOff(ctx, camX, l, r, H, () => -5, 5); ctx.strokeStyle = wood ? '#f6d9a4' : '#e6e0d4'; ctx.lineWidth = 2; ctx.stroke();
+      for (let k = 0; k < n; k++) {
+        const wx = kb - 40 - k * 38; if (wx < x0 || wx > x1 || wx < ka + 8) continue; const y = H(wx) - 6, X = wx - camX;
+        ctx.fillStyle = '#fb5f35'; ctx.beginPath(); ctx.moveTo(X - 11, y + 1); ctx.lineTo(X, y - 8); ctx.lineTo(X + 11, y + 1); ctx.lineTo(X + 11, y + 5); ctx.lineTo(X, y - 4); ctx.lineTo(X - 11, y + 5); ctx.closePath(); ctx.fill();
+      }
+      for (let k = 0; k < 3; k++) { const wx = kb - 6 - k * 9; if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.fillStyle = k % 2 ? '#2d3e48' : '#f5e594'; ctx.fillRect(wx - camX - 3, y - 6, 6, 5); }
+    }
+    const sx = p.a + p.s - 34;
+    if (sx > x0 - 40 && sx < x1 + 40) {
+      const X = sx - camX, Y = H(sx);
+      ctx.fillStyle = '#6b3a2a'; ctx.fillRect(X - 3, Y - 46, 6, 48);
+      ctx.fillStyle = '#f8f4dc'; ctx.beginPath(); ctx.moveTo(X - 21, Y - 76); ctx.lineTo(X + 21, Y - 76); ctx.lineTo(X + 21, Y - 44); ctx.lineTo(X - 21, Y - 44); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#fb5f35'; ctx.lineWidth = 3.4; ctx.lineJoin = 'round';
+      for (let k = 0; k < n; k++) { const yy = Y - 50 - k * 9; ctx.beginPath(); ctx.moveTo(X - 10, yy); ctx.lineTo(X, yy - 7); ctx.lineTo(X + 10, yy); ctx.stroke(); }
     }
   }
   function inkDrop(ctx, p, camX, x0, x1, H, sub, t) {

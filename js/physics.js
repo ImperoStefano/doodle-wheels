@@ -566,14 +566,16 @@ const Sim = (() => {
   // Aderenza: una ruota senza contatto viene richiamata a terra (gravità extra), e vicino al suolo un rimbalzo piccolo
   // viene smorzato lungo la normale della strada: la bici resta incollata alla pista invece di galleggiare sui saltelli.
   // I salti veri (rampe) restano: sopra HOP_V la velocità non viene toccata.
+  const KICK_G = 0.5;
   function assist(r, H) {
     H = H || Terrain.height;
+    const kk = Terrain.kickerAt && Terrain.kickerAt(r.chassis.position.x);   // sul labbro di una rampa di lancio si vola davvero: gravità extra dimezzata e niente freno ai rimbalzi
     for (const w of [r.fw, r.rw]) {
       const g = w.gapNow; if (g === undefined) continue;
       const v = w.velocity;
       if (g > TUNE.airGap) {
-        Matter.Body.setVelocity(w, { x: v.x, y: v.y + TUNE.downAcc });
-      } else if (g < TUNE.hold && g > TUNE.holdMin) {
+        Matter.Body.setVelocity(w, { x: v.x, y: v.y + TUNE.downAcc * (kk ? KICK_G : 1) });
+      } else if (g < TUNE.hold && g > TUNE.holdMin && !kk) {
         const x = w.position.x, s = (H(x + 3) - H(x - 3)) / 6;           // pendenza della strada (y verso il basso: la normale va in su e indietro)
         const l = Math.hypot(s, 1), nx = s / l, ny = -1 / l;
         const vn = v.x * nx + v.y * ny;
@@ -581,7 +583,7 @@ const Sim = (() => {
       }
     }
     // telaio: se tutte e due le ruote sono in aria cade con la stessa gravità extra
-    if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + TUNE.downAcc });
+    if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + TUNE.downAcc * (kk ? KICK_G : 1) });
   }
 
   // Safety net: the terrain profile is known exactly, so if a wheel corner ever ends up more
@@ -965,6 +967,7 @@ const Sim = (() => {
   const JUMP_V = 16;         // px/tick verso l'alto (≈ 100 px di salto sopra la quota di marcia, con la gravità extra in volo)
   const JUMP_GAP = 22;       // px: distanza massima dal suolo per poter saltare (un attimo di tolleranza dopo un dosso)
   const JUMP_COOLDOWN = 500; // ms
+  const JUMP_RISE_CAP = 4;   // px/tick: se già si sta salendo (rampa, lancio) il salto si somma, ma al massimo di tanto oltre la spinta normale
   const DJ_MIN_MS = 130;     // doppio salto: un secondo salto in aria, non prima di tanto dal primo
   const DJ_POWER = 0.95;     // e un filo meno potente
   const PORTAL_SKIP_H = 34; // px: si scavalca un portale se il fondo delle ruote passa a quest'altezza dal suolo o più (un salto ben tempestivo arriva a ~128, il doppio salto a ~225); l'anello è alto 2·PORTAL_RY + 3
@@ -979,10 +982,12 @@ const Sim = (() => {
     else ok = r.airJ === 1 && elapsed - r.jumpAt >= DJ_MIN_MS;   // in aria: solo il secondo salto, e solo dopo uno da terra
     if (!ok) return 0;
     const air = !(grounded || coyote);
-    const v = JUMP_V * Math.pow(r.sc || 1, 0.4) * (air ? DJ_POWER : 1);   // (ruote giganti: un po' più forte, ma non in proporzione alla taglia)
+    let v = JUMP_V * Math.pow(r.sc || 1, 0.4) * (air ? DJ_POWER : 1);
+    { const kp = Terrain.kickerAt ? Terrain.kickerAt(r.chassis.position.x) : null;   // saltare dal labbro di una rampa: più è alta, più si vola
+      if (kp && r.chassis.position.x >= kp.a + kp.u1 - 110) v += KICK_JUMP * kp.H * (air ? 0.6 : 1); }   // (ruote giganti: un po' più forte, ma non in proporzione alla taglia)
     // da terra: spinta sopra la velocità verticale attuale; in aria (doppio salto): la velocità verso l'alto diventa almeno v, SENZA sommarsi a quella che c'è
     // già (sommate, un secondo tocco ravvicinato lanciava la bici altissima, soprattutto con le ruote giganti)
-    for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: air ? Math.min(b.velocity.y, -v) : Math.min(b.velocity.y, 0) - v });
+    for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: air ? Math.min(b.velocity.y, -v) : Math.max(-(v + JUMP_RISE_CAP), Math.min(b.velocity.y, 0) - v) });
     r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = air ? 2 : 1; if (air) r.ja = (r.ja || 0) + 1;
     return 1;
   }
@@ -1013,6 +1018,21 @@ const Sim = (() => {
     r.lx = r.chassis.position.x; r.pitAt = -1; r.bestX = dir * tx; r.hopBaseX = dir * tx; r.progressAt = elapsed; r.stallStreak = 0;
   }
 
+  // Rampa di lancio: passando sul labbro con le ruote a terra la bici viene lanciata verso l'alto, tanto più forte quanto più la rampa è alta
+  // (il profilo da solo non basta: le ruote grandi seguono il terreno come se fosse un colle). Se nello stesso istante si salta, i due effetti si sommano ma con un tetto.
+  const KICK_V0 = 3, KICK_VH = 0.1, KICK_JUMP = 0.03;
+  function kickerStep(r, elapsed) {
+    const x = r.chassis.position.x, px = r.kx; r.kx = x;
+    if (px === undefined || (r.dir || 1) !== 1) return;
+    const p = Terrain.kickerAt ? Terrain.kickerAt(x) : null; if (!p) return;
+    const lip = p.a + p.u1 - 25;
+    if (!(px < lip && x >= lip)) return;
+    if (!(r.fw.gapNow <= JUMP_GAP * 1.5 || r.rw.gapNow <= JUMP_GAP * 1.5)) return;
+    const vl = (KICK_V0 + KICK_VH * p.H) * Math.pow(r.sc || 1, 0.4);
+    for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.min(b.velocity.y, -vl) });
+    r.kickAt = elapsed; if (!r.airJ) { r.airJ = 1; r.jumpAt = elapsed; }   // il lancio vale come primo salto: in volo il tocco diventa subito un doppio salto
+  }
+
   function stepRacer(r, elapsed) {
     if (r.finished) return;
 
@@ -1025,6 +1045,7 @@ const Sim = (() => {
     if (r.airJ && elapsed - r.jumpAt > 150 && (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP)) r.airJ = 0;   // atterrata: il doppio salto si ricarica
     checkPortals(r, elapsed);
     ravineStep(r, elapsed);
+    kickerStep(r, elapsed);
 
     // progress = furthest x reached IN THE DIRECTION OF TRAVEL (dir·x); if it hasn't improved enough for STALL_MS, hop
     const dir = r.dir || 1, px = dir * r.chassis.position.x;
