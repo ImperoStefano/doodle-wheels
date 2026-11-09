@@ -27,6 +27,17 @@ const Terrain = (() => {
 
   // ---- utilità deterministiche --------------------------------------------------------------
   const smooth = t => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+  // Rampa vera: raccordo concavo (arco di raggio R, così le ruote non sbattono contro lo spigolo) → piano inclinato a pendenza COSTANTE (angolo th) → labbro netto a quota H.
+  // q = { H, th, R, xt, yt, tn, run }: xt/yt = fine dell'arco, tn = tan(th), run = lunghezza orizzontale dall'inizio della rampa al labbro.
+  function mkRamp(H, thDeg, R) {
+    const th = thDeg * Math.PI / 180, xt = R * Math.sin(th), yt = R * (1 - Math.cos(th)), tn = Math.tan(th);
+    return { H, th, R, xt, yt, tn, run: xt + (H - yt) / tn };
+  }
+  function rampY(ux, q) {
+    if (ux <= 0) return 0;
+    if (ux < q.xt) return q.R - Math.sqrt(q.R * q.R - ux * ux);
+    const y = q.yt + (ux - q.xt) * q.tn; return y > q.H ? q.H : y;
+  }
   function hashStr(s) { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; }
   function mulberry32(a) {
     return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -158,12 +169,18 @@ const Terrain = (() => {
       }
       case 'ravine':
       case 'jump': { // trampolino, fossato, risalita: chi arriva veloce lo salta, chi arriva piano ci scende dentro e deve risalire
-        return p.H * smooth((u - p.s) / p.rl) - (p.H + p.D) * smooth((u - p.u1) / p.ex) + p.D * smooth((u - p.u2) / p.rr);
+        return rampY(u - p.s, p) - (p.H + p.D) * smooth((u - p.u1) / p.ex) + p.D * smooth((u - p.u2) / p.rr);
       }
-      case 'kicker': { // rampa di lancio: salita curva che si impenna verso il labbro (più è alta, più è lunga), piccolo pianoro, lunga discesa su cui si atterra
-        const t = (u - p.s) / p.rl, up = t <= 0 ? 0 : t >= 1 ? 1 : Math.pow(t, p.cv);
-        const dd = (u - p.u1) / p.rd, dn = dd <= 0 ? 1 : dd >= 1 ? 0 : Math.pow(1 - dd, 2.4);   // dopo il labbro il terreno cade subito (si stacca) e poi si addolcisce
-        return p.H * up * dn;
+      case 'kicker': { // rampa vera: piano inclinato a pendenza costante, labbro netto, poi il suolo (il labbro cade su una sola colonna fisica da 20 px). A due stadi: prima dolce, un pianerottolo, poi la salita ripida
+        const y1 = u <= p.u1 ? u : p.u1, y = rampY(y1 - p.s, p) + (p.r2 ? rampY(y1 - p.s2, p.r2) : 0);
+        if (u <= p.u1) return y;
+        const d = (u - p.u1) / p.ex; return d >= 1 ? 0 : y * (1 - d);
+      }
+      case 'pipe': { // mezzo tubo: discesa, fondo piatto, curva concava fino al labbro (più alto di quando si è partiti solo di poco), poi il vuoto
+        return -p.D * smooth((u - p.s0) / p.dl) + rampY(u - p.s, p) - p.Ht * smooth((u - p.u1) / p.ex);
+      }
+      case 'gapland': { // rampa di lancio, vuoto, parete d'arrivo, cresta e discesa: si atterra sulla pendenza
+        return rampY(u - p.s, p) - (p.H + p.D) * smooth((u - p.u1) / p.ex) + (p.D + p.Hl) * smooth((u - p.u2) / p.rr) - p.Hl * smooth((u - p.u3) / p.dl);
       }
       case 'drop': { // gradino in discesa, lungo tratto più basso, poi una salita larga: la discesa dà velocità, la risalita la chiede
         return -p.D * smooth((u - p.s) / p.ex) + p.D * smooth((u - p.s2) / p.rr);
@@ -172,7 +189,7 @@ const Terrain = (() => {
       default: return 0;
     }
   }
-  const PATCH_FLAT = { arch: 1, stairs: 1, holes: 1, ripples: 0.7, logs: 0.8, mud: 1, rack: 0.8, sand: 1, boulders: 1, whoops: 0.8, ridges: 1, bowl: 1, jump: 1, drop: 1, ravine: 1, kicker: 1 };
+  const PATCH_FLAT = { arch: 1, stairs: 1, holes: 1, ripples: 0.7, logs: 0.8, mud: 1, rack: 0.8, sand: 1, boulders: 1, whoops: 0.8, ridges: 1, bowl: 1, jump: 1, drop: 1, ravine: 1, kicker: 1, pipe: 1, gapland: 1 };
   // quanto il tratto "appiattisce" l'onda del bioma sotto di sé (0..1)
   function patchMask(z, x) {
     let m = 0;
@@ -194,6 +211,11 @@ const Terrain = (() => {
     return { kind: 'arch', n, S, ac, c: 1 / Math.sin(Math.PI / n), f: f == null ? 1.2 : f, len: k * S };
   }
   // costruttori dei tipi di patch (lunghezza e parametri); il centro lo sceglie planPatches
+  function mkKicker(tier, rnd) {
+    const T = [[30, 42, 17, 110], [60, 84, 29, 160], [100, 132, 32, 210]][tier];
+    const H = T[0] + Math.round(rnd() * (T[1] - T[0])), rp = mkRamp(H, T[2] + (rnd() * 3 - 1.5), T[3]), s = 70, u1 = Math.round(s + rp.run), ex = 20;
+    return Object.assign({ kind: 'kicker', len: u1 + ex + 120, s, u1, ex, tier }, rp);
+  }
   function makePatch(kind, rnd) {
     switch (kind) {
       case 'arch': return archSpec(3 + Math.floor(rnd() * 4), rnd);
@@ -210,20 +232,42 @@ const Terrain = (() => {
         const D = 42 + Math.round(rnd() * rnd() * 100 + rnd() * 18), L = Math.round(Math.max(420, 6.1 * D) + rnd() * 110);
         return { kind, len: L + 160, s: 80, L, D };
       }
-      case 'jump': {   // trampolino + fossato di tre taglie: basso (si vola o si scende e si risale), medio (la risalita è lunga ma si sente), con rampa più alta
+      case 'jump': {   // trampolino vero + fossato di due taglie: basso (si vola o si scende e si risale), medio (la risalita è lunga ma si sente)
         const tier = rnd() < 0.5 ? 0 : 1, big = tier === 1;
         const H = big ? 52 + Math.round(rnd() * 14) : 32 + Math.round(rnd() * 10), D = big ? 78 + Math.round(rnd() * 34) : 38 + Math.round(rnd() * 12), pw = (big ? 150 : 120) + Math.round(rnd() * 40);
-        const s = 60, rl = big ? 210 : 150, u1 = s + rl + 10, ex = big ? 70 : 85, u2 = u1 + ex + pw, rr = big ? Math.round(150 + D * 1.3) : 110;
-        return { kind, len: u2 + rr + 70, H, D, pw, s, rl, u1, ex, u2, rr, tier };
+        const rp = mkRamp(H, big ? 22 : 17, big ? 150 : 110), s = 60, u1 = Math.round(s + rp.run), ex = big ? 70 : 85, u2 = u1 + ex + pw, rr = big ? Math.round(150 + D * 1.3) : 110;
+        return Object.assign({ kind, len: u2 + rr + 70, D, pw, s, u1, ex, u2, rr, tier }, rp);
       }
-      case 'kicker': {   // rampa di lancio isolata, a tre altezze (la piccola è un dosso da salto, la grande lancia davvero)
-        const r0 = rnd(), tier = r0 < 0.3 ? 0 : r0 < 0.62 ? 1 : 2, H = [[26, 38], [54, 72], [92, 122]][tier], h = H[0] + Math.round(rnd() * (H[1] - H[0]));
-        const s = 70, rl = Math.round(140 + 2.6 * h), pl = 30, u1 = s + rl + pl, rd = Math.round(rl * 1.3);
-        return { kind, len: u1 + rd + 80, H: h, s, rl, pl, u1, rd, cv: 1.8, tier };
+      case 'kicker': {   // rampa di lancio isolata, a tre altezze: la piccola è un dosso da salto, la grande lancia davvero (più alta = più ripida e più lunga)
+        const r0 = rnd(); return mkKicker(r0 < 0.3 ? 0 : r0 < 0.62 ? 1 : 2, rnd);
       }
-      case 'ravine': {   // burrone vero: rampa di lancio, vuoto profondo SENZA ponte, parete di arrivo ripida. Si scavalca saltando (rampa + salto/doppio salto); chi cade viene riportato sul bordo dopo un po'
-        const H = 50 + Math.round(rnd() * 14), D = 130 + Math.round(rnd() * 140), pw = RAVINE_W + Math.round(rnd() * 50), s = 70, rl = 200, u1 = s + rl + 20, ex = 34, u2 = u1 + ex + pw, rr = 38;
-        return { kind, len: u2 + rr + 100, H, D, pw, s, rl, u1, ex, u2, rr };
+      case 'twostage': {   // rampa a due stadi: salita dolce, pianerottolo, seconda salita ripida (più spinta al labbro)
+        const h1 = 30 + Math.round(rnd() * 12), h2 = 62 + Math.round(rnd() * 34), r1 = mkRamp(h1, 13 + rnd() * 3, 120), r2 = mkRamp(h2, 34 + rnd() * 3, 190);
+        const s = 70, s2 = Math.round(s + r1.run + 50 + rnd() * 40), u1 = Math.round(s2 + r2.run), ex = 20;
+        return Object.assign({ kind: 'kicker', len: u1 + ex + 130, s, u1, ex, tier: 2, s2, r2 }, r1, { H: h1 + h2 });
+      }
+      case 'twin': {   // gemelle: una rampa piccola/media e una più grande, una dopo l'altra (due rampe normali, piazzate insieme)
+        const t1 = rnd() < 0.5 ? 0 : 1, t2 = t1 === 0 ? 1 + (rnd() < 0.5 ? 1 : 0) : 2, A = mkKicker(t1, rnd), B = mkKicker(t2, rnd), off = A.u1 + A.ex + 190 - B.s;
+        return { kind, len: off + B.len, parts: [[A, 0], [B, off]] };
+      }
+      case 'dropin': {   // discesa e lancio: scivolo ripido (velocità), tratto piatto, rampa, atterraggio sul piano basso e lunga risalita
+        const D = 70 + Math.round(rnd() * 50), ex = Math.round(D * 2.5), K = mkKicker(rnd() < 0.5 ? 1 : 2, rnd), s = 70, offK = s + ex + 150 - K.s;
+        const s2 = offK + K.u1 + K.ex + 280, rr = Math.round(210 + D * 2.2);
+        return { kind, len: s2 + rr + 70, parts: [[{ kind: 'drop', len: s2 + rr + 70, D, s, ex, s2, rr }, 0], [K, offK]] };
+      }
+      case 'pipe': {   // mezzo tubo: discesa, fondo, curva concava (R 250, fino a 52°) e labbro appena più alto della partenza: la discesa dà la velocità per risalire
+        const D = 100 + Math.round(rnd() * 30), Ht = Math.round(rnd() * 25), rp = mkRamp(D + Ht, 52, 250), s0 = 80, dl = Math.round(D * 2.6), s = s0 + dl + 140, u1 = Math.round(s + rp.run), ex = 20;
+        return Object.assign({ kind, len: u1 + ex + 140, D, Ht, s0, dl, s, u1, ex, tier: 2 }, rp);
+      }
+      case 'gapland': {   // rampa, vuoto largo, parete, cresta e discesa: il volo deve arrivare sulla pendenza. Chi cade viene riportato sulla cresta
+        const tier = rnd() < 0.5 ? 1 : 2, H = tier === 1 ? 60 + Math.round(rnd() * 24) : 100 + Math.round(rnd() * 30), rp = mkRamp(H, tier === 1 ? 29 : 32, tier === 1 ? 160 : 210);
+        const s = 70, u1 = Math.round(s + rp.run), ex = 34, pw = (tier === 1 ? 190 : 240) + Math.round(rnd() * 50), D = 110 + Math.round(rnd() * 50), Hl = Math.round(H * 0.45), rr = 40, u2 = u1 + ex + pw, u3 = u2 + rr + 60, dl = Math.round(Hl / Math.tan(18 * Math.PI / 180));
+        return Object.assign({ kind, len: u3 + dl + 130, D, pw, s, u1, ex, u2, rr, u3, dl, Hl, tier }, rp);
+      }
+      case 'ravine': {   // burrone vero: rampa di lancio ripida, vuoto profondo SENZA ponte, parete di arrivo ripida. Si scavalca saltando (rampa + salto/doppio salto); chi cade viene riportato sul bordo dopo un po'
+        const H = 50 + Math.round(rnd() * 14), D = 130 + Math.round(rnd() * 140), pw = RAVINE_W + Math.round(rnd() * 50);
+        const rp = mkRamp(H, 26, 160), s = 70, u1 = Math.round(s + rp.run) + 10, ex = 34, u2 = u1 + ex + pw, rr = 38;
+        return Object.assign({ kind, len: u2 + rr + 100, D, pw, s, u1, ex, u2, rr }, rp);
       }
       case 'drop': { const D = 40 + Math.round(rnd() * rnd() * 80 + rnd() * 14), s = 70, ex = 120, pl = 200 + Math.round(rnd() * 60), s2 = s + ex + pl, rr = Math.round(210 + D * 2.2); return { kind, len: s2 + rr + 70, D, s, ex, s2, rr }; }
       case 'mud': { const rl = 260, pl = 300; return { kind, len: 2 * rl + pl, rl, pl, H: -22 }; }
@@ -242,17 +286,17 @@ const Terrain = (() => {
   // seconda scelta (più leggera): ostacoli corti, integrati nel bioma, che si aggiungono al terreno a tema se c'è posto
   const LIGHT = { boulders: 1, whoops: 1, ridges: 1, bowl: 1, jump: 1, drop: 1, kicker: 1 };
   const PATCH_EXTRA = {   // l'ordine conta: si pesca nell'ordine, quindi i terreni nuovi (rampe, avvallamenti) stanno in testa
-    hills:  [['kicker', 0.32], ['bowl', 0.3], ['jump', 0.2], ['drop', 0.25], ['boulders', 0.2]],
-    gravel: [['kicker', 0.32], ['bowl', 0.28], ['jump', 0.25], ['drop', 0.2], ['boulders', 0.15]],
-    ramps:  [['kicker', 0.5], ['jump', 0.25], ['bowl', 0.2], ['whoops', 0.25], ['drop', 0.15], ['boulders', 0.1]],
-    ice:    [['bowl', 0.3], ['kicker', 0.3], ['ridges', 0.3], ['jump', 0.2]],
-    water:  [['kicker', 0.3], ['bowl', 0.15], ['jump', 0.2], ['boulders', 0.2], ['whoops', 0.2]],   // laguna: rampe e dossi di sabbia fra un bacino e l'altro
-    lava:   [['boulders', 0.45], ['ridges', 0.45]],  // vulcano: massi di basalto e creste di roccia sulla riva
+    hills:  [['kicker', 0.3], ['dropin', 0.14], ['twin', 0.14], ['bowl', 0.3], ['jump', 0.2], ['drop', 0.2], ['boulders', 0.2]],
+    gravel: [['pipe', 0.32], ['kicker', 0.28], ['twostage', 0.14], ['bowl', 0.25], ['jump', 0.25], ['drop', 0.2], ['boulders', 0.15]],
+    ramps:  [['kicker', 0.4], ['dropin', 0.14], ['twin', 0.14], ['jump', 0.22], ['bowl', 0.2], ['whoops', 0.25], ['drop', 0.1], ['boulders', 0.1]],
+    ice:    [['pipe', 0.2], ['twin', 0.2], ['bowl', 0.3], ['kicker', 0.25], ['ridges', 0.3], ['jump', 0.2]],
+    water:  [['twostage', 0.2], ['kicker', 0.25], ['bowl', 0.15], ['jump', 0.2], ['boulders', 0.2], ['whoops', 0.2]],   // laguna: rampe e dossi di sabbia fra un bacino e l'altro
+    lava:   [['gapland', 0.45], ['kicker', 0.25], ['jump', 0.15], ['boulders', 0.45], ['ridges', 0.45]],  // vulcano: rampe di basalto, fossati di lava, massi e creste sulla riva
   };
   function planPatches(rnd, force) {
     PATCHES = [];
     // "sapore" della gara: ogni pista accentua alcuni terreni e ne riduce altri, così non vince sempre la stessa forma
-    const flavor = {}; ['arch', 'mud', 'holes', 'stairs', 'ripples', 'logs', 'rack', 'sand', 'boulders', 'whoops', 'ridges', 'bowl', 'jump', 'drop', 'ravine', 'kicker'].forEach(k => { flavor[k] = 0.2 + 2.1 * rnd() * rnd() + 0.5 * rnd(); });
+    const flavor = {}; ['arch', 'mud', 'holes', 'stairs', 'ripples', 'logs', 'rack', 'sand', 'boulders', 'whoops', 'ridges', 'bowl', 'jump', 'drop', 'ravine', 'kicker', 'twostage', 'twin', 'dropin', 'pipe', 'gapland'].forEach(k => { flavor[k] = 0.2 + 2.1 * rnd() * rnd() + 0.5 * rnd(); });
     ZONES.forEach(z => {
       z.patches = [];
       if (force && (force.nopatch || (force.only && !force[z.index]))) return;
@@ -265,7 +309,7 @@ const Terrain = (() => {
         const spec = typeof kind === 'string' ? makePatch(kind, rnd) : kind;
         if (!spec) return;
         // intervalli liberi: lontano dai bordi della zona, dal vuoto sotto un ponte e dagli altri tratti già piazzati
-        const light = LIGHT[spec.kind], m0 = light ? 110 : 200, m1 = light ? 150 : 220, m2 = light ? 110 : 170;   // ostacoli corti: margini più stretti, così trovano posto anche accanto a un terreno a tema
+        const light = LIGHT[spec.kind] || spec.parts || spec.kind === 'pipe' || spec.kind === 'gapland', m0 = light ? 110 : 200, m1 = light ? 150 : 220, m2 = light ? 110 : 170;   // ostacoli corti: margini più stretti, così trovano posto anche accanto a un terreno a tema
         const lo = z.start + m0, hi = z.end - m0;
         const blocks = (z.gap ? [[z.gap.g0 - m1, z.gap.g1 + m1]] : []).concat(z.patches.map(q => [q.a - m2, q.b + m2])).sort((a, b) => a[0] - b[0]);
         const free = []; let cur = lo;
@@ -275,8 +319,11 @@ const Terrain = (() => {
         const slot = free.find(f => f[1] - f[0] >= spec.len); if (!slot) return;
         const frac = forced ? 0.5 : (picks.length > 1 && !z.patches.length) ? (rnd() < 0.5 ? 0.03 : 0.97) : 0.25 + rnd() * 0.5;   // con un ostacolo in più in arrivo, il primo si sposta verso un'estremità per lasciare posto
         const a = Math.round(slot[0] + (slot[1] - slot[0] - spec.len) * frac);
-        const pt = Object.assign({}, spec, { a, b: a + spec.len, zone: z.index, zkey: z.key });
-        z.patches.push(pt); PATCHES.push(pt);
+        for (const [part, off] of spec.parts || [[spec, 0]]) {   // twin e dropin sono due tratti normali piazzati insieme
+          const pa = a + off, pt = Object.assign({}, part, { a: pa, b: pa + part.len, zone: z.index, zkey: z.key });
+          if (pt.th !== undefined) { const d = Math.round((pa + pt.u1) / 20) * 20 - (pa + pt.u1); pt.u1 += d; if (pt.u2 !== undefined) { pt.u2 += d; if (pt.u3 !== undefined) pt.u3 += d; } }   // il labbro cade esattamente su un bordo di colonna fisica: la fisica e il disegno coincidono
+          z.patches.push(pt); PATCHES.push(pt);
+        }
       });
     });
   }
@@ -344,22 +391,28 @@ const Terrain = (() => {
     spread(shifts, 'shift', x => freeS(x - 120, x + 120) ? [x - 120, x + 120, 0, [x]] : null, x => PORTALS.push({ id: id++, kind: 'shift', x: Math.round(x) }));
     PORTALS.sort((a, b) => a.x - b.x);
   }
-  // la rampa di lancio (patch 'kicker') il cui labbro e discesa contengono x: lì la bici vola naturalmente (niente smorzamento dei rimbalzi)
-  function kickerAt(x) {
+  // la rampa (kicker, trampolino del fossato, rampa del burrone) di cui x è sul piano inclinato o appena oltre il labbro
+  function rampAt(x, before, after) {
     const z = zoneAt(x); if (!z || !z.patches) return null;
-    for (const p of z.patches) if (p.kind === 'kicker' && x >= p.a + p.u1 - 50 && x <= p.a + p.u1 + p.rd * 0.7) return p;
+    for (const p of z.patches) if (p.th !== undefined && x >= p.a + p.u1 - (before === undefined ? 110 : before) && x <= p.a + p.u1 + (after === undefined ? 30 : after)) return p;
     return null;
+  }
+  // x sta sul piano della rampa (dove l'attrito è quello del legno/pietra, anche sul ghiaccio)
+  function onRamp(x) {
+    const z = zoneAt(x); if (!z || !z.patches) return false;
+    for (const p of z.patches) if (p.th !== undefined && x >= p.a + p.s && x <= p.a + p.u1 + 20) return true;
+    return false;
   }
   // il burrone (patch 'ravine') in cui si trova x, se x è nel vuoto o sulla parete di arrivo
   function ravineAt(x) {
     const z = zoneAt(x); if (!z || !z.patches) return null;
-    for (const p of z.patches) if ((p.kind === 'ravine' || (p.kind === 'jump' && p.tier === 1)) && x >= p.a + p.u1 && x <= p.a + p.u2 + p.rr) return p;   // anche il fossato medio: chi resta sul fondo viene riportato fuori
+    for (const p of z.patches) if ((p.kind === 'ravine' || p.kind === 'gapland' || (p.kind === 'jump' && p.tier === 1)) && x >= p.a + p.u1 && x <= p.a + p.u2 + p.rr) return p;   // anche il fossato medio: chi resta sul fondo viene riportato fuori
     return null;
   }
   // terreno su cui si può atterrare dopo un salto: non sul vuoto/ponte, non in acqua, dentro la pista
   function landOk(x) {
     if (x < TRACK_START + 500 || x > FINISH_X - 300) return false;
-    for (const z of ZONES) { if (z.gap && x > z.gap.g0 - 150 && x < z.gap.g1 + 150) return false; for (const p of z.patches || []) if ((p.kind === 'ravine' || (p.kind === 'jump' && p.tier === 1)) && x > p.a + p.s - 60 && x < p.a + p.u2 + p.rr + 150) return false; }
+    for (const z of ZONES) { if (z.gap && x > z.gap.g0 - 150 && x < z.gap.g1 + 150) return false; for (const p of z.patches || []) { if ((p.kind === 'ravine' || (p.kind === 'jump' && p.tier === 1)) && x > p.a + p.s - 60 && x < p.a + p.u2 + p.rr + 150) return false; if (p.kind === 'gapland' && x > p.a + p.s - 60 && x < p.a + p.u3 + p.dl + 150) return false; if (p.kind === 'pipe' && x > p.a + p.s0 - 60 && x < p.a + p.u1 + p.ex + 90) return false; if (p.kind === 'kicker' && x > p.a + p.s - 60 && x < p.a + p.u1 + p.ex + 90) return false; } }
     return true;
   }
 
@@ -568,13 +621,13 @@ const Terrain = (() => {
 
   return {
     generateRandomLayout, applyLayout, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
-    frictionAt: x => FRICTION[zoneAt(x).key] || 0.9,
+    frictionAt: x => { const f = FRICTION[zoneAt(x).key] || 0.9; return f < 0.9 && onRamp(x) ? 0.9 : f; },   // il piano della rampa tiene sempre (anche nel ghiaccio)
     colorAt: x => zoneAt(x).color || '#059669',
     zoneKeyAt: x => zoneAt(x).key,
     LENGTHS,
     get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; },
     get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; }, get LILIES() { return LILIES; },
-    get BRIDGES() { return BRIDGES; }, get PATCHES() { return PATCHES; }, get PORTALS() { return PORTALS; }, PORTAL_RY: 88, landOk, ravineAt, kickerAt, makePatch,
+    get BRIDGES() { return BRIDGES; }, get PATCHES() { return PATCHES; }, get PORTALS() { return PORTALS; }, PORTAL_RY: 88, landOk, ravineAt, rampAt, onRamp, makePatch, mkRamp, rampY,
     // tipo di presa speciale sotto la ruota: 'mud' (fango), 'ice' (ghiaccio) o null
     // N lati della strada ad archi sotto la ruota (0 se non è una strada ad archi): serve a chi ha esattamente N punte
     gripN: x => { const z = zoneAt(x); if (z.patches) for (const p of z.patches) if (p.kind === 'arch' && x >= p.a && x <= p.b) return p.n; return 0; },

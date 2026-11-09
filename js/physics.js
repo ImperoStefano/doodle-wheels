@@ -17,6 +17,8 @@ const Sim = (() => {
   const WHEEL_FRICTION = 2.0; // Matter uses min(wheel, ground) -> the ground value decides
   const GROUND_DEPTH = 300;   // thick ground: a fast wheel can never tunnel through it
   const CAP_GRIP_MAX = 1.1;
+  // Sprint ricaricabile: per SPRINT_MS il tetto di velocità e la spinta salgono di TUNE.sprint; poi ricarica lunga (SPRINT_RECHARGE_MS). Serve per le rampe che chiedono velocità (mezzo tubo).
+  const SPRINT_MS = 1700, SPRINT_RECHARGE_MS = 22000, TICK_MS = 1000 / 60;
   const V_CAP = 7.3;         // oltre questa velocità (px/tick a 60 Hz ≈ 440 px/s) il motore smette di spingere
   const ACCEL_CAL = 1;       // quanto la taratura scala anche la coppia (0 = spento)
   const ACCEL_SPIKE = 1;     // le forme spigolose hanno più "coppia" per riprendere velocità dopo ogni urto
@@ -33,7 +35,7 @@ const Sim = (() => {
   //  hold/holdMin/hopV/antiHop : vicino al suolo (fra holdMin e hold px: a contatto no, altrimenti si frena il rotolamento sullo spigolo) la velocità che si allontana dalla strada (<hopV px/tick) viene smorzata
   //  airDamp  : smorzamento del giro delle ruote in aria; slipMax : (0 = spento) tetto di giro rispetto all'avanzamento a terra —
   //  provato e scartato: anche a 2.0 rallenta troppo le partenze e le salite
-  const TUNE = { downAcc: 0.6, airGap: 4, hold: 16, holdMin: 1.5, hopV: 12, antiHop: 0.8, airDamp: 1, slipMax: 0, slipVmin: 2.5, speed: 1 };
+  const TUNE = { downAcc: 0.6, airGap: 4, hold: 16, holdMin: 1.5, hopV: 12, antiHop: 0.8, airDamp: 1, slipMax: 0, slipVmin: 2.5, speed: 1, sprint: 1.55, rampDown: -0.25, rampPitch: 0.9 };
   const WHEEL_STATIC = 0.5;    // static friction (Matter takes the max of the two bodies)
   const GROUND_STATIC = 0.5;
   const AXLE_STIFFNESS = 1;
@@ -285,7 +287,7 @@ const Sim = (() => {
     racers[id] = {
       chassis, fw, rw, axF, axR, color, name,
       finished: false, finishTime: null,
-      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {},
+      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
     meltInit(racers[id], id, vertices);
@@ -566,15 +568,16 @@ const Sim = (() => {
   // Aderenza: una ruota senza contatto viene richiamata a terra (gravità extra), e vicino al suolo un rimbalzo piccolo
   // viene smorzato lungo la normale della strada: la bici resta incollata alla pista invece di galleggiare sui saltelli.
   // I salti veri (rampe) restano: sopra HOP_V la velocità non viene toccata.
-  const KICK_G = 0.5;
+  // Volo dopo una rampa vera (TUNE.rampDown < 0: la gravità extra diventa un piccolo sollevamento, quindi la gravità in volo è ~0,11 px/tick² invece di ~0,96): a quella velocità
+  // una bici lunga 160 px che esce da un labbro con la gravità normale cadrebbe di muso mentre la ruota dietro è ancora sulla rampa; così invece parte intera. Misurato: ~22/50/80 px di aria libera per le tre taglie (ruote tonde).
   function assist(r, H) {
     H = H || Terrain.height;
-    const kk = Terrain.kickerAt && Terrain.kickerAt(r.chassis.position.x);   // sul labbro di una rampa di lancio si vola davvero: gravità extra dimezzata e niente freno ai rimbalzi
+    const kk = r.rampFly > 0;   // volo dopo una rampa vera: gravità extra ridotta e niente freno ai rimbalzi finché le ruote non toccano
     for (const w of [r.fw, r.rw]) {
       const g = w.gapNow; if (g === undefined) continue;
       const v = w.velocity;
       if (g > TUNE.airGap) {
-        Matter.Body.setVelocity(w, { x: v.x, y: v.y + TUNE.downAcc * (kk ? KICK_G : 1) });
+        Matter.Body.setVelocity(w, { x: v.x, y: v.y + (kk ? TUNE.rampDown : TUNE.downAcc) });
       } else if (g < TUNE.hold && g > TUNE.holdMin && !kk) {
         const x = w.position.x, s = (H(x + 3) - H(x - 3)) / 6;           // pendenza della strada (y verso il basso: la normale va in su e indietro)
         const l = Math.hypot(s, 1), nx = s / l, ny = -1 / l;
@@ -583,7 +586,8 @@ const Sim = (() => {
       }
     }
     // telaio: se tutte e due le ruote sono in aria cade con la stessa gravità extra
-    if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + TUNE.downAcc * (kk ? KICK_G : 1) });
+    if (kk && r.rw.gapNow <= TUNE.airGap && TUNE.rampPitch < 1) Matter.Body.setAngularVelocity(r.chassis, Matter.Body.getAngularVelocity(r.chassis) * TUNE.rampPitch);   // il pilota tiene il muso: finché la ruota dietro è ancora sulla rampa la bici non si pianta di muso
+    if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + (kk ? TUNE.rampDown : TUNE.downAcc) });
   }
 
   // Safety net: the terrain profile is known exactly, so if a wheel corner ever ends up more
@@ -649,13 +653,14 @@ const Sim = (() => {
     const c = r.roll * (Array.isArray(r.cal) ? r.cal[r.secOf ? r.secOf(cx) : (SEC_OF_KEY[Terrain.zoneKeyAt ? Terrain.zoneKeyAt(cx) : ''] || 0)] : (r.cal || 1));
     // la presa sposta anche il tetto di velocità: sul terreno sbagliato la bici non arriva a V_CAP, su quello giusto sì (o poco oltre)
     const capK = Math.min(CAP_GRIP_MAX, (gf + gr) / 2);
-    const dir = r.dir || 1, gov = dir * r.chassis.velocity.x > V_CAP * capK * Math.pow(r.sc || 1, 0.6);   // ruote giganti: tetto più alto (il motore non cambia, ma il giro è più lungo)
+    const spm = r.spOn ? TUNE.sprint : 1;
+    const dir = r.dir || 1, gov = dir * r.chassis.velocity.x > V_CAP * spm * capK * Math.pow(r.sc || 1, 0.6);   // ruote giganti: tetto più alto (il motore non cambia, ma il giro è più lungo)
     // tetto di giro a terra: la ruota non gira più di SLIP_MAX volte quanto serve per l'avanzamento (partenza: velocità minima di riferimento)
     const lim = TUNE.slipMax > 0 && r.reff > 0 ? TUNE.slipMax * Math.max(r.chassis.velocity.x, TUNE.slipVmin) / (r.reff * (r.sc || 1)) : undefined;
     const ak = (r.accelK || 1) * Math.max(1, ACCEL_CAL * c);   // chi ha bisogno di più spinta (taratura alta) recupera anche più in fretta dopo ogni urto
     const mkF = r.mkF || 1, mkR = r.mkR || 1;   // vulcano: ruote sciolte, meno spinta
-    driveWheel(r.fw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gf * c * mkF, ak, lim);
-    driveWheel(r.rw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * ramp * gr * c * mkR, ak, lim);
+    driveWheel(r.fw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * spm * ramp * gf * c * mkF, ak, lim);
+    driveWheel(r.rw, gov ? 0 : dir * MOTOR_SPEED * TUNE.speed * spm * ramp * gr * c * mkR, ak, lim);
   }
 
 
@@ -983,13 +988,21 @@ const Sim = (() => {
     if (!ok) return 0;
     const air = !(grounded || coyote);
     let v = JUMP_V * Math.pow(r.sc || 1, 0.4) * (air ? DJ_POWER : 1);
-    { const kp = Terrain.kickerAt ? Terrain.kickerAt(r.chassis.position.x) : null;   // saltare dal labbro di una rampa: più è alta, più si vola
-      if (kp && r.chassis.position.x >= kp.a + kp.u1 - 110) v += KICK_JUMP * kp.H * (air ? 0.6 : 1); }   // (ruote giganti: un po' più forte, ma non in proporzione alla taglia)
+    r.rampFly = 0;   // un salto prende il comando: da qui in poi vale la gravità normale
     // da terra: spinta sopra la velocità verticale attuale; in aria (doppio salto): la velocità verso l'alto diventa almeno v, SENZA sommarsi a quella che c'è
     // già (sommate, un secondo tocco ravvicinato lanciava la bici altissima, soprattutto con le ruote giganti)
     for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: air ? Math.min(b.velocity.y, -v) : Math.max(-(v + JUMP_RISE_CAP), Math.min(b.velocity.y, 0) - v) });
     r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = air ? 2 : 1; if (air) r.ja = (r.ja || 0) + 1;
     return 1;
+  }
+  function sprintStep(r) {
+    if (r.spOn) { r.spT -= TICK_MS; r.spCharge = Math.max(0, r.spT / SPRINT_MS) * 0.999; if (r.spT <= 0) { r.spOn = false; r.spCharge = 0; } }
+    else if (r.spCharge < 1) r.spCharge = Math.min(1, r.spCharge + TICK_MS / SPRINT_RECHARGE_MS);
+  }
+  function sprint(id) {
+    const r = racers[id]; if (!r || !running || r.finished || r.righting || r.spOn || r.spCharge < 1) return false;
+    if (performance.now() - startedAt < 400) return false;
+    r.spOn = true; r.spT = SPRINT_MS; return true;
   }
   function jump(id) {
     const r = racers[id]; if (!r || !running || r.finished || r.righting) return false;
@@ -1018,19 +1031,20 @@ const Sim = (() => {
     r.lx = r.chassis.position.x; r.pitAt = -1; r.bestX = dir * tx; r.hopBaseX = dir * tx; r.progressAt = elapsed; r.stallStreak = 0;
   }
 
-  // Rampa di lancio: passando sul labbro con le ruote a terra la bici viene lanciata verso l'alto, tanto più forte quanto più la rampa è alta
-  // (il profilo da solo non basta: le ruote grandi seguono il terreno come se fosse un colle). Se nello stesso istante si salta, i due effetti si sommano ma con un tetto.
-  const KICK_V0 = 3, KICK_VH = 0.1, KICK_JUMP = 0.03;
-  function kickerStep(r, elapsed) {
-    const x = r.chassis.position.x, px = r.kx; r.kx = x;
-    if (px === undefined || (r.dir || 1) !== 1) return;
-    const p = Terrain.kickerAt ? Terrain.kickerAt(x) : null; if (!p) return;
-    const lip = p.a + p.u1 - 25;
-    if (!(px < lip && x >= lip)) return;
-    if (!(r.fw.gapNow <= JUMP_GAP * 1.5 || r.rw.gapNow <= JUMP_GAP * 1.5)) return;
-    const vl = (KICK_V0 + KICK_VH * p.H) * Math.pow(r.sc || 1, 0.4);
-    for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.min(b.velocity.y, -vl) });
-    r.kickAt = elapsed; if (!r.airJ) { r.airJ = 1; r.jumpAt = elapsed; }   // il lancio vale come primo salto: in volo il tocco diventa subito un doppio salto
+  // Rampa vera (kicker): quando la ruota anteriore supera il labbro senza un salto in corso la bici sta volando lungo la direzione della rampa; per quel volo la gravità extra è ridotta
+  // (TUNE.rampDown) e il lancio vale come primo salto (in volo il tocco è subito un doppio salto). Il volo finisce quando la ruota anteriore tocca, dopo un salto o dopo 2,5 s. Finché la ruota dietro è ancora sulla rampa il pilota tiene il muso (TUNE.rampPitch smorza la rotazione).
+  function rampStep(r, elapsed) {
+    const fx = r.fw.position.x, px = r.rfx; r.rfx = fx;
+    if (r.rampFly > 0) {
+      r.rfT = (r.rfT || 0) + 1;
+      if ((r.rfT > 10 && r.fw.gapNow <= TUNE.airGap) || r.rfT > 150) r.rampFly = 0;
+      return;
+    }
+    if (px === undefined || (r.dir || 1) !== 1 || r.airJ) return;
+    const p = Terrain.rampAt ? Terrain.rampAt(fx, 60, 60) : null; if (!p || (p.kind !== 'kicker' && p.kind !== 'pipe' && p.kind !== 'gapland')) return;
+    const lip = p.a + p.u1;
+    if (!(px < lip && fx >= lip)) return;
+    r.rampFly = 1; r.rfT = 0; r.airJ = 1; r.jumpAt = elapsed;
   }
 
   function stepRacer(r, elapsed) {
@@ -1045,7 +1059,8 @@ const Sim = (() => {
     if (r.airJ && elapsed - r.jumpAt > 150 && (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP)) r.airJ = 0;   // atterrata: il doppio salto si ricarica
     checkPortals(r, elapsed);
     ravineStep(r, elapsed);
-    kickerStep(r, elapsed);
+    rampStep(r, elapsed);
+    sprintStep(r);
 
     // progress = furthest x reached IN THE DIRECTION OF TRAVEL (dir·x); if it hasn't improved enough for STALL_MS, hop
     const dir = r.dir || 1, px = dir * r.chassis.position.x;
@@ -1114,7 +1129,7 @@ const Sim = (() => {
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
       finished: r.finished, finishTime: r.finishTime,
-      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
+      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
   }
 
@@ -1147,7 +1162,7 @@ const Sim = (() => {
 
   return {
     init, addRacer, updateRacerWheel, drainMelts, meltBase, meltVertices, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
-    snapshot, jump, allFinished, isTimedOut, standings, GROUND_Y, usedPortals: () => Object.keys(portalUsed).map(Number),
+    snapshot, jump, sprint, allFinished, isTimedOut, standings, GROUND_Y, usedPortals: () => Object.keys(portalUsed).map(Number),
     get FINISH_X() { return Terrain.FINISH_X; },
     // ms rimasti agli altri dopo che il primo ha tagliato il traguardo (null = nessuno è arrivato)
     graceLeft() { if (firstFinishAt === null || !running) return null; return Math.max(0, GRACE_BASE_MS + firstFinishAt * GRACE_FRAC - (performance.now() - startedAt - firstFinishAt)); },

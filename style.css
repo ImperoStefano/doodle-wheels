@@ -349,14 +349,14 @@ body.has-fs .share-btn { right: calc(214px + env(safe-area-inset-right, 0px)); }
 .ctrl-hint {
   position: absolute; z-index: 998; left: 50%; bottom: calc(26px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
   padding: 8px 16px; border: 2px solid var(--ink); border-radius: 999px; background: rgba(255, 255, 255, 0.92); color: var(--ink);
-  font-weight: 700; font-size: 0.9rem; white-space: nowrap; pointer-events: none; box-shadow: 2px 4px 0 var(--ink);
+  font-weight: 700; font-size: 0.9rem; white-space: normal; text-align: center; max-width: min(620px, calc(100vw - 480px)); pointer-events: none; box-shadow: 2px 4px 0 var(--ink);
   transition: opacity 0.8s ease; opacity: 1;
 }
 .ctrl-hint.fade { opacity: 0; }
 @media (max-width: 768px) and (pointer: coarse) {
   .jump-btn { width: 80px; height: 80px; left: calc(20px + env(safe-area-inset-left, 0px)); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); font-size: 0.95rem; }
   .slow-hint { max-width: 190px; font-size: 0.82rem; padding: 7px 11px; }
-  .ctrl-hint { bottom: calc(110px + env(safe-area-inset-bottom, 0px)); font-size: 0.8rem; }
+  .ctrl-hint { bottom: calc(110px + env(safe-area-inset-bottom, 0px)); font-size: 0.8rem; max-width: calc(100vw - 32px); }
 }
 @media (prefers-reduced-motion: reduce) { .slow-hint { animation: none; } }
 
@@ -493,3 +493,28 @@ input[type="text"]:focus { border-color: var(--teal); }
 .ft-tip i { display: block; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 2px #fffdf2, 0 0 0 3.5px rgba(2, 90, 83, 0.35); }
 .ft-tip[hidden], .ft-hl[hidden] { display: none; }
 @keyframes ftTipIn { from { opacity: 0; transform: translate(-50%, -88%); } to { opacity: 1; transform: translate(-50%, -100%); } }
+
+/* ---- Sprint ricaricabile: stessa famiglia del pulsante salto (tondo piatto, bordo in rilievo), colore verde-acqua della palette;
+        l'anello esterno color ocra si riempie mentre si ricarica (ricarica lunga) ---- */
+.sprint-btn {
+  position: absolute; z-index: 999; --p: 1;
+  left: calc(45px + env(safe-area-inset-left, 0px)); bottom: calc(148px + env(safe-area-inset-bottom, 0px));
+  width: 66px; height: 66px; border-radius: 50%; border: 0; padding: 0; display: none; align-items: center; justify-content: center;
+  background: var(--teal); box-shadow: 0 6px 0 var(--teal-d);
+  touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.2s ease;
+}
+.sprint-btn::before {   /* anello di carica: sottile, fuori dal tondo */
+  content: ''; position: absolute; inset: -9px; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(var(--ochre) calc(var(--p) * 360deg), rgba(45, 62, 72, 0.16) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px)); mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+}
+.sprint-btn svg { position: relative; display: block; width: 46%; height: 46%; fill: var(--cream-2); stroke: var(--cream-2); stroke-width: 5; stroke-linejoin: round; pointer-events: none; }
+.sprint-btn.ready { animation: sprintPulse 1.2s ease-in-out infinite; }
+.sprint-btn.on { background: var(--yellow); box-shadow: 0 2px 0 var(--ochre-d), 0 0 0 0 transparent; transform: translateY(4px); }
+.sprint-btn.on svg { fill: var(--sun); stroke: var(--sun); }
+.sprint-btn.cool { background: var(--cream-4); box-shadow: 0 6px 0 rgba(45, 62, 72, 0.22); }
+.sprint-btn.cool svg { fill: var(--cream-2); stroke: var(--cream-2); opacity: 0.85; }
+.sprint-btn:active { transform: translateY(5px) scale(0.97); box-shadow: 0 1px 0 var(--teal-d); }
+@keyframes sprintPulse { 0%, 100% { filter: none; } 50% { filter: drop-shadow(0 0 7px rgba(236, 189, 111, 0.95)); } }
+@media (max-width: 768px) and (pointer: coarse) { .sprint-btn { left: calc(31px + env(safe-area-inset-left, 0px)); bottom: calc(118px + env(safe-area-inset-bottom, 0px)); width: 58px; height: 58px; } }

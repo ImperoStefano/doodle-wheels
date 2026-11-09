@@ -179,10 +179,8 @@ const Props = (() => {
       else if (p.kind === 'whoops') whoopsMounds(ctx, p, camX, x0, x1, H, sub, t);
       else if (p.kind === 'ridges') iceRidges(ctx, p, camX, x0, x1, H, sub, t);
       else if (p.kind === 'bowl') bowlDip(ctx, p, camX, x0, x1, H, sub, t);
-      else if (p.kind === 'jump') inkJump(ctx, p, camX, x0, x1, H, sub, t);
+      else if (p.kind === 'jump' || p.kind === 'ravine' || p.kind === 'kicker' || p.kind === 'pipe' || p.kind === 'gapland') rampDraw(ctx, p, camX, x0, x1, H, t);
       else if (p.kind === 'drop') inkDrop(ctx, p, camX, x0, x1, H, sub, t);
-      else if (p.kind === 'ravine') ravineDraw(ctx, p, camX, x0, x1, H, sub, t);
-      else if (p.kind === 'kicker') kickerDraw(ctx, p, camX, x0, x1, H, sub, t);
     }
   }
   // ---- utilità comuni dei terreni: strati spessi con gradiente ed estremità che si assottigliano --------------
@@ -313,100 +311,168 @@ const Props = (() => {
       if (r > 3) { ctx.fillStyle = 'rgba(150,150,190,0.7)'; ctx.beginPath(); ctx.arc(wx - camX - r * 0.3, y - r * 0.3, r * 0.25, 0, TAU); ctx.fill(); ctx.fillStyle = '#0c0c12'; }
     }
   }
-  function inkJump(ctx, p, camX, x0, x1, H, sub, t) {
-    const wood = p.zkey === 'ramps';
-    // trampolino: assi di legno (o lastre) sopra la salita
-    const ka = p.a + p.s + 10, kb = p.a + p.u1 + 4;
-    if (kb >= x0 && ka <= x1) {
-      const l = Math.max(ka, x0), r = Math.min(kb, x1), tp = x => sm01((x - ka) / 36) * sm01((kb - x) / 14);
-      fillSlab(ctx, camX, l, r, H, () => -5, x => 4 + 7 * tp(x), wood ? [[0, '#d9a766'], [0.5, '#b17d3f'], [1, '#6e4a22']] : [[0, '#bdb5a8'], [0.5, '#8d857a'], [1, '#5a544c']], 4);
-      ctx.strokeStyle = wood ? 'rgba(80,50,20,0.55)' : 'rgba(60,56,50,0.5)'; ctx.lineWidth = 1.2;
-      for (let wx = ka + 14; wx < kb - 4; wx += 22) { if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.beginPath(); ctx.moveTo(wx - camX, y - 4); ctx.lineTo(wx - camX, y + 9); ctx.stroke(); }
-      lineOff(ctx, camX, l, r, H, () => -5, 5); ctx.strokeStyle = wood ? '#f0cf98' : '#dcd6cb'; ctx.lineWidth = 2; ctx.stroke();
-      // strisce nere di pennello sul labbro (avviso)
-      for (let k = 0; k < 3; k++) { const wx = kb - 10 - k * 11; if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.strokeStyle = '#0c0c12'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(wx - camX - 3, y - 5); ctx.lineTo(wx - camX + 3, y + 5); ctx.stroke(); }
-    }
-    // la macchia: copre il fossato (pareti e fondo)
-    const a = p.a + p.u1 - 4, b = p.a + p.u2 + p.rr * 0.62;
-    inkBand(ctx, camX, a, b, x0, x1, H, 30, p.a * 0.01, { drips: 5 });
-    // pozza che ondeggia appena
-    const cx = p.a + p.u1 + p.ex + p.pw / 2; if (cx > x0 - 90 && cx < x1 + 90) {
-      const y = H(cx) + 2, X = cx - camX, ph = (t * 0.5) % 1;
-      ctx.strokeStyle = `rgba(190,190,230,${0.45 * (1 - ph)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(X, y, 10 + p.pw * 0.3 * ph, 1.5 + 2.5 * ph, 0, 0, TAU); ctx.stroke();
-    }
-    inkSplat(ctx, camX, x0, x1, H, p.a + p.u1 + p.ex + p.pw / 2, 14, p.pw * 0.75, p.a * 0.013);
+  // ---- rampe vere: struttura costruita, con i materiali del bioma (legno, tronchi, pietra, ghiaccio, bambù, basalto) ------------------------------
+  // Il piano inclinato che si vede è lo stesso che la fisica conosce (Terrain.height): qui lo si riempie come una vera costruzione, si disegna il fossato che c'è sotto il labbro
+  // (ruscello, crepaccio, forra, canale, foglie, lava) e il cartello con tante frecce quanto è alta la rampa.
+  const RAMP_THEME = {
+    hills:  { mat: 'wood',   pit: 'stream',   post: '#7a4e2a', nose: ['#f6d33f', '#2b2b31'], sign: '#6b3a2a' },
+    ice:    { mat: 'ice',    pit: 'crevasse', post: '#7fa6c9', nose: ['#fb7a3d', '#ffffff'], sign: '#5d7fa6' },
+    gravel: { mat: 'stone',  pit: 'gorge',    post: '#7d4a33', nose: ['#f4ede0', '#c2412b'], sign: '#7d4a33' },
+    water:  { mat: 'bamboo', pit: 'channel',  post: '#7a9a3a', nose: ['#e24a4a', '#f6e08a'], sign: '#8a7a3a' },
+    ramps:  { mat: 'log',    pit: 'leaves',   post: '#5a3820', nose: ['#fb8a3d', '#3a2418'], sign: '#5a3820' },
+    lava:   { mat: 'basalt', pit: 'lava',     post: '#3a2f3f', nose: ['#ff8a2a', '#241b2a'], sign: '#3a2f3f' },
+  };
+  const PIT_THEME = {
+    stream:   { wall: ['#9a7a52', '#5f4330', '#2b1c13'], strata: ['rgba(255,226,180,0.12)', 'rgba(25,14,8,0.28)'], fluid: 'water', fl: ['#9ad8f0', '#4a9ccd', '#2a6aa0'], rim: '#6fbf4a' },
+    crevasse: { wall: ['#e4f4fc', '#8dbbe0', '#1f3d86'], strata: ['rgba(255,255,255,0.35)', 'rgba(20,50,120,0.28)'], fluid: null, rim: '#ffffff' },
+    gorge:    { wall: ['#cf7f50', '#8d4a36', '#3d1f26'], strata: ['rgba(255,214,170,0.14)', 'rgba(40,12,16,0.3)'], fluid: null, rim: '#f0c27a' },
+    channel:  { wall: ['#f3d49a', '#c99660', '#7a5a46'], strata: ['rgba(255,244,214,0.2)', 'rgba(90,50,30,0.22)'], fluid: 'water', fl: ['#8cf0e0', '#2cc4b8', '#0e8f8a'], rim: '#f8da8c' },
+    leaves:   { wall: ['#7e4a48', '#4c2b3c', '#241529'], strata: ['rgba(255,190,150,0.12)', 'rgba(15,6,22,0.3)'], fluid: 'leaves', fl: ['#d6772e', '#a8532a', '#6d2f1f'], rim: '#f1a540' },
+    lava:     { wall: ['#4e3c4e', '#2e2333', '#150f1a'], strata: ['rgba(255,150,80,0.14)', 'rgba(5,2,8,0.4)'], fluid: 'lava', fl: ['#fff0a0', '#ff9a2a', '#d4361a'], rim: '#ff8a2a' },
+  };
+  // freccia che segue l'inclinazione della rampa
+  function rampChevron(ctx, X, Y, ang, s, col) {
+    ctx.save(); ctx.translate(X, Y); ctx.rotate(ang);
+    ctx.beginPath(); ctx.moveTo(-9 * s, -8 * s); ctx.lineTo(0, -8 * s); ctx.lineTo(9 * s, 0); ctx.lineTo(0, 8 * s); ctx.lineTo(-9 * s, 8 * s); ctx.lineTo(0, 0); ctx.closePath();
+    ctx.fillStyle = col || '#fb5f35'; ctx.fill(); ctx.strokeStyle = 'rgba(40,20,10,0.55)'; ctx.lineWidth = 1.2; ctx.stroke(); ctx.restore();
   }
-  // Burrone vero: rampa di lancio in legno/pietra con frecce, vuoto profondo con pareti stratificate, bordo di arrivo ripido
-  function ravineDraw(ctx, p, camX, x0, x1, H, sub, t) {
-    const wood = p.zkey === 'ramps';
-    // ---- il vuoto: parete di fondo scura a strati, dal bordo di arrivo fino al fondo ----
-    const pa = p.a + p.u1 - 2, pb = p.a + p.u2 + p.rr + 3;
-    if (pb >= x0 && pa <= x1) {
-      const l = Math.max(pa, x0), r = Math.min(pb, x1), yTop = H(p.a + p.u2 + p.rr + 6), yBot = H(p.a + p.u1 + p.ex + p.pw / 2) + 14;
-      const g = ctx.createLinearGradient(0, yTop, 0, yBot);
-      g.addColorStop(0, '#6a4252'); g.addColorStop(0.35, '#432a43'); g.addColorStop(1, '#1b1228');
-      ctx.beginPath();
-      for (let x = l; x <= r + 0.1; x += 4) { const y = Math.max(H(x), yTop), X = x - camX; if (x === l) ctx.moveTo(X, yTop - 1); ctx.lineTo(X, y + 2); }
-      ctx.lineTo(r - camX, yTop - 1); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
-      // strati di roccia sulla parete di fondo
-      ctx.save(); ctx.clip();
-      for (let k = 1; k < 6; k++) {
-        const y = yTop + (yBot - yTop) * (k / 6) + 2 * Math.sin(k * 3.1);
-        ctx.strokeStyle = k % 2 ? 'rgba(255,214,190,0.10)' : 'rgba(10,6,20,0.28)'; ctx.lineWidth = 2 + (k % 3); ctx.beginPath();
-        for (let x = l; x <= r + 0.1; x += 12) { const yy = y + 3 * Math.sin(x * 0.04 + k * 1.7); if (x === l) ctx.moveTo(x - camX, yy); else ctx.lineTo(x - camX, yy); }
-        ctx.stroke();
-      }
-      ctx.restore();
-      // spigolo di roccia chiaro lungo le due pareti
-      lineOff(ctx, camX, l, r, H, () => 0, 4); ctx.strokeStyle = 'rgba(255,225,195,0.35)'; ctx.lineWidth = 2.2; ctx.stroke();
+  // il fossato / vuoto sotto il labbro: cavità con parete di fondo a strati e, sul fondo, ruscello / acqua / foglie / lava
+  function pitDraw(ctx, p, camX, x0, x1, H, t, th) {
+    const pa = p.a + p.u1 - 2, pb = p.a + p.u2 + p.rr + 3; if (pb < x0 || pa > x1) return;
+    const W = PIT_THEME[th.pit], l = Math.max(pa, x0), r = Math.min(pb, x1), yTop = H(p.a + p.u2 + p.rr + 6), cx = p.a + p.u1 + p.ex + p.pw / 2, yFloor = H(cx), yBot = yFloor + 14;
+    const cav = () => { ctx.beginPath(); for (let x = l; x <= r + 0.1; x += 4) { const y = Math.max(H(x), yTop), X = x - camX; if (x === l) ctx.moveTo(X, yTop - 1); ctx.lineTo(X, y + 2); } ctx.lineTo(r - camX, yTop - 1); ctx.closePath(); };
+    const g = ctx.createLinearGradient(0, yTop, 0, yBot); g.addColorStop(0, W.wall[0]); g.addColorStop(0.4, W.wall[1]); g.addColorStop(1, W.wall[2]);
+    ctx.save(); cav(); ctx.fillStyle = g; ctx.fill(); ctx.clip();
+    // strati della parete di fondo
+    for (let k = 1; k < 7; k++) {
+      const y = yTop + (yBot - yTop) * (k / 7) + 2 * Math.sin(k * 3.1); ctx.strokeStyle = W.strata[k % 2]; ctx.lineWidth = 2 + (k % 3); ctx.beginPath();
+      for (let x = l; x <= r + 0.1; x += 12) { const yy = y + 3 * Math.sin(x * 0.04 + k * 1.7); if (x === l) ctx.moveTo(x - camX, yy); else ctx.lineTo(x - camX, yy); }
+      ctx.stroke();
     }
-    // ---- rampa di lancio ----
-    const ka = p.a + p.s + 10, kb = p.a + p.u1 + 6;
-    if (kb >= x0 && ka <= x1) {
-      const l = Math.max(ka, x0), r = Math.min(kb, x1), tp = x => sm01((x - ka) / 40) * sm01((kb - x) / 10);
-      fillSlab(ctx, camX, l, r, H, () => -5, x => 5 + 8 * tp(x), wood ? [[0, '#e0ae6c'], [0.5, '#b88140'], [1, '#6e4a22']] : [[0, '#cfc7ba'], [0.5, '#9a9286'], [1, '#5a544c']], 4);
-      ctx.strokeStyle = wood ? 'rgba(80,50,20,0.5)' : 'rgba(60,56,50,0.45)'; ctx.lineWidth = 1.2;
-      for (let wx = ka + 16; wx < kb - 6; wx += 24) { if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.beginPath(); ctx.moveTo(wx - camX, y - 4); ctx.lineTo(wx - camX, y + 10); ctx.stroke(); }
-      lineOff(ctx, camX, l, r, H, () => -5, 5); ctx.strokeStyle = wood ? '#f6d9a4' : '#e6e0d4'; ctx.lineWidth = 2; ctx.stroke();
-      // frecce arancio sulla rampa (si salta qui) e strisce di avviso sul labbro
-      for (let k = 0; k < 3; k++) {
-        const wx = kb - 46 - k * 40; if (wx < x0 || wx > x1) continue; const y = H(wx) - 6, X = wx - camX;
-        ctx.fillStyle = '#fb5f35'; ctx.beginPath(); ctx.moveTo(X - 11, y + 1); ctx.lineTo(X, y - 8); ctx.lineTo(X + 11, y + 1); ctx.lineTo(X + 11, y + 5); ctx.lineTo(X, y - 4); ctx.lineTo(X - 11, y + 5); ctx.closePath(); ctx.fill();
+    // fluido sul fondo
+    if (W.fluid) {
+      const fd = Math.min(36, 9 + p.D * 0.22), yW = yFloor - fd, fg = ctx.createLinearGradient(0, yW, 0, yFloor + 14); fg.addColorStop(0, W.fl[0]); fg.addColorStop(0.35, W.fl[1]); fg.addColorStop(1, W.fl[2]);
+      ctx.beginPath(); for (let x = l; x <= r + 0.1; x += 4) { const y = yW + 1.6 * Math.sin(x * 0.07 + t * 2.2); if (x === l) ctx.moveTo(x - camX, y); else ctx.lineTo(x - camX, y); }
+      ctx.lineTo(r - camX, yFloor + 20); ctx.lineTo(l - camX, yFloor + 20); ctx.closePath(); ctx.fillStyle = fg; ctx.fill();
+      if (W.fluid === 'lava') {
+        const gl = ctx.createLinearGradient(0, yW - 70, 0, yW); gl.addColorStop(0, 'rgba(255,120,40,0)'); gl.addColorStop(1, 'rgba(255,140,50,0.45)'); ctx.fillStyle = gl; ctx.fillRect(l - camX, yW - 70, r - l, 70);
+        ctx.fillStyle = 'rgba(255,230,140,0.9)';
+        for (let k = 0; k < 7; k++) { const bx = p.a + p.u1 + 30 + hz(p.a + k * 3.3) * (p.u2 - p.u1); if (bx < l || bx > r) continue; const ph = (t * 0.5 + k * 0.37) % 1; ctx.beginPath(); ctx.arc(bx - camX, yW + 3 - ph * 14, 2 + 2 * (1 - ph), 0, TAU); ctx.globalAlpha = 1 - ph; ctx.fill(); ctx.globalAlpha = 1; }
+      } else if (W.fluid === 'leaves') {
+        for (let k = 0; k < 26; k++) { const lx = l + hz(p.a * 0.07 + k * 1.9) * (r - l), ly = yW + 3 + hz(k * 5.3 + p.a) * 9; ctx.fillStyle = ['#e0662a', '#f0a23a', '#b4412a', '#d8b24a'][k & 3]; ctx.beginPath(); ctx.ellipse(lx - camX, ly + Math.sin(t * 1.4 + k) * 0.8, 5, 2.4, hz(k) * 3, 0, TAU); ctx.fill(); }
+      } else {
+        ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.6; ctx.beginPath();
+        for (let x = l; x <= r + 0.1; x += 3) { const y = yW + 1.6 * Math.sin(x * 0.07 + t * 2.2) - 0.5; if (x === l) ctx.moveTo(x - camX, y); else ctx.lineTo(x - camX, y); } ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.2;
+        for (let k = 0; k < 6; k++) { const wx = l + hz(k * 4.1 + p.a) * (r - l), wy = yW + 6 + hz(k * 2.2) * (fd - 6), ph = (t * 0.4 + k * 0.23) % 1; ctx.beginPath(); ctx.ellipse(wx - camX, wy, 6 + 8 * ph, 1 + 1.6 * ph, 0, 0, TAU); ctx.globalAlpha = 1 - ph; ctx.stroke(); ctx.globalAlpha = 1; }
       }
-      for (let k = 0; k < 3; k++) { const wx = kb - 6 - k * 9; if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.fillStyle = k % 2 ? '#2d3e48' : '#f5e594'; ctx.fillRect(wx - camX - 3, y - 6, 6, 5); }
+    } else {   // senza fluido: sul fondo cade polvere / brilla qualcosa
+      for (let k = 0; k < 9; k++) { const sx = l + hz(k * 3.7 + p.a * 0.1) * (r - l), tw = 0.5 + 0.5 * Math.sin(t * 2.4 + k * 1.9); ctx.fillStyle = th.pit === 'crevasse' ? `rgba(255,255,255,${0.25 + 0.6 * tw})` : `rgba(255,214,170,${0.12 + 0.2 * tw})`; ctx.fillRect(sx - camX - 1, yTop + (yBot - yTop) * (0.25 + 0.6 * hz(k * 6.1)), 2.4, 2.4); }
+    }
+    ctx.restore();
+    // bordo del vuoto: sulla parete d'arrivo
+    lineOff(ctx, camX, Math.max(p.a + p.u2, x0), r, H, () => -1.5, 4); ctx.strokeStyle = W.rim; ctx.lineWidth = 3; ctx.globalAlpha = 0.9; ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  // corpo della rampa: i dettagli sono ritagliati dentro la sagoma, il piano è una fascia che segue il profilo
+  function rampBody(ctx, camX, xs, xe, H, yb, th, t, p) {
+    const th0 = th.mat, tri = (a, b, c, d, e, f) => { ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(c, d); ctx.lineTo(e, f); ctx.closePath(); };
+    const path = () => { ctx.beginPath(); ctx.moveTo(xs - camX, yb + 3); for (let x = xs; x <= xe + 0.1; x += 3) ctx.lineTo(x - camX, Math.min(H(x), yb) + 2); ctx.lineTo(xe - camX, yb + 3); ctx.closePath(); };
+    let top = 1e9; for (let x = xs; x <= xe; x += 6) top = Math.min(top, H(x)); const h = yb - top + 6;
+    const body = { wood: ['#4a3018', '#2a190b'], log: ['#5a3820', '#2e1b0e'], stone: ['#c9794b', '#8a4a30'], ice: ['#e4f4fc', '#7fb2d8'], bamboo: ['#7fae3a', '#4f7a26'], basalt: ['#3a2f3f', '#150f1a'] }[th0];
+    ctx.save(); path(); const g = ctx.createLinearGradient(0, top, 0, yb + 3); g.addColorStop(0, body[0]); g.addColorStop(1, body[1]); ctx.fillStyle = g; ctx.fill(); ctx.clip();
+    const X0 = Math.floor(xs / 4) * 4;
+    if (th0 === 'wood') {   // impalcato: montanti, diagonali, trave a terra
+      ctx.lineCap = 'butt';
+      for (let px = Math.floor(xs / 26) * 26 + 6; px < xe + 26; px += 26) {
+        const X = px - camX, y0 = H(px) + 6; ctx.fillStyle = '#9a6a38'; ctx.fillRect(X - 3, y0, 6, yb - y0 + 4); ctx.fillStyle = 'rgba(255,225,170,0.4)'; ctx.fillRect(X - 3, y0, 1.6, yb - y0 + 4);
+        if (h > 34) { const y1 = H(px + 26) + 6; ctx.strokeStyle = '#7a4e2a'; ctx.lineWidth = 3.6; ctx.beginPath(); if (((px / 26) | 0) % 2) { ctx.moveTo(X, yb); ctx.lineTo(X + 26, y1); } else { ctx.moveTo(X, y0); ctx.lineTo(X + 26, yb); } ctx.stroke(); }
+      }
+      ctx.fillStyle = '#6e4a22'; ctx.fillRect(xs - camX, yb - 5, xe - xs, 6);
+      ctx.fillStyle = '#5aa142'; for (let k = 0; k < 14; k++) { const gx = xs + hz(k * 2.7 + p.a) * (xe - xs); tri(gx - camX - 4, yb + 3, gx - camX, yb - 7 - hz(k) * 5, gx - camX + 4, yb + 3); ctx.fill(); }
+    } else if (th0 === 'log') {   // tronchi impilati visti dalla testa
+      for (let r = 0, y = yb - 8; y > top - 16; r++, y -= 15) for (let x = X0 - 20 + (r & 1) * 9; x < xe + 20; x += 18) {
+        const X = x - camX; ctx.fillStyle = '#6b4126'; ctx.beginPath(); ctx.arc(X, y, 8.6, 0, TAU); ctx.fill(); ctx.fillStyle = '#d6a064'; ctx.beginPath(); ctx.arc(X, y, 6.4, 0, TAU); ctx.fill();
+        ctx.strokeStyle = 'rgba(110,64,28,0.7)'; ctx.lineWidth = 0.9; ctx.beginPath(); ctx.arc(X, y, 4.2, 0, TAU); ctx.moveTo(X + 1.6, y); ctx.arc(X, y, 1.6, 0, TAU); ctx.stroke();
+      }
+    } else if (th0 === 'stone') {   // muratura di arenaria a corsi sfalsati
+      const cols = ['#c9794b', '#b96a3f', '#d98d59', '#a85c37', '#c27244'];
+      for (let r = 0, y = yb + 2; y > top - 14; r++, y -= 15) for (let x = Math.floor(xs / 34) * 34 - (r & 1) * 17; x < xe + 34; x += 34) {
+        const X = x - camX; ctx.fillStyle = cols[((x / 34 | 0) * 7 + r * 3 + 40) % 5]; ctx.fillRect(X + 1, y - 14, 33, 14); ctx.fillStyle = 'rgba(255,230,190,0.28)'; ctx.fillRect(X + 1, y - 14, 33, 2.4); ctx.fillStyle = 'rgba(60,24,12,0.22)'; ctx.fillRect(X + 1, y - 3, 33, 3);
+      }
+      ctx.strokeStyle = 'rgba(70,32,20,0.75)'; ctx.lineWidth = 1.3;
+      for (let r = 0, y = yb + 2; y > top - 14; r++, y -= 15) { ctx.beginPath(); ctx.moveTo(xs - camX, y); ctx.lineTo(xe - camX, y); for (let x = Math.floor(xs / 34) * 34 - (r & 1) * 17; x < xe + 34; x += 34) { ctx.moveTo(x - camX, y); ctx.lineTo(x - camX, y - 15); } ctx.stroke(); }
+    } else if (th0 === 'ice') {   // blocchi di ghiaccio tagliati, riflessi e crepe
+      for (let r = 0, y = yb + 2; y > top - 14; r++, y -= 16) for (let x = Math.floor(xs / 38) * 38 - (r & 1) * 19; x < xe + 38; x += 38) {
+        const X = x - camX, v = hz(x * 0.31 + r * 7.1); ctx.fillStyle = `rgba(${150 + v * 50 | 0},${200 + v * 40 | 0},255,0.55)`; ctx.fillRect(X + 1.5, y - 15, 35, 14);
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(X + 3, y - 13); ctx.lineTo(X + 14 + v * 10, y - 13); ctx.stroke();
+        ctx.strokeStyle = 'rgba(40,90,150,0.5)'; ctx.lineWidth = 1; ctx.strokeRect(X + 1.5, y - 15, 35, 14);
+      }
+      const tw = 0.5 + 0.5 * Math.sin(t * 3); ctx.strokeStyle = `rgba(255,255,255,${0.4 + 0.5 * tw})`; ctx.lineWidth = 1.2; const sx = xs + (xe - xs) * 0.55; ctx.beginPath(); ctx.moveTo(sx - camX - 5, top + h * 0.5); ctx.lineTo(sx - camX + 5, top + h * 0.5); ctx.moveTo(sx - camX, top + h * 0.5 - 5); ctx.lineTo(sx - camX, top + h * 0.5 + 5); ctx.stroke();
+    } else if (th0 === 'bamboo') {   // canne verticali con nodi e legature di corda
+      for (let x = Math.floor(xs / 13) * 13; x < xe + 13; x += 13) {
+        const X = x - camX, v = hz(x * 0.17); const gg = ctx.createLinearGradient(X - 6, 0, X + 6, 0); gg.addColorStop(0, '#b5d85c'); gg.addColorStop(0.45, '#82b23c'); gg.addColorStop(1, '#4f7a26');
+        ctx.fillStyle = gg; ctx.fillRect(X - 6, top - 10, 12, h + 18); ctx.fillStyle = 'rgba(40,70,15,0.7)';
+        for (let y = yb - 6 - v * 12; y > top - 10; y -= 24) ctx.fillRect(X - 6, y, 12, 2.2);
+      }
+      ctx.fillStyle = '#d8b46a'; for (const f of [0.3, 0.72]) { const y = yb - h * f; ctx.fillRect(xs - camX, y, xe - xs, 4); ctx.fillStyle = '#8a6a30'; ctx.fillRect(xs - camX, y + 3, xe - xs, 1.2); ctx.fillStyle = '#d8b46a'; }
+    } else {   // basalto: colonne con fessure di lava
+      const pu = 0.55 + 0.45 * Math.sin(t * 2.2);
+      for (let x = Math.floor(xs / 16) * 16; x < xe + 16; x += 16) {
+        const X = x - camX, v = hz(x * 0.23); const gg = ctx.createLinearGradient(X, 0, X + 15, 0); gg.addColorStop(0, '#4a3c52'); gg.addColorStop(1, '#1d1524'); ctx.fillStyle = gg; ctx.fillRect(X + 1, top - 10, 14, h + 16);
+        ctx.fillStyle = `rgba(255,${110 + v * 50 | 0},30,${0.55 * pu})`; ctx.fillRect(X, top - 10, 1.6, h + 16);
+        ctx.strokeStyle = `rgba(255,150,50,${0.7 * pu})`; ctx.lineWidth = 1.2; ctx.beginPath(); const yy = yb - 10 - v * (h - 16); ctx.moveTo(X + 2, yy); ctx.lineTo(X + 8, yy - 7); ctx.lineTo(X + 13, yy - 3); ctx.stroke();
+      }
+    }
+    // ombra sotto il piano e a terra
+    const sh = ctx.createLinearGradient(0, top, 0, yb + 3); sh.addColorStop(0, 'rgba(0,0,0,0.0)'); sh.addColorStop(1, 'rgba(0,0,0,0.22)'); ctx.fillStyle = sh; ctx.fillRect(xs - camX, top - 10, xe - xs, h + 16);
+    ctx.restore();
+  }
+  function rampDeck(ctx, camX, xa, xb, H, th, t) {
+    const m = th.mat, st = {
+      wood: [['#f0c887', 0], ['#c99150', 0.55], ['#8c5c2c', 1]], log: [['#a8764a', 0], ['#7a4a2a', 0.55], ['#44281a', 1]], stone: [['#f4d2a8', 0], ['#dba873', 0.55], ['#9a6140', 1]],
+      ice: [['#ffffff', 0], ['#e4f4fc', 0.5], ['#a6d0ea', 1]], bamboo: [['#f0e69a', 0], ['#cbbb60', 0.55], ['#8d7e34', 1]], basalt: [['#6a566c', 0], ['#3f3244', 0.55], ['#1d1524', 1]],
+    }[m];
+    const lo = Math.max(xa, 0), tp = x => sm01((x - xa) / 26), thick = m === 'ice' ? 13 : 10;
+    fillSlab(ctx, camX, xa, xb, H, () => -6.5, x => -6.5 + thick * (0.35 + 0.65 * tp(x)), st.map(([c, o]) => [o, c]), 3);
+    // giunti fra le assi
+    const sp = { wood: 22, log: 18, stone: 44, ice: 0, bamboo: 14, basalt: 30 }[m];
+    if (sp) { ctx.strokeStyle = m === 'basalt' ? 'rgba(255,140,40,0.55)' : m === 'stone' ? 'rgba(80,40,24,0.6)' : 'rgba(60,34,14,0.55)'; ctx.lineWidth = 1.2; ctx.beginPath(); for (let x = Math.ceil(xa / sp) * sp; x < xb; x += sp) { const y = H(x), X = x - camX; ctx.moveTo(X, y - 6.5); ctx.lineTo(X, y + 3.5); } ctx.stroke(); }
+    // luce sul bordo alto
+    lineOff(ctx, camX, xa, xb, H, () => -6.5, 4); ctx.strokeStyle = { wood: '#fbe2b0', log: '#c99a68', stone: '#fff0d8', ice: '#ffffff', bamboo: '#faf2b0', basalt: m === 'basalt' ? `rgba(255,150,50,${0.55 + 0.35 * Math.sin(t * 2.2)})` : '#fff' }[m]; ctx.lineWidth = m === 'ice' ? 2.6 : 2; ctx.stroke();
+    if (m === 'ice') { lineOff(ctx, camX, xa, xb, H, () => -1.5, 5); ctx.strokeStyle = 'rgba(80,140,200,0.4)'; ctx.lineWidth = 1.2; ctx.stroke(); }
+  }
+  function rampDraw(ctx, p, camX, x0, x1, H, t) {
+    const th0 = RAMP_THEME[p.zkey] || RAMP_THEME.hills, isPipe = p.kind === 'pipe', th = isPipe ? Object.assign({}, th0, { nose: ['#e6eaee', '#8f98a2'] }) : th0, n = isPipe ? 3 : (p.tier || 0) + (p.kind === 'ravine' ? 3 : 1);
+    if (p.kind === 'jump' || p.kind === 'ravine' || p.kind === 'gapland') pitDraw(ctx, p, camX, x0, x1, H, t, th);
+    let xs = p.a + p.s; const xl = p.a + p.u1, yb = H(isPipe ? p.a + p.s0 - 4 : xs - 1), xdeck0 = isPipe ? p.a + p.s0 + 24 : xs + 4;
+    if (isPipe) { xs = p.a + p.s; while (xs < xl && H(xs) > yb - 0.5) xs += 2; }   // il muro del tubo sopra il livello di partenza
+    let xe = xl; while (xe < xl + 130 && H(xe) < yb - 0.5) xe += 2;   // il fronte sotto il labbro, fino a terra
+    if (xe >= x0 - 10 && Math.min(xs, xdeck0) <= x1 + 10) {
+      const a = Math.max(xs, x0 - 12), b = Math.min(xe, x1 + 12);
+      if (a < b) rampBody(ctx, camX, a, b, H, yb, th, t, p);
+      rampDeck(ctx, camX, Math.max(isPipe ? xdeck0 : xs + 4, x0 - 12), Math.min(xl + 1, x1 + 12), H, th, t);
+      // spigolo del labbro a strisce
+      const nose = th.nose; for (let k = 0; k < 5; k++) { const wx = xl - 4 - k * 8; if (wx < x0 || wx > x1) continue; const y = H(wx), X = wx - camX; ctx.fillStyle = nose[k & 1]; ctx.beginPath(); ctx.moveTo(X - 4, y - 6.5); ctx.lineTo(X + 4, y - 6.5); ctx.lineTo(X + 4, y + 3.5); ctx.lineTo(X - 4, y + 3.5); ctx.closePath(); ctx.fill(); }
+      // frecce sul piano
+      for (let k = 0; k < n; k++) { const wx = xl - 44 - k * 34; if (wx < x0 - 12 || wx > x1 + 12 || wx < xs + (p.xt || 0) + 8) continue; const ang = Math.atan2(H(wx + 5) - H(wx - 5), 10); rampChevron(ctx, wx - camX, H(wx) - 1.5, ang, 0.72, '#fb5f35'); }
+      // dettagli di bioma sopra la struttura
+      if (p.zkey === 'ice') { ctx.fillStyle = 'rgba(255,255,255,0.95)'; for (let k = 0; k < 6; k++) { const sx = xs + 30 + hz(k * 2.1 + p.a) * (xl - xs - 40); if (sx < x0 || sx > x1) continue; ctx.beginPath(); ctx.ellipse(sx - camX, H(sx) - 6.5, 9, 3, Math.atan2(H(sx + 5) - H(sx - 5), 10), Math.PI, TAU); ctx.fill(); } }
+      if (p.zkey === 'ramps') { for (let k = 0; k < 5; k++) { const sx = xs + 20 + hz(k * 3.3 + p.a) * (xl - xs - 30); if (sx < x0 || sx > x1) continue; ctx.fillStyle = ['#e0662a', '#f0a23a', '#c4472a'][k % 3]; ctx.beginPath(); ctx.ellipse(sx - camX, H(sx) - 8, 4.4, 1.9, hz(k) * 2, 0, TAU); ctx.fill(); } }
+      if (p.zkey === 'lava') { ctx.fillStyle = 'rgba(255,170,70,0.9)'; for (let k = 0; k < 4; k++) { const ph = (t * 0.45 + k * 0.27) % 1, sx = xs + 40 + hz(k * 5.1 + p.a) * (xl - xs - 50); if (sx < x0 || sx > x1) continue; ctx.globalAlpha = 1 - ph; ctx.fillRect(sx - camX, H(sx) - 10 - ph * 26, 2.2, 2.2); ctx.globalAlpha = 1; } }
+    }
+    if (p.kind === 'gapland') {   // collina d'atterraggio: parete, cresta e discesa costruite come la rampa
+      const xa = p.a + p.u2, xb = p.a + p.u3 + p.dl + 6;
+      if (xb >= x0 - 10 && xa <= x1 + 10) { const a = Math.max(xa, x0 - 12), b = Math.min(xb, x1 + 12); rampBody(ctx, camX, a, b, H, yb, th, t, p); rampDeck(ctx, camX, a, b, H, th, t); }
     }
     // cartello prima della rampa
-    const sx = p.a + p.s - 30;
+    const sx = p.a + (isPipe ? p.s0 : p.s) - 34;
     if (sx > x0 - 40 && sx < x1 + 40) {
       const X = sx - camX, Y = H(sx);
-      ctx.fillStyle = '#6b3a2a'; ctx.fillRect(X - 3, Y - 58, 6, 60);
-      ctx.fillStyle = '#f8f4dc'; ctx.beginPath(); ctx.moveTo(X - 24, Y - 90); ctx.lineTo(X + 24, Y - 90); ctx.lineTo(X + 24, Y - 54); ctx.lineTo(X - 24, Y - 54); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = '#fb5f35'; ctx.lineWidth = 4; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(X - 12, Y - 60); ctx.lineTo(X, Y - 84); ctx.lineTo(X + 12, Y - 60); ctx.stroke();
-    }
-  }
-  // Rampa di lancio isolata (patch 'kicker'): assi di legno/lastre sulla salita, frecce e cartello con tante frecce quanto è alta (1 piccola, 2 media, 3 grande)
-  function kickerDraw(ctx, p, camX, x0, x1, H, sub, t) {
-    const wood = p.zkey !== 'ice' && p.zkey !== 'gravel', n = (p.tier || 0) + 1;
-    const ka = p.a + p.s + 10, kb = p.a + p.u1 + 4;
-    if (kb >= x0 && ka <= x1) {
-      const l = Math.max(ka, x0), r = Math.min(kb, x1), tp = x => sm01((x - ka) / 46) * sm01((kb - x) / 12);
-      fillSlab(ctx, camX, l, r, H, () => -5, x => 5 + 8 * tp(x), wood ? [[0, '#e0ae6c'], [0.5, '#b88140'], [1, '#6e4a22']] : [[0, '#cfc7ba'], [0.5, '#9a9286'], [1, '#5a544c']], 4);
-      ctx.strokeStyle = wood ? 'rgba(80,50,20,0.5)' : 'rgba(60,56,50,0.45)'; ctx.lineWidth = 1.2;
-      for (let wx = ka + 16; wx < kb - 6; wx += 24) { if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.beginPath(); ctx.moveTo(wx - camX, y - 4); ctx.lineTo(wx - camX, y + 10); ctx.stroke(); }
-      lineOff(ctx, camX, l, r, H, () => -5, 5); ctx.strokeStyle = wood ? '#f6d9a4' : '#e6e0d4'; ctx.lineWidth = 2; ctx.stroke();
-      for (let k = 0; k < n; k++) {
-        const wx = kb - 40 - k * 38; if (wx < x0 || wx > x1 || wx < ka + 8) continue; const y = H(wx) - 6, X = wx - camX;
-        ctx.fillStyle = '#fb5f35'; ctx.beginPath(); ctx.moveTo(X - 11, y + 1); ctx.lineTo(X, y - 8); ctx.lineTo(X + 11, y + 1); ctx.lineTo(X + 11, y + 5); ctx.lineTo(X, y - 4); ctx.lineTo(X - 11, y + 5); ctx.closePath(); ctx.fill();
-      }
-      for (let k = 0; k < 3; k++) { const wx = kb - 6 - k * 9; if (wx < x0 || wx > x1) continue; const y = H(wx); ctx.fillStyle = k % 2 ? '#2d3e48' : '#f5e594'; ctx.fillRect(wx - camX - 3, y - 6, 6, 5); }
-    }
-    const sx = p.a + p.s - 34;
-    if (sx > x0 - 40 && sx < x1 + 40) {
-      const X = sx - camX, Y = H(sx);
-      ctx.fillStyle = '#6b3a2a'; ctx.fillRect(X - 3, Y - 46, 6, 48);
+      ctx.fillStyle = th.sign; ctx.fillRect(X - 3, Y - 46, 6, 48); ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.fillRect(X - 3, Y - 46, 1.8, 48);
       ctx.fillStyle = '#f8f4dc'; ctx.beginPath(); ctx.moveTo(X - 21, Y - 76); ctx.lineTo(X + 21, Y - 76); ctx.lineTo(X + 21, Y - 44); ctx.lineTo(X - 21, Y - 44); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = th.sign; ctx.lineWidth = 1.6; ctx.stroke();
       ctx.strokeStyle = '#fb5f35'; ctx.lineWidth = 3.4; ctx.lineJoin = 'round';
-      for (let k = 0; k < n; k++) { const yy = Y - 50 - k * 9; ctx.beginPath(); ctx.moveTo(X - 10, yy); ctx.lineTo(X, yy - 7); ctx.lineTo(X + 10, yy); ctx.stroke(); }
+      for (let k = 0; k < Math.min(n, 3); k++) { const yy = Y - 50 - k * 9; ctx.beginPath(); ctx.moveTo(X - 10, yy); ctx.lineTo(X, yy - 7); ctx.lineTo(X + 10, yy); ctx.stroke(); }
     }
   }
   function inkDrop(ctx, p, camX, x0, x1, H, sub, t) {
