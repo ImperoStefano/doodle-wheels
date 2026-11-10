@@ -583,3 +583,31 @@ input[type="text"]:focus { border-color: var(--teal); }
   #screen-lobby .player-list { margin: 8px 0 0; gap: 4px; } #screen-lobby .player-list li { padding: 6px 12px; }
   #screen-lobby .btn--primary { padding-top: 10px; padding-bottom: 10px; }
 }
+
+/* Firma autore: essenziale, su una sola riga */
+.signature {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0 0.3rem;
+}
+.sig-by {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: #89948f;
+  line-height: 1.4;
+}
+.sig-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--teal-d);
+  line-height: 1.4;
+}
+.signature::after { display: none; content: none; }
