@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="900" viewBox="0 0 2400 900">
+<defs>
+ <linearGradient id="night" x2="0" y2="1"><stop stop-color="#080d25"/><stop offset=".4" stop-color="#171c46"/><stop offset=".75" stop-color="#27285b"/><stop offset="1" stop-color="#090f28"/></linearGradient>
+ <linearGradient id="tower" x2="1" y2="0"><stop stop-color="#151d40"/><stop offset=".45" stop-color="#26315d"/><stop offset="1" stop-color="#10182f"/></linearGradient>
+ <linearGradient id="floor" x2="0" y2="1"><stop stop-color="#24265b" stop-opacity="0"/><stop offset=".35" stop-color="#111b40" stop-opacity=".9"/><stop offset="1" stop-color="#070d22"/></linearGradient>
+ <radialGradient id="planet"><stop stop-color="#a4a8ff"/><stop offset=".5" stop-color="#6757c9"/><stop offset="1" stop-color="#28265d"/></radialGradient>
+ <filter id="glow"><feGaussianBlur stdDeviation="13" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <pattern id="windows" width="34" height="37" patternUnits="userSpaceOnUse"><rect x="7" y="7" width="9" height="18" rx="2" fill="#68eff4" opacity=".85"/><rect x="21" y="7" width="7" height="18" rx="2" fill="#ed62d6" opacity=".75"/></pattern>
+</defs>
+<rect width="2400" height="900" fill="url(#night)"/>
+<!-- star grid and distant traffic -->
+<g stroke="#6a75cd" opacity=".13" stroke-width="2"><path d="M0 120H2400M0 230H2400M0 340H2400M0 450H2400M0 560H2400"/><path d="M100 0L0 640M430 0L330 640M760 0L660 640M1090 0L990 640M1420 0L1320 640M1750 0L1650 640M2080 0L1980 640M2410 0L2310 640"/></g>
+<circle cx="350" cy="175" r="120" fill="#8b70ff" opacity=".09" filter="url(#glow)"/><circle cx="350" cy="175" r="86" fill="url(#planet)"/>
+<ellipse cx="350" cy="175" rx="170" ry="43" fill="none" stroke="#70e8fa" stroke-width="5" opacity=".65" transform="rotate(-18 350 175)"/>
+<ellipse cx="350" cy="175" rx="178" ry="48" fill="none" stroke="#f26ce1" stroke-width="2" opacity=".55" transform="rotate(-18 350 175)"/>
+<!-- distant dark high rise field -->
+<g fill="#111936" opacity=".9"><path d="M0 600V420L70 390 125 420V600ZM130 600V330L185 290 246 330V600ZM260 600V390L330 350 395 390V600ZM1980 600V390L2045 350 2120 390V600ZM2140 600V320L2210 280 2280 320V600ZM2290 600V405L2350 370 2400 405V600Z"/></g>
+<!-- main metropolis group 1 -->
+<g transform="translate(1000 630)">
+ <ellipse cx="30" cy="-110" rx="580" ry="350" fill="#f15fda" opacity=".06" filter="url(#glow)"/>
+ <!-- needle tower -->
+ <g><path d="M-500 0V-350L-452 -420 -404 -350V0Z" fill="url(#tower)" stroke="#394b7f" stroke-width="5"/><path d="M-500 -350L-452 -420 -404 -350" fill="none" stroke="#62eaf2" stroke-width="5" filter="url(#glow)"/><path d="M-452 -420V-485" stroke="#ff68de" stroke-width="7"/><rect x="-484" y="-330" width="64" height="300" fill="url(#windows)"/>
+ <path d="M-340 0V-460L-280 -540 -220 -460V0Z" fill="url(#tower)" stroke="#35477c" stroke-width="6"/><path d="M-340 -460L-280 -540 -220 -460" fill="none" stroke="#ef63df" stroke-width="6" filter="url(#glow)"/><rect x="-326" y="-438" width="92" height="408" fill="url(#windows)"/>
+ <path d="M-165 0V-350L-110 -405 -55 -350V0Z" fill="url(#tower)" stroke="#35477c" stroke-width="6"/><path d="M-165 -350H-55" stroke="#5ceaf3" stroke-width="5"/><rect x="-150" y="-330" width="80" height="300" fill="url(#windows)"/>
+ <path d="M-5 0V-540L85 -630 175 -540V0Z" fill="url(#tower)" stroke="#40518e" stroke-width="8"/><path d="M-5 -540L85 -630 175 -540" fill="none" stroke="#f16cde" stroke-width="8" filter="url(#glow)"/><rect x="14" y="-515" width="142" height="485" fill="url(#windows)"/><path d="M85 -630V-690" stroke="#64f3f1" stroke-width="8"/>
+ <path d="M220 0V-420L280 -485 340 -420V0Z" fill="url(#tower)" stroke="#35477c" stroke-width="6"/><path d="M220 -420H340" stroke="#63e7f1" stroke-width="5"/><rect x="239" y="-400" width="82" height="370" fill="url(#windows)"/>
+ <path d="M390 0V-330L440 -400 490 -330V0Z" fill="url(#tower)" stroke="#35477c" stroke-width="5"/><path d="M390 -330L440 -400 490 -330" fill="none" stroke="#f467d8" stroke-width="5"/><rect x="407" y="-311" width="66" height="285" fill="url(#windows)"/>
+ </g>
+ <!-- elevated transit tubes and skybridge -->
+ <path d="M-565 -255Q0 -310 570 -240" fill="none" stroke="#202c62" stroke-width="27"/><path d="M-565 -255Q0 -310 570 -240" fill="none" stroke="#63edf4" stroke-width="5" filter="url(#glow)"/>
+ <path d="M-510 -130H520" stroke="#29376c" stroke-width="22"/><path d="M-510 -130H520" stroke="#f06bdb" stroke-width="4"/>
+ <g transform="translate(215 -272)"><rect width="130" height="38" rx="18" fill="#16244a" stroke="#60edf2" stroke-width="4"/><rect x="15" y="8" width="100" height="10" rx="5" fill="#f36cdd"/><rect x="20" y="22" width="82" height="6" rx="3" fill="#84f9ed"/></g>
+ <!-- giant hologram ring -->
+ <ellipse cx="-30" cy="-695" rx="170" ry="65" fill="none" stroke="#5eeaf1" stroke-width="8" opacity=".75"/><ellipse cx="-30" cy="-695" rx="190" ry="79" fill="none" stroke="#e95ad5" stroke-width="3" opacity=".6"/>
+ <path d="M-30 -770V-620M-105 -695H45" stroke="#b7ffff" stroke-width="3" opacity=".4"/>
+</g>
+<!-- second district with distinctive towers -->
+<g transform="translate(2050 650)" fill="#182249" stroke="#5b6aaa" stroke-width="5">
+ <path d="M-310 0V-270L-255 -340 -200 -270V0Z"/><path d="M-170 0V-365L-100 -430 -30 -365V0Z"/><path d="M0 0V-235L60 -300 120 -235V0Z"/><path d="M150 0V-300L220 -380 290 -300V0Z"/>
+ <g stroke="#69eef1" fill="none" stroke-width="6"><path d="M-310 -270L-255 -340 -200 -270M-170 -365L-100 -430 -30 -365M150 -300L220 -380 290 -300"/></g>
+ <g fill="url(#windows)" stroke="none"><path d="M-286 -260H-225V-10H-286Z M-150 -355H-50V-10H-150Z M20 -225H100V-10H20Z M174 -290H265V-10H174Z"/></g>
+</g>
+<!-- flying cars / light trails -->
+<g fill="none" stroke-width="5"><path d="M130 410Q390 340 620 395" stroke="#63eaf1" opacity=".65"/><path d="M1420 335Q1690 270 1940 330" stroke="#ed68dc" opacity=".62"/><path d="M1770 440Q1940 410 2120 444" stroke="#69f4e8" opacity=".5"/></g>
+<g fill="#d7ffff" filter="url(#glow)"><circle cx="535" cy="380" r="5"/><circle cx="1755" cy="306" r="5"/><circle cx="2000" cy="425" r="4"/></g>
+<!-- reflections and wet street haze -->
+<path d="M0 610Q300 560 600 610T1200 600T1800 620T2400 590V900H0Z" fill="url(#floor)"/>
+<g opacity=".45"><path d="M0 730H2400" stroke="#243c74" stroke-width="3"/><path d="M0 770H2400" stroke="#101c43" stroke-width="5"/><path d="M240 688l-150 72M520 682l-130 90M940 680l-120 90M1350 680l-160 95M1900 690l-130 85" stroke="#4b4fa1" stroke-width="8" opacity=".3"/></g>
+<g stroke-width="5" opacity=".6"><path d="M120 650H330M700 680H910M1440 655H1640M1950 675H2230" stroke="#67eaf3"/><path d="M370 710H500M980 705H1130M1670 708H1810" stroke="#ed66d8"/></g>
+<!-- rain -->
+<g stroke="#91c7ee" stroke-width="2" opacity=".22"><path d="M170 120l-28 58M470 280l-25 54M760 100l-24 58M1130 250l-28 58M1460 75l-26 54M1780 235l-26 60M2180 165l-25 53M2320 330l-25 55"/></g>
+</svg>

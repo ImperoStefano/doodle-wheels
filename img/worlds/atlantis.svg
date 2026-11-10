@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="900" viewBox="0 0 2400 900">
+<defs>
+ <linearGradient id="sea" x2="0" y2="1"><stop stop-color="#071d3d"/><stop offset=".27" stop-color="#0b4664"/><stop offset=".58" stop-color="#0c7181"/><stop offset="1" stop-color="#031a31"/></linearGradient>
+ <radialGradient id="sun"><stop stop-color="#e2fff0" stop-opacity=".9"/><stop offset=".28" stop-color="#9ef5df" stop-opacity=".35"/><stop offset="1" stop-color="#57bed1" stop-opacity="0"/></radialGradient>
+ <linearGradient id="stone" x2="0" y2="1"><stop stop-color="#b3f3df"/><stop offset=".38" stop-color="#4ba9a6"/><stop offset="1" stop-color="#124d68"/></linearGradient>
+ <linearGradient id="glass" x2="0" y2="1"><stop stop-color="#a5fff0"/><stop offset="1" stop-color="#168eaa"/></linearGradient>
+ <linearGradient id="coral" x2="0" y2="1"><stop stop-color="#ff9caa"/><stop offset="1" stop-color="#bd557d"/></linearGradient>
+ <linearGradient id="floor" x2="0" y2="1"><stop stop-color="#0b4a5f" stop-opacity="0"/><stop offset=".45" stop-color="#062c45" stop-opacity=".88"/><stop offset="1" stop-color="#03152b"/></linearGradient>
+ <filter id="glow"><feGaussianBlur stdDeviation="14" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <filter id="soft"><feGaussianBlur stdDeviation="25"/></filter>
+ <pattern id="windows" width="24" height="34" patternUnits="userSpaceOnUse"><rect x="6" y="6" width="7" height="18" rx="2" fill="#c2fff1" opacity=".8"/><rect x="16" y="6" width="3" height="18" fill="#49d7d0" opacity=".4"/></pattern>
+</defs>
+<rect width="2400" height="900" fill="url(#sea)"/>
+<!-- surface glow and broad underwater light shafts -->
+<ellipse cx="530" cy="42" rx="620" ry="300" fill="url(#sun)"/>
+<path d="M100 0L300 0 690 700 520 700Z M540 0L665 0 1000 690 870 690Z M1050 0L1160 0 1390 690 1285 690Z M1760 0L1885 0 2100 690 1950 690Z" fill="#a8fff1" opacity=".055"/>
+<g fill="none" stroke="#b6fff4" opacity=".16"><path d="M0 122Q300 80 600 125T1200 122T1800 124T2400 111"/><path d="M0 176Q300 136 600 176T1200 178T1800 168T2400 178"/><path d="M0 260Q300 225 600 262T1200 251T1800 265T2400 255"/></g>
+<!-- far ruins -->
+<g opacity=".42" fill="#0a3956" stroke="#3b9a9a" stroke-width="5">
+ <path d="M30 510V330H90V510M20 330L60 245 100 330M115 510V365H170V510M105 365L142 285 180 365M2020 520V315H2090V520M2010 315L2055 220 2100 315M2170 520V360H2225V520M2160 360L2200 290 2240 360"/>
+ <path d="M0 485H245M1970 492H2400" fill="none"/>
+</g>
+<!-- giant arch ruins and coral cliffs -->
+<g fill="none" stroke="#1c7280" stroke-width="33" opacity=".72"><path d="M90 610V460A130 130 0 0 1 350 460V610M2020 615V478A120 120 0 0 1 2260 478V615"/><path d="M120 610V465A100 100 0 0 1 320 465V610M2050 615V480A90 90 0 0 1 2230 480V615" stroke="#8ad8c5" stroke-width="6"/></g>
+<!-- MAIN PALACE -->
+<g transform="translate(1040 650)">
+ <ellipse cx="0" cy="-155" rx="520" ry="290" fill="#4de5d6" opacity=".10" filter="url(#soft)"/>
+ <!-- platform --> <path d="M-530 20L-470 -24H470L530 20 460 48H-460Z" fill="#062e49"/><path d="M-470 -25H470" stroke="#a3f5df" stroke-width="10"/><path d="M-420 -35H420" stroke="#dbffea" stroke-width="3" opacity=".8"/>
+ <!-- rear towers -->
+ <g fill="url(#stone)" stroke="#174e68" stroke-width="8">
+  <path d="M-390 -30V-355H-270V-30Z M270 -30V-355H390V-30Z"/>
+  <path d="M-405 -350L-330 -470 -255 -350Z M255 -350L330 -470 405 -350Z"/>
+  <path d="M-420 -355H-240V-330H-420Z M240 -355H420V-330H240Z"/>
+ </g>
+ <g fill="url(#glass)" opacity=".93"><rect x="-365" y="-302" width="20" height="90" rx="10"/><rect x="-322" y="-302" width="20" height="90" rx="10"/><rect x="-278" y="-302" width="16" height="90" rx="8"/><rect x="278" y="-302" width="16" height="90" rx="8"/><rect x="322" y="-302" width="20" height="90" rx="10"/><rect x="365" y="-302" width="16" height="90" rx="8"/></g>
+ <!-- central body -->
+ <path d="M-250 -25V-285Q0 -385 250 -285V-25Z" fill="url(#stone)" stroke="#164d65" stroke-width="10"/>
+ <path d="M-218 -34V-269Q0 -344 218 -269V-34Z" fill="#0b4560"/>
+ <path d="M-192 -38V-255H192V-38Z" fill="url(#windows)" opacity=".8"/>
+ <g fill="#baffeb" opacity=".92"><path d="M-58 -32V-160A58 58 0 0 1 58 -160V-32Z"/><path d="M-144 -32V-135A34 34 0 0 1 -76 -135V-32Z"/><path d="M76 -32V-135A34 34 0 0 1 144 -135V-32Z"/></g>
+ <g fill="none" stroke="#d2fff0" stroke-width="7" opacity=".85"><path d="M-228 -250H228M-225 -205H225M-225 -90H225"/></g>
+ <!-- massive pearl dome -->
+ <path d="M-220 -285Q-180 -515 0 -545Q180 -515 220 -285Z" fill="url(#stone)" stroke="#e0fff0" stroke-width="8"/>
+ <path d="M-172 -289Q-140 -463 0 -490Q140 -463 172 -289Z" fill="#d2fff0" opacity=".68"/>
+ <path d="M-112 -300Q-82 -414 0 -432Q82 -414 112 -300Z" fill="#5ac9c1" opacity=".66"/>
+ <path d="M0 -545V-585" stroke="#eaffd7" stroke-width="8"/><circle cy="-594" r="13" fill="#f5dda0" filter="url(#glow)"/>
+ <!-- side fins / coral-like ornaments -->
+ <g fill="none" stroke="#72d8c5" stroke-width="14" stroke-linecap="round"><path d="M-470 -24Q-520 -120 -490 -220M-490 -145L-560 -212M-492 -176L-430 -255M470 -24Q520 -120 490 -220M490 -145L560 -212M492 -176L430 -255"/></g>
+ <g fill="#f59bb0"><circle cx="-490" cy="-220" r="12"/><circle cx="-560" cy="-212" r="10"/><circle cx="490" cy="-220" r="12"/><circle cx="560" cy="-212" r="10"/></g>
+</g>
+<!-- sea statue with trident and a great broken nautilus -->
+<g transform="translate(1850 600)" opacity=".9">
+ <ellipse cx="0" cy="-80" rx="240" ry="180" fill="#42d8d0" opacity=".10" filter="url(#soft)"/>
+ <path d="M-145 10Q-165 -115 -105 -216Q-30 -300 55 -230Q118 -165 122 10Z" fill="#165b73" stroke="#70c6b6" stroke-width="9"/>
+ <path d="M-82 -212Q-30 -306 22 -212Q57 -163 18 -95Q-27 -133 -82 -212Z" fill="#b0e9d1" opacity=".7"/>
+ <circle cx="-5" cy="-248" r="25" fill="#b7f0d9"/>
+ <path d="M15 -226L85 -135M80 -135L115 -210M80 -135L42 -212M80 -135L142 -192" stroke="#f1d58f" stroke-width="7" fill="none" stroke-linecap="round"/>
+ <path d="M-220 12Q-320 -105 -285 -215Q-246 -312 -142 -274Q-78 -251 -65 -180" fill="none" stroke="#69bfb8" stroke-width="28"/>
+</g>
+<!-- drifting ray-like fish and manta -->
+<g fill="#b5fff0" opacity=".5"><path d="M360 250Q420 190 488 238Q550 190 612 250Q548 282 488 265Q430 284 360 250Z"/><path d="M440 258Q485 280 515 315Q476 295 463 270Z"/><path d="M1540 210Q1600 165 1665 208Q1725 165 1790 210Q1720 246 1665 230Q1600 246 1540 210Z"/><path d="M1620 221Q1660 250 1690 278Q1653 260 1640 232Z"/></g>
+<g fill="none" stroke="#c4fff1" opacity=".24" stroke-width="3"><circle cx="260" cy="400" r="22"/><circle cx="305" cy="330" r="10"/><circle cx="1450" cy="335" r="18"/><circle cx="1493" cy="390" r="8"/><circle cx="2190" cy="300" r="26"/></g>
+<!-- floor depth --> <path d="M0 620Q240 560 480 625T960 620T1440 620T1920 620T2400 610V900H0Z" fill="url(#floor)"/>
+<g fill="#0a3c4e" opacity=".85"><path d="M0 780L150 645 235 750 320 666 410 780 570 670 670 900H0Z"/><path d="M1650 900L1780 690 1870 785 1980 656 2110 800 2230 688 2400 800V900Z"/></g>
+<g stroke="#e8849a" stroke-width="10" stroke-linecap="round" fill="none" opacity=".7"><path d="M190 780v-72m0 45l-35 -37m35 18l38 -48M2100 830v-100m0 50l-48 -42m48 18l42 -55"/></g>
+<g fill="#ffacb2" opacity=".85"><circle cx="154" cy="663" r="7"/><circle cx="2300" cy="705" r="9"/><circle cx="2020" cy="755" r="6"/></g>
+</svg>

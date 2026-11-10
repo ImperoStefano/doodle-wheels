@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="900" viewBox="0 0 2400 900">
+<defs>
+ <linearGradient id="night" x2="0" y2="1"><stop stop-color="#111a3d"/><stop offset=".42" stop-color="#26345a"/><stop offset=".72" stop-color="#34564c"/><stop offset="1" stop-color="#101f2b"/></linearGradient>
+ <radialGradient id="moon"><stop stop-color="#fff8d7"/><stop offset=".55" stop-color="#d7f6cf"/><stop offset="1" stop-color="#a5cfa7" stop-opacity=".1"/></radialGradient>
+ <linearGradient id="bark" x2="1" y2="0"><stop stop-color="#24392f"/><stop offset=".48" stop-color="#8a6845"/><stop offset=".62" stop-color="#c19a5e"/><stop offset="1" stop-color="#1a3e34"/></linearGradient>
+ <linearGradient id="leaf" x2="0" y2="1"><stop stop-color="#9ad58c"/><stop offset=".5" stop-color="#418b61"/><stop offset="1" stop-color="#1b4d43"/></linearGradient>
+ <linearGradient id="mush" x2="0" y2="1"><stop stop-color="#ffd8f2"/><stop offset=".6" stop-color="#d77ab9"/><stop offset="1" stop-color="#744b88"/></linearGradient>
+ <linearGradient id="floor" x2="0" y2="1"><stop stop-color="#294f3b" stop-opacity="0"/><stop offset=".4" stop-color="#102b27" stop-opacity=".88"/><stop offset="1" stop-color="#071b20"/></linearGradient>
+ <filter id="glow"><feGaussianBlur stdDeviation="18" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <filter id="soft"><feGaussianBlur stdDeviation="28"/></filter>
+</defs>
+<rect width="2400" height="900" fill="url(#night)"/>
+<!-- aurora curtains -->
+<path d="M0 150Q350 -20 760 170T1500 140T2400 110L2400 285Q1950 320 1530 260T750 285T0 300Z" fill="#74e8b3" opacity=".12"/>
+<path d="M0 190Q420 20 830 195T1610 165T2400 145" fill="none" stroke="#a5f6bd" stroke-width="26" opacity=".14"/>
+<path d="M0 220Q440 60 820 210T1600 195T2400 165" fill="none" stroke="#d1a9ff" stroke-width="8" opacity=".23"/>
+<!-- moon -->
+<circle cx="1870" cy="190" r="150" fill="#baf1c1" opacity=".11" filter="url(#soft)"/><circle cx="1870" cy="190" r="88" fill="url(#moon)"/>
+<g fill="#e9ffda" opacity=".8"><circle cx="1850" cy="166" r="7"/><circle cx="1905" cy="220" r="12"/><circle cx="1830" cy="230" r="4"/></g>
+<!-- distant mountain silhouettes -->
+<path d="M0 580L180 360 330 510 510 310 690 545 870 365 1060 550 1230 335 1410 560 1590 360 1780 550 1950 340 2160 575 2310 410 2400 520V800H0Z" fill="#18283b" opacity=".75"/>
+<!-- distant castle -->
+<g transform="translate(1660 580)" fill="#1a2c36" stroke="#567457" stroke-width="5" opacity=".8">
+ <path d="M-230 0V-165H-180V-245H-125V-165H-65V-215H-15V-165H70V-260H128V-165H190V0Z"/>
+ <path d="M-200 -165L-155 -220 -110 -165M-78 -165L-40 -215 -2 -165M90 -165L100 -310 150 -165"/>
+ <g fill="#f6d58e" stroke="none"><rect x="-160" y="-142" width="14" height="45"/><rect x="-35" y="-145" width="13" height="42"/><rect x="112" y="-145" width="14" height="42"/><rect x="165" y="-95" width="12" height="35"/></g>
+</g>
+<!-- ancient forest back layers -->
+<g fill="#102d2d"><path d="M0 650L40 390 100 460 160 285 235 650ZM260 650L325 350 400 450 470 290 560 650ZM740 650L805 380 865 470 930 280 1010 650ZM1300 650L1360 340 1430 420 1510 265 1600 650ZM2070 650L2130 355 2210 450 2280 300 2400 650Z"/></g>
+<g fill="#1b493c"><path d="M0 650L100 360 205 650ZM360 650L490 335 620 650ZM1060 650L1170 325 1300 650ZM1530 650L1650 345 1780 650ZM2180 650L2290 340 2400 650Z"/></g>
+<!-- huge enchanted tree -->
+<g transform="translate(1320 790)">
+ <ellipse cx="0" cy="-310" rx="520" ry="380" fill="#75e6a4" opacity=".12" filter="url(#soft)"/>
+ <!-- limbs first -->
+ <g fill="none" stroke="#493d31" stroke-width="58" stroke-linecap="round"><path d="M0 0Q-20 -140 -10 -280Q-70 -390 -245 -470M-5 -260Q-160 -320 -330 -390M25 -310Q170 -430 285 -470M15 -185Q150 -270 355 -310"/><path d="M-10 -315Q-90 -420 -110 -515M285 -470Q360 -505 395 -570" stroke-width="28"/></g>
+ <path d="M-80 10Q-45 -160 -75 -290Q-62 -410 -20 -550Q75 -475 65 -355Q50 -240 95 -155Q140 -50 130 10Z" fill="url(#bark)" stroke="#27392f" stroke-width="12"/>
+ <path d="M-24 -40Q-10 -190 -22 -300Q-6 -420 5 -502" fill="none" stroke="#d5a76a" stroke-width="14" opacity=".45"/>
+ <!-- roots -->
+ <g fill="#3a4632"><path d="M-30 -18Q-190 20 -310 -12Q-200 90 -40 40Z"/><path d="M65 -20Q190 45 340 4Q230 96 70 40Z"/><path d="M0 -20Q-70 65 -140 104Q-30 85 25 40Z"/></g>
+ <!-- layered canopy with foliage clusters -->
+ <g>
+  <path d="M-410 -430Q-460 -590 -300 -635Q-200 -765 -55 -670Q85 -790 220 -675Q390 -710 440 -555Q515 -440 350 -350Q170 -280 0 -375Q-180 -305 -410 -430Z" fill="#164d3e"/>
+  <g fill="url(#leaf)">
+   <ellipse cx="-300" cy="-525" rx="170" ry="112"/><ellipse cx="-145" cy="-620" rx="168" ry="122"/><ellipse cx="50" cy="-650" rx="180" ry="130"/><ellipse cx="250" cy="-585" rx="180" ry="120"/><ellipse cx="360" cy="-475" rx="145" ry="105"/><ellipse cx="-55" cy="-475" rx="185" ry="122"/>
+  </g>
+  <g fill="#b5e38e" opacity=".48"><ellipse cx="-335" cy="-568" rx="84" ry="35"/><ellipse cx="-145" cy="-674" rx="96" ry="31"/><ellipse cx="55" cy="-707" rx="105" ry="36"/><ellipse cx="255" cy="-630" rx="92" ry="28"/><ellipse cx="365" cy="-506" rx="68" ry="26"/></g>
+  <g fill="#e7f5b0" opacity=".9"><circle cx="-328" cy="-530" r="8"/><circle cx="-205" cy="-650" r="6"/><circle cx="-12" cy="-694" r="9"/><circle cx="155" cy="-661" r="7"/><circle cx="318" cy="-560" r="8"/><circle cx="72" cy="-530" r="6"/></g>
+ </g>
+ <!-- glowing tree portal / hollow -->
+ <ellipse cx="0" cy="-300" rx="112" ry="145" fill="#b3f4a5" opacity=".28" filter="url(#glow)"/>
+ <path d="M-47 -175V-335Q-47 -410 0 -410Q47 -410 47 -335V-175Z" fill="#081f26" stroke="#e3d991" stroke-width="10"/>
+ <path d="M-34 -175V-333Q-34 -390 0 -390Q34 -390 34 -333V-175Z" fill="#69dda0" opacity=".42"/>
+ <path d="M-27 -175V-331Q-27 -376 0 -376Q27 -376 27 -331V-175" fill="none" stroke="#d6ffb5" stroke-width="6" filter="url(#glow)"/>
+</g>
+<!-- standing stones to the left, rune glows -->
+<g transform="translate(295 650)"><g fill="#3d554b" stroke="#8da77d" stroke-width="6"><path d="M-90 0L-85 -170 -50 -240 -5 -172 0 0Z"/><path d="M40 0L48 -210 92 -260 132 -200 130 0Z"/><path d="M170 0L178 -135 218 -180 252 -135 252 0Z"/></g><g fill="none" stroke="#c5f3a7" stroke-width="6" opacity=".9"><path d="M-55 -180l15 30 -20 24 25 22M75 -196l18 28 -22 26 18 23M204 -124l16 18 -17 19"/></g></g>
+<!-- giant luminous mushrooms right -->
+<g transform="translate(1920 690)">
+ <ellipse cx="0" cy="-75" rx="300" ry="145" fill="#dc8bd6" opacity=".08" filter="url(#soft)"/>
+ <g transform="translate(-155 0)"><path d="M-16 0Q-8 -100 -22 -165L26 -165Q12 -85 22 0Z" fill="#e5d8b9"/><path d="M-110 -160Q-95 -266 0 -275Q95 -266 110 -160Q40 -126 -35 -143Q-75 -141 -110 -160Z" fill="url(#mush)" stroke="#f1d8ed" stroke-width="6"/><g fill="#fff1ed"><circle cx="-50" cy="-193" r="10"/><circle cx="-6" cy="-230" r="9"/><circle cx="53" cy="-192" r="12"/></g></g>
+ <g transform="translate(70 0) scale(1.35)"><path d="M-14 0Q-8 -83 -18 -134L22 -134Q12 -82 18 0Z" fill="#c7e4bd"/><path d="M-88 -134Q-70 -220 0 -232Q80 -218 90 -134Q26 -108 -20 -121Q-60 -116 -88 -134Z" fill="#83cfa6" stroke="#d0f5cb" stroke-width="5"/><g fill="#f7ffdc"><circle cx="-42" cy="-158" r="9"/><circle cx="2" cy="-184" r="7"/><circle cx="49" cy="-156" r="10"/></g></g>
+ <g transform="translate(210 0) scale(.82)"><path d="M-14 0Q-6 -75 -14 -117L21 -117Q12 -65 18 0Z" fill="#d8d1bf"/><path d="M-78 -118Q-58 -193 0 -205Q70 -194 80 -118Q24 -95 -20 -105Q-54 -101 -78 -118Z" fill="#9d7bd5" stroke="#e1caf8" stroke-width="5"/><g fill="#fff1ff"><circle cx="-39" cy="-143" r="8"/><circle cx="14" cy="-170" r="8"/><circle cx="45" cy="-136" r="7"/></g></g>
+</g>
+<!-- hanging faerie lanterns on fine golden threads -->
+<g stroke="#c5aa6e" stroke-width="3" fill="none" opacity=".78">
+ <path d="M1390 470V548M1435 430V514M1490 462V548"/>
+ <path d="M1377 548Q1390 564 1403 548M1422 514Q1435 530 1448 514M1477 548Q1490 564 1503 548"/>
+</g>
+<g filter="url(#glow)"><circle cx="1390" cy="550" r="13" fill="#f8e8a2"/><circle cx="1435" cy="516" r="11" fill="#e7c9ff"/><circle cx="1490" cy="550" r="13" fill="#b8f2c2"/></g>
+<!-- firefly swarms -->
+<g fill="#e4f6a0" filter="url(#glow)"><circle cx="520" cy="385" r="5"/><circle cx="560" cy="440" r="4"/><circle cx="1110" cy="270" r="4"/><circle cx="1270" cy="330" r="5"/><circle cx="1730" cy="420" r="4"/><circle cx="2010" cy="330" r="5"/></g>
+<g fill="#d8f4b3" opacity=".5"><circle cx="450" cy="300" r="2"/><circle cx="660" cy="360" r="3"/><circle cx="1040" cy="425" r="2"/><circle cx="1180" cy="220" r="3"/><circle cx="1665" cy="340" r="2"/><circle cx="2100" cy="470" r="3"/></g>
+<!-- layered forest floor and fern silhouettes -->
+<path d="M0 620Q300 570 620 635T1200 620T1800 625T2400 610V900H0Z" fill="url(#floor)"/>
+<g fill="#081d21"><path d="M0 760L95 625 160 690 220 610 315 900H0ZM500 900L650 675 710 760 780 650 890 900ZM1810 900L1940 645 2015 745 2090 630 2200 900H1810Z"/></g>
+<g fill="none" stroke="#487a4f" stroke-width="12" opacity=".8"><path d="M90 810Q140 720 220 695M150 758Q220 720 275 730M210 800Q275 742 315 752M2060 815Q2110 725 2210 700M2130 778Q2200 740 2270 750"/></g>
+</svg>

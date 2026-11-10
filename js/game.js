@@ -7,7 +7,7 @@
     btnJoin: document.getElementById('btn-join'), menuError: document.getElementById('menu-error'),
     roomCode: document.getElementById('room-code'), playerList: document.getElementById('player-list'),
     btnStartRace: document.getElementById('btn-start-race'), lobbyHint: document.getElementById('lobby-hint'),
-    lenPicker: document.getElementById('len-picker'), lenHint: document.getElementById('len-hint'), modePicker: document.getElementById('mode-picker'), modeHint: document.getElementById('mode-hint'),
+    lenPicker: document.getElementById('len-picker'), lenHint: document.getElementById('len-hint'), worldInfo: document.getElementById('world-info'), modePicker: document.getElementById('mode-picker'), modeHint: document.getElementById('mode-hint'),
     raceWrap: document.querySelector('.race-wrap'), resultsTrace: document.getElementById('results-trace'), portalFlash: document.getElementById('portal-flash'), portalNote: document.getElementById('portal-note'),
     drawTimer: document.getElementById('draw-timer'), drawCanvas: document.getElementById('draw-canvas'),
     btnClear: document.getElementById('btn-clear'), btnSubmitWheel: document.getElementById('btn-submit-wheel'),
@@ -70,7 +70,7 @@
   let viewScale = 1, viewW = 0, viewH = 0, minimapMetrics = { w: 0, h: 0 };
   let baseVS = 1, gzoom = 1, cssWv = 0, cssHv = 0, dprV = 1, shake = 0, shX = 0, shY = 0;   // zoom dinamico (ruote giganti) e tremolio della telecamera
   // lunghezza della pista scelta dall'host in lobby, e ultima pista giocata (per "Rigioca stessa pista")
-  let trackLen = 'lunga', currentLayout = null, keepTrack = false, crazy = false;
+  let trackLen = 'lunga', currentLayout = null, keepTrack = false, crazy = false, currentWorld = 'classic';
   let lastCallSent = false, lastCallEnd = 0;
 
   function showScreen(name) { ['menu', 'lobby', 'draw', 'race', 'results'].forEach(s => els[s].classList.toggle('screen--active', s === name)); document.body.dataset.screen = name; if (typeof Sfx !== 'undefined') Sfx.mood(name === 'race' ? 'drive' : name === 'results' ? 'finale' : 'calm'); if (name === 'lobby' || name === 'menu') refreshInvite(); }
@@ -159,8 +159,8 @@
       els.playerList.appendChild(li);
     });
     const c = Object.keys(Net.players).length;
-    els.lobby.classList.toggle('lobby--guest', !Net.isHost); if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; updateStartBtn(c); els.lobbyHint.textContent = I18n.t('lobby.hostHint'); els.lenPicker.style.display = els.modePicker.style.display = 'block'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'block'; }
-    else { els.btnStartRace.style.display = 'none'; els.lobbyHint.textContent = I18n.t('lobby.hostcfg'); els.lenPicker.style.display = els.modePicker.style.display = 'none'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'none'; }
+    els.lobby.classList.toggle('lobby--guest', !Net.isHost); if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; updateStartBtn(c); els.lobbyHint.textContent = I18n.t('lobby.hostHint'); els.lenPicker.style.display = els.modePicker.style.display = els.worldInfo.style.display = 'block'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'block'; }
+    else { els.btnStartRace.style.display = 'none'; els.lobbyHint.textContent = I18n.t('lobby.hostcfg'); els.lenPicker.style.display = els.modePicker.style.display = els.worldInfo.style.display = 'none'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'none'; }
   }
 
   // Scelta lunghezza pista (solo host). Le durate sono quelle misurate in simulazione con ruote diverse.
@@ -176,6 +176,15 @@
     els.lenHint.textContent = I18n.t('len.hint.' + trackLen);
   }));
   els.lenHint.textContent = I18n.t('len.hint.' + trackLen);
+  // I mondi speciali sono eventi rari: il sorteggio avviene una volta per ogni nuova pista,
+  // soltanto sull'host. La scelta viene poi inviata con allReady, così tutti vedono lo stesso mondo.
+  // Il replay conserva invece la pista e il mondo appena giocati.
+  const WORLD_CHANCES = { paradise: 0.08, inferno: 0.08, atlantis: 0.04, enchanted: 0.04, neon: 0.04 };
+  function drawWorld() {
+    const r = Math.random(); let edge = 0;
+    for (const [world, chance] of Object.entries(WORLD_CHANCES)) { edge += chance; if (r < edge) return world; }
+    return 'classic';
+  }
   els.modePicker.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {
     crazy = btn.dataset.mode === 'crazy';
     els.modePicker.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('seg-btn--on', b === btn));
@@ -287,7 +296,7 @@
   Net.on('data', ({ from, data }) => {
     if (data.type === 'goToDraw') { champ = data.champ || null; enterDrawPhase(); }
     if (data.type === 'wheel' && Net.isHost) receiveWheel(from, data.vertices);
-    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; Terrain.applyLayout(data.trackLayout, crazy ? { crazy: true, np: data.np } : undefined); startCountdown(data.startTime); }
+    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
     if (data.type === 'snap') { if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); }
     if (data.type === 'results') showResults(data.standings, data.champ);
     if (data.type === 'lastCall') showLastCall(data.ms);
@@ -353,9 +362,13 @@
       raceStarting = true;
       const start = Date.now() + 3500 + 1500;  // breve attesa (la fisica finisce di prepararsi), poi 3-2-1
       // "Rigioca stessa pista" riusa il percorso appena giocato; altrimenti ne nasce uno nuovo della lunghezza scelta
-      const track = (keepTrack && currentLayout) ? currentLayout : Terrain.generateRandomLayout(Terrain.LENGTHS[trackLen] || Terrain.LENGTHS.lunga, crazy, champ && !crazy ? champ.seasons[champ.i] : null);
+      const season = champ && !crazy ? champ.seasons[champ.i] : null;
+      const replaying = keepTrack && currentLayout;
+      if (!replaying) currentWorld = drawWorld();
+      const track = replaying ? currentLayout : Terrain.generateRandomLayout(Terrain.LENGTHS[trackLen] || Terrain.LENGTHS.lunga, crazy, season, currentWorld);
       currentLayout = track; keepTrack = false;
-      const np = ids.length; Terrain.applyLayout(track, crazy ? { crazy: true, np } : undefined); Net.broadcast({ type: 'allReady', wheels, startTime: start, trackLayout: track, crazy, np }); startCountdown(start);
+      const np = ids.length, opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = np; } if (season) opts.season = season;
+      Terrain.applyLayout(track, opts); Net.broadcast({ type: 'allReady', wheels, startTime: start, trackLayout: track, crazy, np, world: currentWorld }); startCountdown(start);
     }
   }
 
@@ -379,7 +392,7 @@
     // l'host tara in anticipo ogni ruota (a fette, durante l'intro): così su terreno normale vanno tutte alla pari
     if (Net.isHost) { Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {})); Sim.prepareAsync(); }   // mondo fisico costruito a fette durante l'intro
     hideLastCall(); lastCallSent = false;
-    Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X); Flora.setTrack(); Scenery.setQuality(0); Flora.setQuality(0); qSlow = 0;
+    Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X, currentWorld); Flora.setTrack(); Scenery.setQuality(0); Flora.setQuality(0); qSlow = 0;
     Scenery.warmup();
     placeGrid();
     const me = latestRacers[Net.myId]; smoothCamX = me ? me.x - viewW * 0.34 : 0; particles = []; cam.dy = 0; cam.vx = 0; cam.lead = 0.34; lastCamTs = 0;
@@ -1085,14 +1098,17 @@
     const n = Math.min(256, Math.floor((w + SURF_STEP) / SURF_STEP) + 1);
     for (let i = 0; i < n; i++) surfBuf[i] = Terrain.naturalHeight(camX + i * SURF_STEP);
     Scenery.drawGround(ctx2d, surfBuf, n, SURF_STEP);
+    Scenery.drawWorldEffects(ctx2d, camX, w, groundY, Math.max(0, t0 - raceT0));
 
     Props.drawPatches(ctx2d, camX, w, groundY, SC);
     Props.drawRamps(ctx2d, camX, w, groundY);
-    Props.drawSigns(ctx2d, camX, w, groundY);
+    if (Terrain.WORLD === 'classic' || Terrain.WORLD === 'paradise' || Terrain.WORLD === 'inferno') Props.drawSigns(ctx2d, camX, w, groundY);
     Props.drawFinish(ctx2d, camX, w, groundY, SC);
     Props.drawBridges(ctx2d, camX, w, groundY, SC);
-    Flora.drawLilies(ctx2d, camX, w, groundY, SC);
-    Flora.draw(ctx2d, camX, w, groundY, SC);
+    if (Terrain.WORLD === 'classic' || Terrain.WORLD === 'paradise' || Terrain.WORLD === 'inferno') {
+      Flora.drawLilies(ctx2d, camX, w, groundY, SC);
+      Flora.draw(ctx2d, camX, w, groundY, SC);
+    }
 
     portalFx(me, t0);
     if (trailOn()) { for (const id in latestRacers) trailSample(latestRacers[id]); for (const id in latestRacers) if (raceMeta[id]) drawTrail(ctx2d, camX, groundY, id, raceMeta[id].color); }

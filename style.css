@@ -214,6 +214,11 @@ input[type="text"]:focus { outline: none; border-color: var(--blue); }
   .draw-canvas { margin: 10px auto; }
 }
 
+
+/* Nota sui mondi speciali sorteggiati automaticamente. */
+.world-info { margin: 0 0 14px; }
+.world-info .hint { margin-top: 5px; font-size: .78rem; line-height: 1.25; }
+
 /* scelta lunghezza pista (lobby, solo host) */
 .len-picker { margin: 0 0 16px; }
 .seg { display: flex; gap: 8px; }
@@ -584,30 +589,6 @@ input[type="text"]:focus { border-color: var(--teal); }
   #screen-lobby .btn--primary { padding-top: 10px; padding-bottom: 10px; }
 }
 
-/* Firma autore: essenziale, su una sola riga */
-.signature {
-  margin-top: 22px;
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0 0.3rem;
-}
-.sig-by {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.7rem;
-  font-weight: 400;
-  letter-spacing: 0.01em;
-  text-transform: none;
-  color: #89948f;
-  line-height: 1.4;
-}
-.sig-name {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--teal-d);
-  line-height: 1.4;
-}
-.signature::after { display: none; content: none; }
+/* Nota sui mondi speciali sorteggiati automaticamente. */
+.world-info { margin: 0 0 14px; }
+.world-info .hint { margin-top: 5px; font-size: .78rem; line-height: 1.25; }

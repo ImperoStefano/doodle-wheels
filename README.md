@@ -17,6 +17,23 @@ Non è più un rettilineo piatto: `js/terrain.js` genera un percorso determinist
 
 La minimappa in alto nella HUD mostra l'intero tracciato colorato per zona, il traguardo e un pallino per ogni corridore aggiornato in tempo reale.
 
+## Mondi speciali a comparsa casuale
+
+A ogni nuova pista l'host sorteggia un mondo: i mondi speciali sono eventi rari, non selezionabili manualmente. Le probabilità sono:
+
+| Mondo | Probabilità | Identità e meccanica distintiva |
+|---|---:|---|
+| **Classico** | **72%** | Biomi, stagioni e ostacoli originali, incluso il Vulcano. |
+| **Paradiso** | **8%** | Architetture celesti, isole sospese, luce serena, correnti ascensionali e nuvole elastiche. |
+| **Inferno** | **8%** | Paesaggio vulcanico e dantesco, bufera, lava e geyser che spingono la ruota. |
+| **Atlantide** | **4%** | Città sommersa, palazzi abissali, raggi subacquei, fauna marina e correnti di bolle. |
+| **Bosco Incantato** | **4%** | Foresta notturna, albero antico con portale, funghi luminosi e piattaforme elastiche. |
+| **Città Neon** | **4%** | Metropoli futuristica, torri luminose, maglev e varchi di accelerazione. |
+
+I tre mondi aggiunti hanno fondali panoramici dedicati in `img/worlds/`: non riutilizzano le montagne generiche del Classico. Le illustrazioni sono SVG locali, con scorrimento parallax e particelle ambientali leggere; non richiedono servizi esterni. Terreno, ostacoli e meccaniche restano disegnati dal motore di gioco.
+
+Il sorteggio avviene una sola volta per ogni nuova pista e viene comunicato dall'host ai client insieme al tracciato. Il replay conserva lo stesso mondo; una nuova gara estrae di nuovo. Le posizioni degli eventi ambientali dipendono dal layout, così i giocatori vedono le stesse condizioni.
+
 ## Come si gioca
 
 1. Un giocatore crea la gara (**host**) e ottiene un codice a 4 lettere.
@@ -417,3 +434,11 @@ Dallo zip `doodle-wheels-modificati` sono stati fusi nella versione corrente (se
 - **Gravità e calcio del labbro:** la gravità extra in volo passa da −0,25 a −0,19 (gravità di volo ~0,17 px/tick² invece di ~0,11) e il labbro dà un piccolo calcio verso l'alto (`TUNE.pop` = 3,0, più piccolo sulle rampe piccole e proporzionale alla velocità di uscita: più veloce = salto più grande, come nelle moto vere, dove l'arco cresce col quadrato della velocità). Lo scatto sulle rampe dà quindi salti molto più grandi.
 - **Misure in simulazione (forme: tonda, stella, ingranaggio, ovale; 3 rampe ciascuna):** velocità normale, rampa media: ~1,1 s di volo, apice ~73 px, ~360 px di distanza, atterraggio a 1° dalla pendenza (prima 28° di muso giù); two-stage: 1,3 s, 58 px, 0°; mezzo tubo: 0,67 s, 59 px, 7°. Con lo scatto: fino a 1,5 s, apici 53–137 px e 490–570 px di distanza. Nessuna bici ribaltata. Rampe bloccate: 0 su ~250 prove (anche con ruota sciolta dalla lava e forme a stella/quadrato/triangolo); gare complete di prova: tutte arrivate.
 - **Limiti onesti:** misure solo in simulazione, mai su telefono vero; i salti con lo scatto possono arrivare oltre il tratto successivo, quindi saltare qualche ostacolo; la velocità massima di tutta la gara non è cambiata (cambierebbe ogni pista già tarata).
+
+
+## Implementazione dei mondi
+
+- Le probabilità sono centralizzate in `WORLD_CHANCES` in `js/game.js`.
+- I layout e gli eventi di gameplay sono generati in modo deterministico in `js/terrain.js`; la fisica autorevole resta in `js/physics.js`.
+- Le illustrazioni panoramiche di Atlantide, Bosco Incantato e Città Neon sono in `img/worlds/`; `js/scenery.js` le carica una volta e le disegna con parallasse.
+- Se un asset non è disponibile, il motore mantiene un fondale Canvas di riserva.

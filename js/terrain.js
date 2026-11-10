@@ -12,7 +12,8 @@
  */
 const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
-  let SEASON = null, PACE = "classica", ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], PATCHES = [], PORTALS = [];
+  let SEASON = null, PACE = "classica", WORLD = 'classic', ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [];
+  const WORLD_KEYS = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'];
 
   const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps', 'lava'];
   const ZONE_COLORS = {
@@ -45,12 +46,47 @@ const Terrain = (() => {
   function pseudo(x) { const v = Math.sin(x * 12.9898) * 43758.5453; return v - Math.floor(v); } // 0..1
 
   // ---- layout casuale: nessuna zona uguale alla precedente, tutte le specie ben distribuite ----
-  function generateRandomLayout(count = LENGTHS.lunga, crazy = false, season = null) {
-    if (!crazy) return generateFreeLayout(count, season);
+  function worldZoneTypes(world) {
+    if (world === 'paradise') return ['hills', 'ice', 'gravel', 'water', 'ramps'];
+    if (world === 'inferno') return ['hills', 'ice', 'gravel', 'water', 'ramps', 'lava'];
+    if (world === 'atlantis') return ['water', 'hills', 'gravel', 'ramps', 'ice'];
+    if (world === 'enchanted') return ['hills', 'ramps', 'gravel', 'water', 'ice'];
+    if (world === 'neon') return ['gravel', 'ramps', 'hills', 'ice', 'water'];
+    return ZONE_TYPES;
+  }
+  function ensureWorldCoreLayout(layout, world) {
+    if (layout.length < 5) return layout;
+    const core = world === 'atlantis' ? 'water' : world === 'enchanted' ? 'hills' : world === 'neon' ? 'gravel' : null;
+    if (!core || layout.filter(k => k === core).length >= 2) return layout;
+    const candidates = Array.from({ length: layout.length - 2 }, (_, i) => i + 1);
+    let needed = 2 - layout.filter(k => k === core).length;
+    for (const i of candidates) {
+      if (!needed) break;
+      if (layout[i] === core || layout[i - 1] === core || layout[i + 1] === core) continue;
+      const previous = layout[i];
+      if (previous === 'lava') continue;
+      layout[i] = core; needed--;
+    }
+    return layout;
+  }
+  function ensureInfernoLava(layout, world) {
+    if (world !== 'inferno' || layout.length < 5 || layout.includes('lava')) return layout;
+    // Anche quando il generatore trova subito una stagione compatibile, Inferno deve
+    // contenere almeno un lago di lava: è la meccanica che identifica il mondo.
+    const mid = Math.floor(layout.length * 0.52);
+    const candidates = Array.from({ length: layout.length - 2 }, (_, i) => i + 1)
+      .sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid));
+    const at = candidates.find(i => layout[i - 1] !== 'lava' && layout[i + 1] !== 'lava');
+    if (at !== undefined) layout[at] = 'lava';
+    return layout;
+  }
+  function generateRandomLayout(count = LENGTHS.lunga, crazy = false, season = null, world = 'classic') {
+    const types = worldZoneTypes(world);
+    if (!crazy) return generateFreeLayout(count, season, world);
     const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
     const out = []; let bag = [];
     while (out.length < count) {
-      if (!bag.length) bag = shuffle(ZONE_TYPES.slice());
+      if (!bag.length) bag = shuffle(types.slice());
       let k = bag.pop();
       if (out.length && out[out.length - 1] === k) {
         if (!bag.length) continue;          // rimescola al prossimo giro
@@ -69,9 +105,9 @@ const Terrain = (() => {
         out[i] = key; have++;
       }
     };
-    if (count >= 5) need('water', count >= 11 ? 2 : 1);
-    if (count >= 7) need('gravel', count >= 11 ? 2 : 1);
-    if (count >= 7) need('lava', count >= 11 ? 2 : 1);
+    if (types.includes('water') && count >= 5) need('water', count >= 11 ? 2 : 1);
+    if (types.includes('gravel') && count >= 7) need('gravel', count >= 11 ? 2 : 1);
+    if (world === 'inferno' && count >= 5) need('lava', count >= 11 ? 2 : 1);
     // mai il vulcano subito dopo la partenza: la ruota non ha ancora ritmo e il lago arriverebbe senza preavviso
     if (out[0] === 'lava') {
       for (let j = 2; j < out.length; j++) {
@@ -82,7 +118,7 @@ const Terrain = (() => {
         out[0] = k; out[j] = 'lava'; break;
       }
     }
-    return out;
+    return ensureWorldCoreLayout(out, world);
   }
 
   // ---- STAGIONI di gara: un tema raro per pista, che pesa biomi e tipi di ostacolo (bw = peso del bioma, km = moltiplicatore del tipo, m = umore generale,
@@ -120,22 +156,28 @@ const Terrain = (() => {
 
   // Gara normale: ogni pista estrae un "peso" casuale per ogni bioma, quindi il mix cambia da gara a gara e un bioma (acqua, canyon, vulcano…) può anche
   // mancare del tutto: niente garanzie su ponti o laghi. Mai due zone uguali di fila, mai il vulcano subito dopo la partenza, almeno 4 biomi diversi.
-  function generateFreeLayout(count, want) {
+  function generateFreeLayout(count, want, world = 'classic') {
+    const types = worldZoneTypes(world);
     let sr = Math.random() * SEASON_W, S = SEASONS[0]; for (const q of SEASONS) { sr -= q.w; if (sr <= 0) { S = q; break; } }   // stagione scelta in anticipo
     if (want) S = SEASONS.find(q => q.key === want) || S;   // il campionato la impone
     let fallback = null;
     for (let tries = 0; tries < 600; tries++) {
-      const w = {}; ZONE_TYPES.forEach(k => { w[k] = (Math.random() < 0.18 ? 0.12 : 0.45 + 1.15 * Math.random()) * (S.bw[k] !== undefined ? S.bw[k] : 1); });
+      const worldBias = world === 'atlantis' ? { water: 3.5, hills: 0.7, gravel: 0.42, ramps: 0.55, ice: 0.25 }
+        : world === 'enchanted' ? { hills: 2.4, ramps: 1.3, gravel: 1.0, water: 0.42, ice: 0.32 }
+        : world === 'neon' ? { gravel: 1.8, ramps: 1.65, hills: 1.05, ice: 0.48, water: 0.58 } : {};
+      const w = {}; types.forEach(k => { w[k] = (Math.random() < 0.18 ? 0.12 : 0.45 + 1.15 * Math.random()) * (S.bw[k] !== undefined ? S.bw[k] : 1) * (worldBias[k] || 1); });
       const out = [];
       while (out.length < count) {
-        const prev = out[out.length - 1], nl = out.filter(k => k === 'lava').length, c = ZONE_TYPES.filter(k => k !== prev && !(out.length === 0 && k === 'lava') && !(k === 'lava' && (S.lava === 0 || nl >= Math.max(1, Math.ceil(count * (S.lava || 0.2))))) && w[k] > 0);   // vulcano: al massimo uno ogni cinque zone (ogni lago scioglie la ruota)
+        const prev = out[out.length - 1], nl = out.filter(k => k === 'lava').length;
+        const lavaCap = world === 'inferno' ? Math.max(1, Math.ceil(count * 0.25)) : Math.max(1, Math.ceil(count * (S.lava || 0.2)));
+        const c = types.filter(k => k !== prev && !(out.length === 0 && k === 'lava') && !(k === 'lava' && ((world !== 'inferno' && S.lava === 0) || nl >= lavaCap)) && w[k] > 0);   // vulcano: al massimo uno ogni cinque zone (ogni lago scioglie la ruota)
         let tot = 0; c.forEach(k => { tot += w[k]; }); let r = Math.random() * tot, pick = c[c.length - 1];
         for (const k of c) { r -= w[k]; if (r <= 0) { pick = k; break; } }
         out.push(pick);
       }
-      if (new Set(out).size >= Math.min(4, count)) { if (seasonOf(out) === S) return out; fallback = fallback || out; }   // la stagione la ricavano tutti dall'hash: si rigenera finché coincide
+      if (new Set(out).size >= Math.min(4, count)) { if (seasonOf(out) === S) return ensureWorldCoreLayout(ensureInfernoLava(out, world), world); fallback = fallback || out; }   // la stagione la ricavano tutti dall'hash: si rigenera finché coincide
     }
-    return fallback || ZONE_TYPES.slice(0, count);
+    return ensureWorldCoreLayout(ensureInfernoLava(fallback || types.slice(0, count), world), world);
   }
 
   // ---- onde proprie di ogni bioma (si annullano ai bordi della zona) -------------------------
@@ -498,8 +540,63 @@ const Terrain = (() => {
     return true;
   }
 
+  // Eventi ambientali deterministici: host e client ricavano le stesse coordinate dal layout.
+  function planWorldEvents(layoutKeys) {
+    UPDRAFTS = []; GEYSERS = []; CLOUD_PADS = []; BUBBLE_VENTS = []; NEON_BOOSTS = [];
+    const rnd = mulberry32(hashStr(layoutKeys.join(',') + '#world-' + WORLD));
+    ZONES.forEach(z => {
+      if (WORLD === 'paradise' && ['hills', 'ice', 'water', 'ramps'].includes(z.key) && rnd() < 0.82) {
+        UPDRAFTS.push({ id: UPDRAFTS.length, x: Math.round(z.start + z.len * (0.42 + rnd() * 0.16)), width: 230 + Math.round(rnd() * 50), height: 190 + Math.round(rnd() * 45), strength: 1 });
+      }
+      if (WORLD === 'paradise' && ['hills', 'ramps', 'gravel'].includes(z.key) && rnd() < 0.48) {
+        // Le nuvole elastiche devono cadere su un tratto guidabile: mai dentro un lago,
+        // un ostacolo/una rampa già disegnata o una pendenza troppo marcata.
+        const start = Math.floor(rnd() * 9), candidates = Array.from({ length: 9 }, (_, i) => z.start + z.len * (0.24 + i * 0.065));
+        let padX = null;
+        for (let i = 0; i < candidates.length; i++) {
+          const px = Math.round(candidates[(start + i) % candidates.length]);
+          const inGap = z.gap && px > z.gap.g0 - 120 && px < z.gap.g1 + 120;
+          const inPatch = (z.patches || []).some(p => px > p.a - 120 && px < p.b + 120);
+          const slope = Math.abs(height(px + 55) - height(px - 55));
+          if (!inGap && !inPatch && slope < 24) { padX = px; break; }
+        }
+        if (padX !== null) CLOUD_PADS.push({ id: CLOUD_PADS.length, x: padX, width: 112, power: 6.4 });
+      }
+      if (WORLD === 'inferno' && z.key === 'lava' && z.gap && !z.bridge) {
+        const span = z.gap.g1 - z.gap.g0;
+        for (let i = 0; i < 2; i++) {
+          const period = 3.5 + rnd() * 1.2;
+          GEYSERS.push({ id: GEYSERS.length, x: Math.round(z.gap.g0 + span * (i ? 0.72 : 0.28)), width: 124, period, phase: rnd() * period, burst: 0.62, power: 5.8 + rnd() * 0.8 });
+        }
+      }
+      if (WORLD === 'atlantis' && z.key === 'water' && rnd() < 0.78) {
+        BUBBLE_VENTS.push({ id: BUBBLE_VENTS.length, x: Math.round(z.start + z.len * (0.38 + rnd() * 0.24)), width: 170, height: 118 + rnd() * 42, power: 0.10 + rnd() * 0.045, phase: rnd() * Math.PI * 2 });
+      }
+      if (WORLD === 'enchanted' && ['hills', 'ramps', 'gravel'].includes(z.key) && rnd() < 0.58) {
+        const candidates = Array.from({ length: 7 }, (_, i) => z.start + z.len * (0.27 + i * 0.075));
+        const start = Math.floor(rnd() * candidates.length); let padX = null;
+        for (let i = 0; i < candidates.length; i++) {
+          const px = Math.round(candidates[(start + i) % candidates.length]);
+          const inGap = z.gap && px > z.gap.g0 - 110 && px < z.gap.g1 + 110;
+          const inPatch = (z.patches || []).some(p => px > p.a - 110 && px < p.b + 110);
+          if (!inGap && !inPatch && Math.abs(height(px + 50) - height(px - 50)) < 22) { padX = px; break; }
+        }
+        if (padX !== null) CLOUD_PADS.push({ id: CLOUD_PADS.length, x: padX, width: 126, power: 7.0, kind: 'mushroom' });
+      }
+      if (WORLD === 'neon' && ['gravel', 'ramps', 'hills'].includes(z.key) && rnd() < 0.68) {
+        const px = Math.round(z.start + z.len * (0.44 + rnd() * 0.18));
+        const inGap = z.gap && px > z.gap.g0 - 110 && px < z.gap.g1 + 110;
+        const inPatch = (z.patches || []).some(p => px > p.a - 100 && px < p.b + 100);
+        if (!inGap && !inPatch && Math.abs(height(px + 48) - height(px - 48)) < 26) {
+          NEON_BOOSTS.push({ id: NEON_BOOSTS.length, x: px, width: 150, boost: 2.6 + rnd() * 0.8 });
+        }
+      }
+    });
+  }
+
   // ---- costruzione delle zone ---------------------------------------------------------------
   function applyLayout(layoutKeys, force) {
+    WORLD = force && WORLD_KEYS.includes(force.world) ? force.world : 'classic';
     const keys = (layoutKeys && layoutKeys.length ? layoutKeys : generateRandomLayout()).slice();
     const rnd = mulberry32(hashStr(keys.join(',')));
     SEASON = force && force.season ? SEASONS.find(q => q.key === force.season) || SEASONS[0] : (force && (force.crazy || force.only || force.nopatch)) ? SEASONS[0] : seasonOf(keys);   // pazza e prove forzate: stagione classica
@@ -527,6 +624,7 @@ const Terrain = (() => {
 
     if (!(force && force.nogap)) planGaps(rnd, !!(force && force.crazy));
     planPatches(rnd, force);
+    planWorldEvents(keys);
     PORTALS = []; if (force && force.crazy) planPortals(keys, force.np);
     FLOWERS = generateFlowers(rnd);
     LILIES = generateLilies();
@@ -712,6 +810,7 @@ const Terrain = (() => {
 
   return {
     generateRandomLayout, applyLayout, plainAt, SEASONS, seasonOf, PACES, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
+    get WORLD() { return WORLD; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; },
     frictionAt: x => { const f = FRICTION[zoneAt(x).key] || 0.9; return f < 0.9 && onRamp(x) ? 0.9 : f; },   // il piano della rampa tiene sempre (anche nel ghiaccio)
     colorAt: x => zoneAt(x).color || '#059669',
     zoneKeyAt: x => zoneAt(x).key,

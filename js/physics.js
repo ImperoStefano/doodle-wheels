@@ -1097,6 +1097,75 @@ const Sim = (() => {
     if (TUNE.pop) { const k = TUNE.pop * (p.kind === 'kicker' ? (p.tier === 0 ? 0.75 : 1) : 1) * Math.max(0.7, Math.min(1.5, r.chassis.velocity.x / 6)); for (const q of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(q, { x: q.velocity.x, y: q.velocity.y - k }); }   // il labbro "molla": un piccolo calcio verso l'alto, come il precarico di una moto cross
   }
 
+  // Correnti del Paradiso e geyser dell'Inferno: vengono applicati solo dall'host,
+  // quindi restano sincronizzati con la simulazione autoritativa già esistente.
+  function worldEffectStep(r, elapsed) {
+    const bodies = [r.chassis, r.fw, r.rw], x = r.chassis.position.x;
+    if (Terrain.WORLD === 'paradise') {
+      let lift = 0;
+      for (const q of Terrain.UPDRAFTS) {
+        const k = 1 - Math.abs(x - q.x) / (q.width * 0.5);
+        if (k > lift) lift = k;
+      }
+      if (lift > 0 && r.chassis.position.y > GROUND_Y - 290) {
+        const impulse = 0.12 * Math.min(1, lift);
+        for (const b of bodies) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.max(-6.5, b.velocity.y - impulse) });
+      }
+      r.cloudPadHits = r.cloudPadHits || {};
+      for (const q of Terrain.CLOUD_PADS) {
+        const near = Math.abs(x - q.x) < q.width * 0.5;
+        if (!near) { r.cloudPadHits[q.id] = false; continue; }
+        if (!r.cloudPadHits[q.id] && (r.fw.gapNow < 22 || r.rw.gapNow < 22)) {
+          for (const b of bodies) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.min(b.velocity.y, -q.power) });
+          r.cloudPadHits[q.id] = true;
+        }
+      }
+    } else if (Terrain.WORLD === 'inferno') {
+      r.geyserHits = r.geyserHits || {};
+      const t = elapsed / 1000;
+      for (const q of Terrain.GEYSERS) {
+        const phase = ((t + q.phase) % q.period + q.period) % q.period;
+        const active = phase < q.burst;
+        if (!active) { r.geyserHits[q.id] = false; continue; }
+        if (!r.geyserHits[q.id] && Math.abs(x - q.x) < q.width * 0.5 && (r.fw.gapNow < 28 || r.rw.gapNow < 28)) {
+          for (const b of bodies) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.min(b.velocity.y, -q.power) });
+          r.geyserHits[q.id] = true;
+        }
+      }
+    } else if (Terrain.WORLD === 'atlantis') {
+      r.bubbleVentHits = r.bubbleVentHits || {};
+      for (const q of Terrain.BUBBLE_VENTS) {
+        const near = Math.abs(x - q.x) < q.width * 0.5;
+        if (!near) { r.bubbleVentHits[q.id] = false; continue; }
+        if (!r.bubbleVentHits[q.id] && (r.fw.gapNow < 30 || r.rw.gapNow < 30)) {
+          for (const b of bodies) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.max(-5.4, b.velocity.y - q.power) });
+          r.bubbleVentHits[q.id] = true;
+        }
+      }
+    } else if (Terrain.WORLD === 'enchanted') {
+      r.mushroomHits = r.mushroomHits || {};
+      for (const q of Terrain.CLOUD_PADS) {
+        const near = Math.abs(x - q.x) < q.width * 0.5;
+        if (!near) { r.mushroomHits[q.id] = false; continue; }
+        if (!r.mushroomHits[q.id] && (r.fw.gapNow < 24 || r.rw.gapNow < 24)) {
+          for (const b of bodies) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.min(b.velocity.y, -q.power) });
+          r.mushroomHits[q.id] = true;
+        }
+      }
+    } else if (Terrain.WORLD === 'neon') {
+      r.neonBoostHits = r.neonBoostHits || {};
+      for (const q of Terrain.NEON_BOOSTS) {
+        const near = Math.abs(x - q.x) < q.width * 0.5;
+        if (!near) { r.neonBoostHits[q.id] = false; continue; }
+        if (!r.neonBoostHits[q.id] && (r.fw.gapNow < 24 || r.rw.gapNow < 24)) {
+          const vx = Math.min(15.5, Math.max(0, r.chassis.velocity.x) + q.boost);
+          for (const b of bodies) Matter.Body.setVelocity(b, { x: vx, y: b.velocity.y - 0.18 });
+          r.neonBoostHits[q.id] = true;
+        }
+      }
+    }
+  }
+
   function stepRacer(r, elapsed) {
     if (r.finished) return;
 
@@ -1111,6 +1180,7 @@ const Sim = (() => {
     ravineStep(r, elapsed);
     rampStep(r, elapsed);
     sprintStep(r);
+    worldEffectStep(r, elapsed);
 
     // progress = furthest x reached IN THE DIRECTION OF TRAVEL (dir·x); if it hasn't improved enough for STALL_MS, hop
     const dir = r.dir || 1, px = dir * r.chassis.position.x;
