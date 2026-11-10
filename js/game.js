@@ -159,7 +159,7 @@
       els.playerList.appendChild(li);
     });
     const c = Object.keys(Net.players).length;
-    if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; els.lobbyHint.textContent = ''; els.lenPicker.style.display = els.modePicker.style.display = 'block'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'block'; }
+    els.lobby.classList.toggle('lobby--guest', !Net.isHost); if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; els.lobbyHint.textContent = ''; els.lenPicker.style.display = els.modePicker.style.display = 'block'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'block'; }
     else { els.btnStartRace.style.display = 'none'; els.lobbyHint.textContent = I18n.t('lobby.hostcfg'); els.lenPicker.style.display = els.modePicker.style.display = 'none'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'none'; }
   }
 
