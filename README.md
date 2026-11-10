@@ -19,18 +19,18 @@ La minimappa in alto nella HUD mostra l'intero tracciato colorato per zona, il t
 
 ## Mondi speciali a comparsa casuale
 
-A ogni nuova pista l'host sorteggia un mondo: i mondi speciali sono eventi rari, non selezionabili manualmente. Le probabilità sono:
+A ogni nuova pista l'host sorteggia un mondo: i mondi speciali sono eventi casuali frequenti ma non garantiti, non selezionabili manualmente. Le probabilità sono:
 
 | Mondo | Probabilità | Identità e meccanica distintiva |
 |---|---:|---|
-| **Classico** | **72%** | Biomi, stagioni e ostacoli originali, incluso il Vulcano. |
+| **Classico** | **60%** | Biomi, stagioni e ostacoli originali, incluso il Vulcano. |
 | **Paradiso** | **8%** | Architetture celesti, isole sospese, luce serena, correnti ascensionali e nuvole elastiche. |
 | **Inferno** | **8%** | Paesaggio vulcanico e dantesco, bufera, lava e geyser che spingono la ruota. |
-| **Atlantide** | **4%** | Città sommersa, palazzi abissali, raggi subacquei, fauna marina e correnti di bolle. |
-| **Bosco Incantato** | **4%** | Foresta notturna, albero antico con portale, funghi luminosi e piattaforme elastiche. |
-| **Città Neon** | **4%** | Metropoli futuristica, torri luminose, maglev e varchi di accelerazione. |
+| **Atlantide** | **8%** | Città sommersa, palazzi abissali, raggi subacquei, fauna marina e correnti di bolle. |
+| **Bosco Incantato** | **8%** | Foresta notturna, albero antico con portale, funghi luminosi e piattaforme elastiche. |
+| **Città Neon** | **8%** | Metropoli futuristica, torri luminose, maglev e varchi di accelerazione. |
 
-I tre mondi aggiunti hanno fondali panoramici dedicati in `img/worlds/`: non riutilizzano le montagne generiche del Classico. Le illustrazioni sono SVG locali, con scorrimento parallax e particelle ambientali leggere; non richiedono servizi esterni. Terreno, ostacoli e meccaniche restano disegnati dal motore di gioco.
+I tre mondi aggiunti hanno fondali panoramici dedicati in `img/worlds/`: non riutilizzano le montagne generiche del Classico. Ogni mondo usa ora due SVG locali: un fondale lontano e un livello trasparente di primo piano, con parallasse differenziata; alghe/coralli, felci/rami e dettagli urbani incorniciano la scena senza coprire terreno o corridori. Particelle ambientali leggere completano l’atmosfera; non sono richiesti servizi esterni. Terreno, ostacoli e meccaniche restano disegnati dal motore di gioco.
 
 Il sorteggio avviene una sola volta per ogni nuova pista e viene comunicato dall'host ai client insieme al tracciato. Il replay conserva lo stesso mondo; una nuova gara estrae di nuovo. Le posizioni degli eventi ambientali dipendono dal layout, così i giocatori vedono le stesse condizioni.
 
@@ -438,7 +438,7 @@ Dallo zip `doodle-wheels-modificati` sono stati fusi nella versione corrente (se
 
 ## Implementazione dei mondi
 
-- Le probabilità sono centralizzate in `WORLD_CHANCES` in `js/game.js`.
+- Le probabilità sono centralizzate in `WORLD_CHANCES` in `js/game.js`: Classico 60%; Paradiso, Inferno, Atlantide, Bosco Incantato e Città Neon 8% ciascuno (40% complessivo di mondi speciali).
 - I layout e gli eventi di gameplay sono generati in modo deterministico in `js/terrain.js`; la fisica autorevole resta in `js/physics.js`.
-- Le illustrazioni panoramiche di Atlantide, Bosco Incantato e Città Neon sono in `img/worlds/`; `js/scenery.js` le carica una volta e le disegna con parallasse.
+- Le illustrazioni panoramiche di Atlantide, Bosco Incantato e Città Neon sono in `img/worlds/`; `js/scenery.js` carica un fondale e un livello trasparente di primo piano per ciascun mondo e li disegna con parallasse differenziata. Pesci e meduse, lucciole e foglie, traffico volante e scie luminose sono animati via Canvas.
 - Se un asset non è disponibile, il motore mantiene un fondale Canvas di riserva.

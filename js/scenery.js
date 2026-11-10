@@ -32,19 +32,32 @@ const Scenery = (() => {
   // Illustrazioni panoramiche originali dei tre mondi aggiuntivi. Sono SVG locali:
   // nitide su desktop e mobile, senza richieste esterne e senza dipendenze di rete.
   const WORLD_ART = Object.create(null);
+  const WORLD_FRONT_ART = Object.create(null);
   const WORLD_ART_PATHS = {
     atlantis: 'img/worlds/atlantis.svg',
     enchanted: 'img/worlds/enchanted.svg',
     neon: 'img/worlds/neon.svg',
   };
+  const WORLD_FRONT_ART_PATHS = {
+    atlantis: 'img/worlds/atlantis-front.svg',
+    enchanted: 'img/worlds/enchanted-front.svg',
+    neon: 'img/worlds/neon-front.svg',
+  };
   function preloadWorldArt() {
     if (typeof Image === 'undefined') return;
     for (const name of Object.keys(WORLD_ART_PATHS)) {
-      if (WORLD_ART[name]) continue;
-      const img = new Image();
-      img.decoding = 'async';
-      img.src = WORLD_ART_PATHS[name];
-      WORLD_ART[name] = img;
+      if (!WORLD_ART[name]) {
+        const img = new Image();
+        img.decoding = 'async';
+        img.src = WORLD_ART_PATHS[name];
+        WORLD_ART[name] = img;
+      }
+      if (!WORLD_FRONT_ART[name]) {
+        const front = new Image();
+        front.decoding = 'async';
+        front.src = WORLD_FRONT_ART_PATHS[name];
+        WORLD_FRONT_ART[name] = front;
+      }
     }
   }
   preloadWorldArt();
@@ -1178,7 +1191,7 @@ const Scenery = (() => {
       const cx = n * spacing + spacing * (0.22 + rnd(n, 201) * 0.55) - par;
       if (cx < -420 || cx > w + 420) continue;
       const base = gy * (0.84 + rnd(n, 202) * 0.035), scale = 0.82 + rnd(n, 203) * 0.42;
-      ctx.save(); ctx.translate(cx, base); ctx.scale(scale, scale); ctx.globalAlpha = 0.72;
+      ctx.save(); ctx.translate(cx, base); ctx.scale(scale, scale); ctx.globalAlpha = 0.58;
       // piattaforma corallina
       ctx.fillStyle = '#276f78'; ctx.beginPath(); ctx.moveTo(-245, 0); ctx.lineTo(-205, -19); ctx.lineTo(190, -19); ctx.lineTo(238, 0); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#68b7a7'; ctx.fillRect(-200, -23, 394, 5);
@@ -1303,6 +1316,29 @@ const Scenery = (() => {
       ctx.drawImage(img, -offset, 0, tileW, h);
       ctx.drawImage(img, tileW - offset, 0, tileW, h);
       if (offset < w) ctx.drawImage(img, -tileW - offset, 0, tileW, h);
+
+      // Secondo piano di profondità: dettagli in primo piano (alghe/coralli, felci e rami,
+      // strutture e cavi urbani) con parallasse più rapida. È disegnato prima del terreno,
+      // così la pista e i corridori restano sempre perfettamente leggibili.
+      const front = WORLD_FRONT_ART[S.world];
+      if (front && front.complete && front.naturalWidth > 0) {
+        const frontOffset = ((S.camX * 0.52) % tileW + tileW) % tileW;
+        ctx.save();
+        // Il foreground è un'inquadratura, non un secondo fondale: rami, alghe e strutture
+        // entrano dai bordi e dall'alto, lasciando pulita la fascia centrale dove corrono le bici.
+        // Il clipping evita che i grandi elementi decorativi attraversino la pista.
+        const edge = Math.max(96, Math.min(150, w * 0.115));
+        ctx.beginPath();
+        ctx.rect(0, 0, w, Math.min(105, gy * 0.16));
+        ctx.rect(0, 72, edge, Math.max(0, gy - 28));
+        ctx.rect(w - edge, 72, edge, Math.max(0, gy - 28));
+        ctx.clip();
+        ctx.globalAlpha = 0.72;
+        ctx.drawImage(front, -frontOffset, 0, tileW, h);
+        ctx.drawImage(front, tileW - frontOffset, 0, tileW, h);
+        if (frontOffset < w) ctx.drawImage(front, -tileW - frontOffset, 0, tileW, h);
+        ctx.restore();
+      }
       drawDedicatedWorldAtmosphere(ctx, S.world, w, h, gy, now);
       return;
     }
@@ -1324,6 +1360,33 @@ const Scenery = (() => {
         ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.stroke();
         ctx.fillStyle = 'rgba(236,255,244,0.32)'; ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.35, Math.max(1, r * 0.2), 0, TAU); ctx.fill();
       }
+      // Due banchi di pesci attraversano la città a velocità diverse: silhouettes piccole,
+      // lontane e semitrasparenti, così danno scala al palazzo senza diventare ostacoli visivi.
+      ctx.globalAlpha = 0.36;
+      for (let school = 0; school < 2; school++) {
+        const dir = school ? -1 : 1, baseY = gy * (0.28 + school * 0.16);
+        for (let i = 0; i < 7; i++) {
+          const span = w + 260, raw = now * (24 + school * 13) * dir + i * 46 + school * 310;
+          const x = ((raw % span) + span) % span - 130;
+          const y = baseY + Math.sin(now * 0.65 + i * 1.7 + school) * 13;
+          const r = 5.5 + (i % 3) * 1.5;
+          ctx.fillStyle = i % 3 === 0 ? '#b8ffed' : '#67d5d2';
+          ctx.beginPath();
+          if (dir > 0) { ctx.moveTo(x - r, y); ctx.quadraticCurveTo(x + r * 0.25, y - r * 0.72, x + r, y); ctx.quadraticCurveTo(x + r * 0.25, y + r * 0.72, x - r, y); ctx.moveTo(x + r, y); ctx.lineTo(x + r * 1.65, y - r * 0.62); ctx.lineTo(x + r * 1.65, y + r * 0.62); ctx.closePath(); }
+          else { ctx.moveTo(x + r, y); ctx.quadraticCurveTo(x - r * 0.25, y - r * 0.72, x - r, y); ctx.quadraticCurveTo(x - r * 0.25, y + r * 0.72, x + r, y); ctx.moveTo(x - r, y); ctx.lineTo(x - r * 1.65, y - r * 0.62); ctx.lineTo(x - r * 1.65, y + r * 0.62); ctx.closePath(); }
+          ctx.fill();
+        }
+      }
+      // Piccole meduse bioluminescenti: pulsano e oscillano lentamente nella parte alta.
+      ctx.globalCompositeOperation = 'screen';
+      for (let i = 0; i < 3; i++) {
+        const x = (i * 0.37 * w + now * (8 + i * 3) + 80) % (w + 100) - 50;
+        const y = gy * (0.38 + i * 0.07) + Math.sin(now * 0.7 + i * 2) * 15;
+        const pulse = 0.75 + 0.25 * Math.sin(now * 2 + i);
+        ctx.fillStyle = `rgba(150,203,255,${(0.18 * pulse).toFixed(3)})`; ctx.beginPath(); ctx.ellipse(x, y, 12 * pulse, 8 * pulse, 0, Math.PI, TAU); ctx.fill();
+        ctx.strokeStyle = `rgba(189,229,255,${(0.32 * pulse).toFixed(3)})`; ctx.lineWidth = 1.5;
+        for (let t = -1; t <= 1; t++) { ctx.beginPath(); ctx.moveTo(x + t * 7, y); ctx.quadraticCurveTo(x + t * 11 + Math.sin(now * 1.4 + i + t) * 4, y + 10, x + t * 9, y + 22); ctx.stroke(); }
+      }
     } else if (world === 'enchanted') {
       // Lucciole raggruppate, con alone piccolo e pulsazione lenta.
       ctx.globalCompositeOperation = 'screen';
@@ -1334,6 +1397,19 @@ const Scenery = (() => {
         ctx.fillStyle = `rgba(202,255,157,${(0.11 * pulse).toFixed(3)})`; ctx.beginPath(); ctx.arc(x, y, 13, 0, TAU); ctx.fill();
         ctx.fillStyle = `rgba(241,255,194,${(0.65 * pulse).toFixed(3)})`; ctx.beginPath(); ctx.arc(x, y, 2.1, 0, TAU); ctx.fill();
       }
+      // Foglie lente e semi luminosi: movimento diagonale appena percettibile, tipico del bosco.
+      ctx.globalAlpha = 0.48;
+      for (let i = 0; i < 12; i++) {
+        const x = (rnd(i, 1541) * (w + 80) + now * (9 + i % 4 * 3) + w) % (w + 80) - 40;
+        const y = gy * (0.16 + rnd(i, 1542) * 0.43) + ((now * (5 + i % 3 * 2) + i * 29) % 100);
+        const a = Math.sin(now * 0.55 + i) * 0.7;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.fillStyle = i % 3 ? '#a8d78a' : '#d7a6ee';
+        ctx.beginPath(); ctx.moveTo(-7, 0); ctx.quadraticCurveTo(-1, -7, 8, -2); ctx.quadraticCurveTo(2, 7, -7, 0); ctx.fill();
+        ctx.strokeStyle = 'rgba(239,255,197,0.48)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(6, -1); ctx.stroke(); ctx.restore();
+      }
+      // Fasce di nebbia basse, molto morbide e in movimento lento.
+      ctx.globalAlpha = 0.10; ctx.fillStyle = '#c9e8d0';
+      for (let i = 0; i < 3; i++) { const x = ((i * 0.43 * w - now * (7 + i * 3)) % (w + 360) + (w + 360)) % (w + 360) - 180; const y = gy * (0.55 + i * 0.055); ctx.beginPath(); ctx.ellipse(x, y, 190 + i * 28, 18 + i * 3, 0, 0, TAU); ctx.fill(); }
     } else {
       // Pioggia fine inclinata e scie al neon, solo sul fondale.
       ctx.globalAlpha = 0.22; ctx.strokeStyle = '#9be8ff'; ctx.lineWidth = 1.3;
@@ -1348,6 +1424,15 @@ const Scenery = (() => {
         const y = gy * (0.67 + (i % 3) * 0.035);
         ctx.strokeStyle = i % 2 ? 'rgba(255,87,211,0.35)' : 'rgba(84,242,246,0.38)'; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 46, y + 2); ctx.stroke();
+      }
+      // Tre piccoli veicoli aerei attraversano i livelli alti, con scia neon molto sottile.
+      for (let i = 0; i < 3; i++) {
+        const span = w + 180, x = ((now * (34 + i * 14) + i * 390) % span) - 90;
+        const y = gy * (0.24 + i * 0.105) + Math.sin(now * 0.8 + i * 2) * 5;
+        const col = i % 2 ? 'rgba(244,95,224,0.82)' : 'rgba(91,238,247,0.86)';
+        ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 35, y + 4); ctx.lineTo(x - 4, y + 4); ctx.stroke();
+        ctx.fillStyle = 'rgba(16,25,54,0.92)'; ctx.beginPath(); ctx.moveTo(x - 16, y + 3); ctx.lineTo(x - 5, y - 4); ctx.lineTo(x + 20, y - 3); ctx.lineTo(x + 32, y + 3); ctx.lineTo(x + 18, y + 7); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = col; ctx.fillRect(x + 4, y - 1, 13, 2);
       }
     }
     ctx.restore();

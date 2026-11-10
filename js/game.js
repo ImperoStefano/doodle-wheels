@@ -176,10 +176,10 @@
     els.lenHint.textContent = I18n.t('len.hint.' + trackLen);
   }));
   els.lenHint.textContent = I18n.t('len.hint.' + trackLen);
-  // I mondi speciali sono eventi rari: il sorteggio avviene una volta per ogni nuova pista,
+  // I mondi speciali sono eventi a comparsa frequente ma non garantita: il sorteggio avviene una volta per ogni nuova pista,
   // soltanto sull'host. La scelta viene poi inviata con allReady, così tutti vedono lo stesso mondo.
-  // Il replay conserva invece la pista e il mondo appena giocati.
-  const WORLD_CHANCES = { paradise: 0.08, inferno: 0.08, atlantis: 0.04, enchanted: 0.04, neon: 0.04 };
+  // Il replay conserva invece la pista e il mondo appena giocati. Le probabilità sommano al 40%: il Classico resta presente nel 60% delle nuove gare.
+  const WORLD_CHANCES = { paradise: 0.08, inferno: 0.08, atlantis: 0.08, enchanted: 0.08, neon: 0.08 };
   function drawWorld() {
     const r = Math.random(); let edge = 0;
     for (const [world, chance] of Object.entries(WORLD_CHANCES)) { edge += chance; if (r < edge) return world; }
