@@ -159,7 +159,7 @@
       els.playerList.appendChild(li);
     });
     const c = Object.keys(Net.players).length;
-    els.lobby.classList.toggle('lobby--guest', !Net.isHost); if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; els.lobbyHint.textContent = ''; els.lenPicker.style.display = els.modePicker.style.display = 'block'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'block'; }
+    els.lobby.classList.toggle('lobby--guest', !Net.isHost); if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; updateStartBtn(c); els.lobbyHint.textContent = I18n.t('lobby.hostHint'); els.lenPicker.style.display = els.modePicker.style.display = 'block'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'block'; }
     else { els.btnStartRace.style.display = 'none'; els.lobbyHint.textContent = I18n.t('lobby.hostcfg'); els.lenPicker.style.display = els.modePicker.style.display = 'none'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'none'; }
   }
 
@@ -188,9 +188,14 @@
   let champN = 1, champ = null, lastCh = null;
   const fmtHintTxt = () => { if (fmtHint) fmtHint.textContent = I18n.t('fmt.hint.' + champN); };
   if (fmtPicker) fmtPicker.querySelectorAll('[data-fmt]').forEach(btn => btn.addEventListener('click', () => {
-    champN = +btn.dataset.fmt; fmtPicker.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('seg-btn--on', b === btn)); fmtHintTxt();
+    champN = +btn.dataset.fmt; fmtPicker.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('seg-btn--on', b === btn)); fmtHintTxt(); updateStartBtn();
   }));
   fmtHintTxt();
+  // il pulsante dice cosa succede premendolo: "Inizia la gara · 3 giocatori" / "Inizia il campionato · da solo"
+  function updateStartBtn(c) {
+    const n = c || Object.keys(Net.players).length;
+    els.btnStartRace.textContent = I18n.t(champN > 1 ? 'lobby.goChamp' : 'lobby.goRace') + ' · ' + (n <= 1 ? I18n.t('lobby.alone') : I18n.t('lobby.nPlayers', { n }));
+  }
   function pickSeasons(n) {   // la prima è sempre la classica (partenza tranquilla), le altre sono a tema e tutte diverse
     const themed = Terrain.SEASONS.map(q => q.key).filter(k => k !== 'classica'); for (let i = themed.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [themed[i], themed[j]] = [themed[j], themed[i]]; }
     return ['classica'].concat(themed.slice(0, n - 1));

@@ -35,7 +35,7 @@ const Sim = (() => {
   //  hold/holdMin/hopV/antiHop : vicino al suolo (fra holdMin e hold px: a contatto no, altrimenti si frena il rotolamento sullo spigolo) la velocità che si allontana dalla strada (<hopV px/tick) viene smorzata
   //  airDamp  : smorzamento del giro delle ruote in aria; slipMax : (0 = spento) tetto di giro rispetto all'avanzamento a terra —
   //  provato e scartato: anche a 2.0 rallenta troppo le partenze e le salite
-  const TUNE = { downAcc: 0.6, airGap: 4, hold: 16, holdMin: 1.5, hopV: 12, antiHop: 0.8, airDamp: 1, slipMax: 0, slipVmin: 2.5, speed: 1, sprint: 1.55, rampDown: -0.25, rampPitch: 0.9 };
+  const TUNE = { downAcc: 0.6, airGap: 4, hold: 16, holdMin: 1.5, hopV: 12, antiHop: 0.8, airDamp: 1, slipMax: 0, slipVmin: 2.5, speed: 1, sprint: 1.55, rampDown: -0.19, rampPitch: 0.9, flyCtl: 1, ctlK: 0.008, ctlD: 0.3, ctlMax: 0.02, ctlUp: 0.8, ctlDownMax: 0.15, ctlNear: 26, pop: 3.0 };
   const WHEEL_STATIC = 0.5;    // static friction (Matter takes the max of the two bodies)
   const GROUND_STATIC = 0.5;
   const AXLE_STIFFNESS = 1;
@@ -565,6 +565,31 @@ const Sim = (() => {
     Matter.Body.setAngularVelocity(wheel, w + dw);
   }
 
+  // Assetto in volo dopo una rampa (stile moto cross): sulla salita il muso segue la traiettoria, in discesa la bici si allinea alla pendenza del punto in cui sta per atterrare,
+  // così tocca con tutte e due le ruote (o la posteriore per prima) invece di piantarsi di muso. È una regolazione dolce della rotazione, non una spinta: la traiettoria resta quella della fisica.
+  function flightPitch(r) {
+    const c = r.chassis, v = c.velocity, fw = r.fw, rw = r.rw;
+    const h = Math.max(1, Math.min(fw.gapNow === undefined ? 99 : fw.gapNow, rw.gapNow === undefined ? 99 : rw.gapNow));
+    const gF = 0.36 + TUNE.rampDown, T = gF > 0.02 ? (-v.y + Math.sqrt(v.y * v.y + 2 * gF * h)) / gF : 60;   // tick all'atterraggio, con la gravità di volo
+    const xl = (fw.position.x + rw.position.x) / 2 + v.x * Math.min(T, 60), H = Terrain.height;
+    const thLand = -Math.atan((H(xl + 50) - H(xl - 50)) / 100);   // angolo dello schermo (y verso il basso): in salita il muso va in alto = angolo negativo
+    let thVel = Math.atan2(v.y, Math.max(1, v.x)); thVel = thVel < 0 ? thVel * TUNE.ctlUp : Math.min(thVel * TUNE.ctlUp, TUNE.ctlDownMax);
+    const w = Math.max(0, Math.min(1, 1 - (T - 6) / TUNE.ctlNear)), th = thVel * (1 - w) + thLand * w;
+    let d = th - c.angle; d -= Math.round(d / 6.2832) * 6.2832;
+    // velocità angolare "del pilota" (smorzata, limitata) e rotazione rigida di tutta la bici attorno a un perno: il centro (in aria) o la ruota dietro (ancora sulla rampa).
+    // Una rotazione rigida non aggiunge né toglie quantità di moto: cambia solo l'assetto, non la traiettoria.
+    const rearOn = rw.gapNow !== undefined && rw.gapNow <= TUNE.airGap;
+    if (rearOn) { Matter.Body.setAngularVelocity(c, c.angularVelocity * TUNE.rampPitch); r.flyW = c.angularVelocity; return; }   // la ruota dietro è ancora sulla rampa: il pilota tiene il muso (come prima), la regolazione parte quando è in aria
+    let om = (r.flyW || 0) * (1 - TUNE.ctlD) + TUNE.ctlK * d; om = Math.max(-TUNE.ctlMax, Math.min(TUNE.ctlMax, om)); r.flyW = om;
+    const px = (fw.position.x + rw.position.x) / 2, py = (fw.position.y + rw.position.y) / 2, cs = Math.cos(om), sn = Math.sin(om);
+    for (const b of [c, fw, rw]) {
+      const rx = b.position.x - px, ry = b.position.y - py;
+      Matter.Body.setPosition(b, { x: px + rx * cs - ry * sn, y: py + rx * sn + ry * cs });
+      Matter.Body.setVelocity(b, { x: b.velocity.x - om * ry, y: b.velocity.y + om * rx });
+    }
+    Matter.Body.setAngle(c, c.angle + om); Matter.Body.setAngularVelocity(c, om);
+  }
+
   // Aderenza: una ruota senza contatto viene richiamata a terra (gravità extra), e vicino al suolo un rimbalzo piccolo
   // viene smorzato lungo la normale della strada: la bici resta incollata alla pista invece di galleggiare sui saltelli.
   // I salti veri (rampe) restano: sopra HOP_V la velocità non viene toccata.
@@ -586,7 +611,8 @@ const Sim = (() => {
       }
     }
     // telaio: se tutte e due le ruote sono in aria cade con la stessa gravità extra
-    if (kk && r.rw.gapNow <= TUNE.airGap && TUNE.rampPitch < 1) Matter.Body.setAngularVelocity(r.chassis, Matter.Body.getAngularVelocity(r.chassis) * TUNE.rampPitch);   // il pilota tiene il muso: finché la ruota dietro è ancora sulla rampa la bici non si pianta di muso
+    if (kk && TUNE.flyCtl) flightPitch(r);
+    else if (kk && r.rw.gapNow <= TUNE.airGap && TUNE.rampPitch < 1) Matter.Body.setAngularVelocity(r.chassis, Matter.Body.getAngularVelocity(r.chassis) * TUNE.rampPitch);   // il pilota tiene il muso: finché la ruota dietro è ancora sulla rampa la bici non si pianta di muso
     if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + (kk ? TUNE.rampDown : TUNE.downAcc) });
   }
 
@@ -1066,7 +1092,9 @@ const Sim = (() => {
     const p = Terrain.rampAt ? Terrain.rampAt(fx, 60, 60) : null; if (!p || (p.kind !== 'kicker' && p.kind !== 'pipe' && p.kind !== 'gapland')) return;
     const lip = p.a + p.u1;
     if (!(px < lip && fx >= lip)) return;
-    r.rampFly = 1; r.rfT = 0; r.airJ = 1; r.jumpAt = elapsed;
+    r.rampFly = 1; r.rfT = 0; r.airJ = 1; r.jumpAt = elapsed; r.flyW = 0;
+    // più velocità = salto più grande: a gravità fissa l'arco cresce col quadrato della velocità, quindi il calcio del labbro è proporzionale alla velocità di uscita
+    if (TUNE.pop) { const k = TUNE.pop * (p.kind === 'kicker' ? (p.tier === 0 ? 0.75 : 1) : 1) * Math.max(0.7, Math.min(1.5, r.chassis.velocity.x / 6)); for (const q of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(q, { x: q.velocity.x, y: q.velocity.y - k }); }   // il labbro "molla": un piccolo calcio verso l'alto, come il precarico di una moto cross
   }
 
   function stepRacer(r, elapsed) {
