@@ -12,7 +12,7 @@
  */
 const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
-  let ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], PATCHES = [], PORTALS = [];
+  let SEASON = null, PACE = "classica", ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], PATCHES = [], PORTALS = [];
 
   const ZONE_TYPES = ['hills', 'ice', 'gravel', 'water', 'ramps', 'lava'];
   const ZONE_COLORS = {
@@ -45,7 +45,8 @@ const Terrain = (() => {
   function pseudo(x) { const v = Math.sin(x * 12.9898) * 43758.5453; return v - Math.floor(v); } // 0..1
 
   // ---- layout casuale: nessuna zona uguale alla precedente, tutte le specie ben distribuite ----
-  function generateRandomLayout(count = LENGTHS.lunga) {
+  function generateRandomLayout(count = LENGTHS.lunga, crazy = false, season = null) {
+    if (!crazy) return generateFreeLayout(count, season);
     const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
     const out = []; let bag = [];
     while (out.length < count) {
@@ -82,6 +83,59 @@ const Terrain = (() => {
       }
     }
     return out;
+  }
+
+  // ---- STAGIONI di gara: un tema raro per pista, che pesa biomi e tipi di ostacolo (bw = peso del bioma, km = moltiplicatore del tipo, m = umore generale,
+  //      bridge = probabilità del ponte su acqua/ghiaiato, lava = quanti vulcani al massimo, in frazione delle zone). Dipende SOLO dalla lista dei biomi (hash),
+  //      quindi host e client la ricavano uguale senza scambiarsi altro. Il generatore dei biomi la sceglie prima e rigenera finché l'hash coincide.
+  const SEASONS = [
+    { key: 'classica',   w: 4.5, bw: {}, km: {}, m: 1, bridge: null, lava: 0.2 },
+    { key: 'salti',      w: 1.0, bw: { ramps: 2.2, hills: 1.3, ice: 0.8, water: 0.8 }, km: { kicker: 2, twostage: 2, twin: 2, dropin: 2, jump: 2, ravine: 1.6, gapland: 2, pipe: 1.5, boulders: 0.4, whoops: 0.4, mud: 0.4, sand: 0.4, rack: 0.5 }, m: 1.05, bridge: null, lava: 0.2, ramps: true, add: [['kicker', 0.35], ['twin', 0.25], ['twostage', 0.25], ['dropin', 0.2], ['jump', 0.3]] },
+    { key: 'tranquilla', w: 1.0, bw: { hills: 1.6, water: 1.5, ramps: 1.2, lava: 0, ice: 0.6, gravel: 0.8 }, km: { ravine: 0.3, gapland: 0.2, pipe: 0.3, rack: 0.4, boulders: 0.5, twostage: 0.5 }, m: 0.55, bridge: 0.8, lava: 0, add: [['bowl', 0.3], ['whoops', 0.25], ['jump', 0.15]] },
+    { key: 'palude',     w: 1.0, bw: { water: 3, gravel: 0.9, hills: 0.8, ramps: 0.5, ice: 0.4, lava: 0.2 }, km: { mud: 3, sand: 2.5, ripples: 2.5, holes: 1.5, whoops: 1.5, kicker: 0.5, pipe: 0, gapland: 0 }, m: 0.95, bridge: 0.8, lava: 0.1, add: [['mud', 0.45], ['sand', 0.35], ['ripples', 0.3], ['holes', 0.2]] },
+    { key: 'gelo',       w: 1.0, bw: { ice: 3, hills: 1, water: 0.6, gravel: 0.5, ramps: 0.8, lava: 0 }, km: { ridges: 2, rack: 1.6, bowl: 1.6, arch: 1.4, pipe: 1.8, twin: 1.5, mud: 0, sand: 0, kicker: 0.6 }, m: 1, bridge: null, lava: 0, add: [['ridges', 0.35], ['rack', 0.3], ['arch', 0.25], ['bowl', 0.2]] },
+    { key: 'fuoco',      w: 0.8, bw: { lava: 2.4, gravel: 1.2, hills: 0.7, ice: 0.2, water: 0.3, ramps: 0.8 }, km: { gapland: 2, boulders: 1.8, ridges: 1.6, rack: 1.5 }, m: 1.1, bridge: null, lava: 0.34, add: [['boulders', 0.3], ['ridges', 0.3], ['rack', 0.2]] },
+    { key: 'canyon',     w: 1.0, bw: { gravel: 3, water: 1.3, hills: 0.9, ramps: 0.7, ice: 0.4, lava: 0.5 }, km: { ravine: 2, arch: 2, stairs: 2.5, pipe: 1.6, twostage: 1.6, rack: 1.4, kicker: 0.6 }, m: 1, bridge: 0.6, lava: 0.2, add: [['stairs', 0.35], ['arch', 0.3], ['ravine', 0.3], ['rack', 0.2]] },
+  ];
+  const SEASON_W = SEASONS.reduce((a, q) => a + q.w, 0);
+  function seasonOf(keys) {   // stessa lista di biomi → stessa stagione, su ogni dispositivo
+    let r = (hashStr(keys.join(',') + '#stagione') % 100003) / 100003 * SEASON_W;
+    for (const q of SEASONS) { r -= q.w; if (r <= 0) return q; }
+    return SEASONS[0];
+  }
+  // ---- RITMO: curva di difficoltà lungo la pista (t = 0 prima zona … 1 ultima). Moltiplica il "budget" di ostacoli di ogni zona.
+  //      Sempre un inizio morbido e un finale pieno; in mezzo cambia: sale, a onde, a montagne russe o con un respiro a metà.
+  const PACES = {
+    classica: t => 0.55 + 0.75 * Math.sin(Math.min(1, t / 0.7) * Math.PI / 2) - (t > 0.7 ? 0.45 * Math.sin((t - 0.7) / 0.3 * Math.PI) : 0) + (t > 0.9 ? 0.2 : 0),
+    crescendo: t => 0.45 + 0.95 * t,
+    onda: t => 0.75 + 0.5 * Math.sin(t * Math.PI * 3.2 - 0.6) + 0.25 * t,
+    montagne: t => 0.5 + 0.8 * (Math.floor(t * 9) % 2) + 0.35 * t,
+    respiro: t => 0.5 + 0.9 * Math.min(1, t * 2.2) * (t < 0.45 ? 1 : 0) + (t >= 0.45 && t < 0.62 ? 0.2 : 0) + (t >= 0.62 ? 0.55 + 0.7 * (t - 0.62) / 0.38 : 0),
+  };
+  const PACE_KEYS = Object.keys(PACES);
+  // "costo" di difficoltà di ogni ostacolo: la zona ha un budget e pesca finché c'è margine (un burrone vale più di un gruppo di massi)
+  const COST = { boulders: 0.6, whoops: 0.6, ridges: 0.6, bowl: 0.7, drop: 0.7, jump: 1.0, kicker: 1.0, twostage: 1.1, twin: 1.3, dropin: 1.2, mud: 0.8, sand: 0.6, holes: 0.9, ripples: 0.6, stairs: 0.8, logs: 0.9, rack: 0.8, arch: 1.0, ravine: 1.6, pipe: 1.6, gapland: 2.0 };
+  // pezzo forte dell'ultima zona (se la stagione e il "sapore" della gara lo permettono)
+  const FINALE = { hills: ['ravine', 'twostage', 'gapland'], ice: ['pipe', 'ravine', 'twin'], gravel: ['pipe', 'ravine', 'twostage'], water: ['twostage', 'twin'], ramps: ['ravine', 'twin', 'gapland'], lava: ['gapland'] };
+
+  // Gara normale: ogni pista estrae un "peso" casuale per ogni bioma, quindi il mix cambia da gara a gara e un bioma (acqua, canyon, vulcano…) può anche
+  // mancare del tutto: niente garanzie su ponti o laghi. Mai due zone uguali di fila, mai il vulcano subito dopo la partenza, almeno 4 biomi diversi.
+  function generateFreeLayout(count, want) {
+    let sr = Math.random() * SEASON_W, S = SEASONS[0]; for (const q of SEASONS) { sr -= q.w; if (sr <= 0) { S = q; break; } }   // stagione scelta in anticipo
+    if (want) S = SEASONS.find(q => q.key === want) || S;   // il campionato la impone
+    let fallback = null;
+    for (let tries = 0; tries < 600; tries++) {
+      const w = {}; ZONE_TYPES.forEach(k => { w[k] = (Math.random() < 0.18 ? 0.12 : 0.45 + 1.15 * Math.random()) * (S.bw[k] !== undefined ? S.bw[k] : 1); });
+      const out = [];
+      while (out.length < count) {
+        const prev = out[out.length - 1], nl = out.filter(k => k === 'lava').length, c = ZONE_TYPES.filter(k => k !== prev && !(out.length === 0 && k === 'lava') && !(k === 'lava' && (S.lava === 0 || nl >= Math.max(1, Math.ceil(count * (S.lava || 0.2))))) && w[k] > 0);   // vulcano: al massimo uno ogni cinque zone (ogni lago scioglie la ruota)
+        let tot = 0; c.forEach(k => { tot += w[k]; }); let r = Math.random() * tot, pick = c[c.length - 1];
+        for (const k of c) { r -= w[k]; if (r <= 0) { pick = k; break; } }
+        out.push(pick);
+      }
+      if (new Set(out).size >= Math.min(4, count)) { if (seasonOf(out) === S) return out; fallback = fallback || out; }   // la stagione la ricavano tutti dall'hash: si rigenera finché coincide
+    }
+    return fallback || ZONE_TYPES.slice(0, count);
   }
 
   // ---- onde proprie di ogni bioma (si annullano ai bordi della zona) -------------------------
@@ -239,28 +293,28 @@ const Terrain = (() => {
         return Object.assign({ kind, len: u2 + rr + 70, D, pw, s, u1, ex, u2, rr, tier }, rp);
       }
       case 'kicker': {   // rampa di lancio isolata, a tre altezze: la piccola è un dosso da salto, la grande lancia davvero (più alta = più ripida e più lunga)
-        const r0 = rnd(); return mkKicker(r0 < 0.3 ? 0 : r0 < 0.62 ? 1 : 2, rnd);
+        return mkKicker(rnd() < 0.45 ? 0 : 1, rnd);   // solo piccole e medie: le rampe alte bloccavano
       }
       case 'twostage': {   // rampa a due stadi: salita dolce, pianerottolo, seconda salita ripida (più spinta al labbro)
-        const h1 = 30 + Math.round(rnd() * 12), h2 = 62 + Math.round(rnd() * 34), r1 = mkRamp(h1, 13 + rnd() * 3, 120), r2 = mkRamp(h2, 34 + rnd() * 3, 190);
+        const h1 = 30 + Math.round(rnd() * 12), h2 = 40 + Math.round(rnd() * 24), r1 = mkRamp(h1, 13 + rnd() * 3, 120), r2 = mkRamp(h2, 29 + rnd() * 3, 170);
         const s = 70, s2 = Math.round(s + r1.run + 50 + rnd() * 40), u1 = Math.round(s2 + r2.run), ex = 20;
         return Object.assign({ kind: 'kicker', len: u1 + ex + 130, s, u1, ex, tier: 2, s2, r2 }, r1, { H: h1 + h2 });
       }
       case 'twin': {   // gemelle: una rampa piccola/media e una più grande, una dopo l'altra (due rampe normali, piazzate insieme)
-        const t1 = rnd() < 0.5 ? 0 : 1, t2 = t1 === 0 ? 1 + (rnd() < 0.5 ? 1 : 0) : 2, A = mkKicker(t1, rnd), B = mkKicker(t2, rnd), off = A.u1 + A.ex + 190 - B.s;
+        const t1 = rnd() < 0.6 ? 0 : 1, t2 = 1, A = mkKicker(t1, rnd), B = mkKicker(t2, rnd), off = A.u1 + A.ex + 190 - B.s;
         return { kind, len: off + B.len, parts: [[A, 0], [B, off]] };
       }
       case 'dropin': {   // discesa e lancio: scivolo ripido (velocità), tratto piatto, rampa, atterraggio sul piano basso e lunga risalita
-        const D = 70 + Math.round(rnd() * 50), ex = Math.round(D * 2.5), K = mkKicker(rnd() < 0.5 ? 1 : 2, rnd), s = 70, offK = s + ex + 150 - K.s;
+        const D = 70 + Math.round(rnd() * 50), ex = Math.round(D * 2.5), K = mkKicker(rnd() < 0.4 ? 0 : 1, rnd), s = 70, offK = s + ex + 150 - K.s;
         const s2 = offK + K.u1 + K.ex + 280, rr = Math.round(210 + D * 2.2);
         return { kind, len: s2 + rr + 70, parts: [[{ kind: 'drop', len: s2 + rr + 70, D, s, ex, s2, rr }, 0], [K, offK]] };
       }
       case 'pipe': {   // mezzo tubo: discesa, fondo, curva concava (R 250, fino a 52°) e labbro appena più alto della partenza: la discesa dà la velocità per risalire
-        const D = 100 + Math.round(rnd() * 30), Ht = Math.round(rnd() * 25), rp = mkRamp(D + Ht, 52, 250), s0 = 80, dl = Math.round(D * 2.6), s = s0 + dl + 140, u1 = Math.round(s + rp.run), ex = 20;
+        const D = 90 + Math.round(rnd() * 20), Ht = Math.round(rnd() * 10), rp = mkRamp(D + Ht, 48, 250), s0 = 80, dl = Math.round(D * 2.6), s = s0 + dl + 140, u1 = Math.round(s + rp.run), ex = 20;
         return Object.assign({ kind, len: u1 + ex + 140, D, Ht, s0, dl, s, u1, ex, tier: 2 }, rp);
       }
       case 'gapland': {   // rampa, vuoto largo, parete, cresta e discesa: il volo deve arrivare sulla pendenza. Chi cade viene riportato sulla cresta
-        const tier = rnd() < 0.5 ? 1 : 2, H = tier === 1 ? 60 + Math.round(rnd() * 24) : 100 + Math.round(rnd() * 30), rp = mkRamp(H, tier === 1 ? 29 : 32, tier === 1 ? 160 : 210);
+        const tier = 1, H = tier === 1 ? 60 + Math.round(rnd() * 24) : 100 + Math.round(rnd() * 30), rp = mkRamp(H, tier === 1 ? 29 : 32, tier === 1 ? 160 : 210);
         const s = 70, u1 = Math.round(s + rp.run), ex = 34, pw = (tier === 1 ? 190 : 240) + Math.round(rnd() * 50), D = 110 + Math.round(rnd() * 50), Hl = Math.round(H * 0.45), rr = 40, u2 = u1 + ex + pw, u3 = u2 + rr + 60, dl = Math.round(Hl / Math.tan(18 * Math.PI / 180));
         return Object.assign({ kind, len: u3 + dl + 130, D, pw, s, u1, ex, u2, rr, u3, dl, Hl, tier }, rp);
       }
@@ -285,26 +339,54 @@ const Terrain = (() => {
   };
   // seconda scelta (più leggera): ostacoli corti, integrati nel bioma, che si aggiungono al terreno a tema se c'è posto
   const LIGHT = { boulders: 1, whoops: 1, ridges: 1, bowl: 1, jump: 1, drop: 1, kicker: 1 };
-  const PATCH_EXTRA = {   // l'ordine conta: si pesca nell'ordine, quindi i terreni nuovi (rampe, avvallamenti) stanno in testa
-    hills:  [['kicker', 0.3], ['dropin', 0.14], ['twin', 0.14], ['bowl', 0.3], ['jump', 0.2], ['drop', 0.2], ['boulders', 0.2]],
-    gravel: [['pipe', 0.32], ['kicker', 0.28], ['twostage', 0.14], ['bowl', 0.25], ['jump', 0.25], ['drop', 0.2], ['boulders', 0.15]],
-    ramps:  [['kicker', 0.4], ['dropin', 0.14], ['twin', 0.14], ['jump', 0.22], ['bowl', 0.2], ['whoops', 0.25], ['drop', 0.1], ['boulders', 0.1]],
-    ice:    [['pipe', 0.2], ['twin', 0.2], ['bowl', 0.3], ['kicker', 0.25], ['ridges', 0.3], ['jump', 0.2]],
-    water:  [['twostage', 0.2], ['kicker', 0.25], ['bowl', 0.15], ['jump', 0.2], ['boulders', 0.2], ['whoops', 0.2]],   // laguna: rampe e dossi di sabbia fra un bacino e l'altro
-    lava:   [['gapland', 0.45], ['kicker', 0.25], ['jump', 0.15], ['boulders', 0.45], ['ridges', 0.45]],  // vulcano: rampe di basalto, fossati di lava, massi e creste sulla riva
+  const PATCH_EXTRA = {   // pesi (non ordine): si pesca in proporzione a peso × sapore della gara × moltiplicatore della stagione
+    hills:  [['kicker', 0.22], ['dropin', 0.14], ['twin', 0.14], ['bowl', 0.3], ['jump', 0.2], ['drop', 0.2], ['boulders', 0.2]],
+    gravel: [['pipe', 0.32], ['kicker', 0.2], ['twostage', 0.14], ['bowl', 0.25], ['jump', 0.25], ['drop', 0.2], ['boulders', 0.15]],
+    ramps:  [['kicker', 0.3], ['dropin', 0.14], ['twin', 0.14], ['jump', 0.22], ['bowl', 0.2], ['whoops', 0.25], ['drop', 0.1], ['boulders', 0.1]],
+    ice:    [['pipe', 0.2], ['twin', 0.2], ['bowl', 0.3], ['kicker', 0.18], ['ridges', 0.3], ['jump', 0.2]],
+    water:  [['twostage', 0.2], ['kicker', 0.18], ['bowl', 0.15], ['jump', 0.2], ['boulders', 0.2], ['whoops', 0.2]],   // laguna: rampe e dossi di sabbia fra un bacino e l'altro
+    lava:   [['gapland', 0.45], ['kicker', 0.18], ['jump', 0.15], ['boulders', 0.45], ['ridges', 0.45]],  // vulcano: rampe di basalto, fossati di lava, massi e creste sulla riva
   };
   function planPatches(rnd, force) {
     PATCHES = [];
+    const S = SEASON || SEASONS[0];
     // "sapore" della gara: ogni pista accentua alcuni terreni e ne riduce altri, così non vince sempre la stessa forma
-    const flavor = {}; ['arch', 'mud', 'holes', 'stairs', 'ripples', 'logs', 'rack', 'sand', 'boulders', 'whoops', 'ridges', 'bowl', 'jump', 'drop', 'ravine', 'kicker', 'twostage', 'twin', 'dropin', 'pipe', 'gapland'].forEach(k => { flavor[k] = 0.2 + 2.1 * rnd() * rnd() + 0.5 * rnd(); });
+    const flavor = {}; ['arch', 'mud', 'holes', 'stairs', 'ripples', 'logs', 'rack', 'sand', 'boulders', 'whoops', 'ridges', 'bowl', 'jump', 'drop', 'ravine', 'kicker', 'twostage', 'twin', 'dropin', 'pipe', 'gapland'].forEach(k => { const base = 0.2 + 2.1 * rnd() * rnd() + 0.5 * rnd(); flavor[k] = (rnd() < 0.3 ? 0 : 1) * base; });   // ~30% dei generi manca del tutto in questa gara
+    const RAMPKINDS = ['kicker', 'twostage', 'twin', 'dropin', 'pipe', 'gapland'];
+    const noRamps = rnd() < 0.2;
+    if (noRamps && !S.ramps) RAMPKINDS.forEach(k => { flavor[k] = 0; });   // una gara su cinque senza rampe (non nella stagione dei salti)
+    // la stagione porta in primo piano i suoi tipi (almeno un po' di presenza) e spegne quelli che non le appartengono
+    for (const k in S.km) { if (S.km[k] === 0) flavor[k] = 0; else if (S.km[k] >= 1.5) flavor[k] = Math.max(flavor[k], 0.6); }
+    const crazyMode = !!(force && force.crazy), mood = (rnd() < 0.3 ? 0.55 : rnd() < 0.6 ? 0.85 : 1.15) * S.m * (crazyMode ? 2.2 : 1);   // gara tranquilla / media / piena
+    // ritmo della pista
+    const pr = rnd() * (PACE_KEYS.length + 1); PACE = pr < 2 ? 'classica' : PACE_KEYS[Math.min(PACE_KEYS.length - 1, Math.floor(pr) - 1)];
+    const real = ZONES.filter(z => z.key !== 'start' && z.key !== 'finish'), lastReal = real[real.length - 1];
     ZONES.forEach(z => {
-      z.patches = [];
+      z.patches = []; z.budget = 0;
       if (force && (force.nopatch || (force.only && !force[z.index]))) return;
       const forced = force && force[z.index];
-      const tbl = PATCH_TABLE[z.key];
-      const pick = t2 => { const r0 = rnd(); let acc = 0; for (const [k, pr] of t2) { acc += Math.min(0.95, pr * flavor[k]); if (r0 < acc) return [k]; } return []; };
-      let picks = forced ? forced : (tbl ? pick(tbl) : []);
-      if (!forced && PATCH_EXTRA[z.key]) picks = picks.concat(pick(PATCH_EXTRA[z.key]), pick(PATCH_EXTRA[z.key]));   // fino a due ostacoli corti (rampe, burroni, dossi) oltre al terreno a tema
+      const ri = real.indexOf(z), t = ri < 0 ? 0 : real.length > 1 ? ri / (real.length - 1) : 0;
+      const budget = z.budget = ri < 0 ? 0 : mood * 1.45 * Math.max(0.15, PACES[PACE](t)) * (0.45 + 1.1 * Math.pow(rnd(), 1.1)) * (ri === 0 ? 0.55 : 1);   // la prima zona è sempre morbida
+      const cands = [];
+      for (const [k, p] of (PATCH_TABLE[z.key] || []).concat(PATCH_EXTRA[z.key] || []).concat(z.key === 'lava' ? [] : (S.add || []))) { const w = p * flavor[k] * (S.km[k] !== undefined ? S.km[k] : 1); if (w > 0) cands.push([k, w]); }
+      const picks = [];
+      if (forced) forced.forEach(k => picks.push(k));
+      else if (cands.length) {
+        let left = budget;
+        // pezzo forte nell'ultima zona: un finale spettacolare (meno spesso nella stagione tranquilla), se la gara non l'ha spento del tutto
+        if (z === lastReal && ri > 0 && rnd() < (S.key === 'tranquilla' ? 0.35 : 0.8)) {
+          const fin = (FINALE[z.key] || []).filter(k => flavor[k] > 0 && !(S.km[k] === 0));
+          if (fin.length) { const k = fin[Math.floor(rnd() * fin.length)]; picks.push(k); left -= COST[k] * 0.6; }
+        }
+        const maxN = crazyMode ? 4 : 3;
+        while (picks.length < maxN && left > 0.28) {
+          const ws = cands.map(([k, w]) => w * (COST[k] <= left + 0.8 ? 1 : 0.15)), tot = ws.reduce((a, b) => a + b, 0);
+          if (!(tot > 0) || rnd() >= Math.min(0.93, 0.35 + left * 0.55)) break;
+          let r0 = rnd() * tot, ch = cands[0][0]; for (let i = 0; i < ws.length; i++) { r0 -= ws[i]; if (r0 <= 0) { ch = cands[i][0]; break; } }
+          picks.push(ch); left -= COST[ch];
+        }
+        picks.sort((a, b) => (LIGHT[a] ? 1 : 0) - (LIGHT[b] ? 1 : 0));   // prima i pezzi lunghi, i corti riempiono gli spazi che restano
+      }
       picks.forEach(kind => {
         const spec = typeof kind === 'string' ? makePatch(kind, rnd) : kind;
         if (!spec) return;
@@ -420,6 +502,7 @@ const Terrain = (() => {
   function applyLayout(layoutKeys, force) {
     const keys = (layoutKeys && layoutKeys.length ? layoutKeys : generateRandomLayout()).slice();
     const rnd = mulberry32(hashStr(keys.join(',')));
+    SEASON = force && force.season ? SEASONS.find(q => q.key === force.season) || SEASONS[0] : (force && (force.crazy || force.only || force.nopatch)) ? SEASONS[0] : seasonOf(keys);   // pazza e prove forzate: stagione classica
     ZONES = []; BRIDGES = []; lastZ = 0;
     let x = TRACK_START, level = 0;
 
@@ -442,7 +525,7 @@ const Terrain = (() => {
     TRACK_END = x;
     FINISH_X = ZONES[ZONES.length - 1].start + 300;
 
-    if (!(force && force.nogap)) planGaps(rnd);
+    if (!(force && force.nogap)) planGaps(rnd, !!(force && force.crazy));
     planPatches(rnd, force);
     PORTALS = []; if (force && force.crazy) planPortals(keys, force.np);
     FLOWERS = generateFlowers(rnd);
@@ -453,11 +536,11 @@ const Terrain = (() => {
   //  - zona acqua  -> fiume profondo + ponte ad arco in pietra
   //  - zona canyon -> crepaccio profondo + ponte sospeso di assi e corde
   // Il ponte è la quota su cui guidano le ruote; il vuoto sotto è solo terreno "naturale" più basso.
-  function planGaps(rnd) {
+  function planGaps(rnd, crazy) {
     const cand = ZONES.filter(z => z.key === 'water' || z.key === 'gravel');   // (il vulcano ha sempre il suo lago di lava: vedi sotto)
     const wants = new Map();
-    cand.forEach(z => wants.set(z, rnd() < (z.key === 'water' ? 0.85 : 0.8)));
-    if (cand.length && ![...wants.values()].some(Boolean)) wants.set(cand[Math.floor(rnd() * cand.length)], true); // almeno un ponte
+    cand.forEach(z => wants.set(z, rnd() < (crazy ? (z.key === 'water' ? 0.85 : 0.8) : (SEASON.bridge != null ? SEASON.bridge : (z.key === 'water' ? 0.55 : 0.5)))));
+    if (crazy && cand.length && ![...wants.values()].some(Boolean)) wants.set(cand[Math.floor(rnd() * cand.length)], true); // modalità pazza: almeno un ponte; in gara normale può non esserci
 
     ZONES.forEach(z => {
       if (z.key === 'water') {
@@ -535,6 +618,14 @@ const Terrain = (() => {
 
   const baseHeight = x => zoneBase(zoneAt(x), x);   // quota di riva: senza vuoti né ponti (serve a chi disegna il vuoto)
 
+  // Tratto "pulito": niente ostacoli, vuoti, ponti né forti pendenze nei dintorni. Serve al suggerimento "sei lento": se la bici è lenta dentro un fossato, su una
+  // rampa o in salita ripida non è colpa della forma della ruota, quindi lì il suggerimento non deve comparire.
+  function plainAt(x, m) {
+    m = m || 90; const z = zoneAt(x); if (!z || z.key === 'lava' || z.key === 'finish' || z.key === 'start') return false;   // vulcano: la lava frena e basta; traguardo e partenza: niente suggerimenti
+    if (z.gap && x > z.gap.g0 - 160 && x < z.gap.g1 + 160) return false;
+    for (const q of [z, ZONES[z.index - 1], ZONES[z.index + 1]]) if (q && q.patches) for (const p of q.patches) if (x > p.a - m && x < p.b + m) return false;
+    const sl = (height(x + 50) - height(x - 50)) / 100; return Math.abs(sl) < 0.3;
+  }
   function bridgeAt(x) { for (const b of BRIDGES) if (x >= b.start && x <= b.end) return b; return null; }
 
   // Pelo dell'acqua: nelle zone acqua, 28px sotto la riva. Dove il fondo sta più in alto non c'è acqua.
@@ -620,12 +711,12 @@ const Terrain = (() => {
   applyLayout(generateRandomLayout());
 
   return {
-    generateRandomLayout, applyLayout, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
+    generateRandomLayout, applyLayout, plainAt, SEASONS, seasonOf, PACES, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
     frictionAt: x => { const f = FRICTION[zoneAt(x).key] || 0.9; return f < 0.9 && onRamp(x) ? 0.9 : f; },   // il piano della rampa tiene sempre (anche nel ghiaccio)
     colorAt: x => zoneAt(x).color || '#059669',
     zoneKeyAt: x => zoneAt(x).key,
     LENGTHS,
-    get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; },
+    get SEASON() { return SEASON; }, get PACE() { return PACE; }, get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; },
     get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; }, get LILIES() { return LILIES; },
     get BRIDGES() { return BRIDGES; }, get PATCHES() { return PATCHES; }, get PORTALS() { return PORTALS; }, PORTAL_RY: 88, landOk, ravineAt, rampAt, onRamp, makePatch, mkRamp, rampY,
     // tipo di presa speciale sotto la ruota: 'mud' (fango), 'ice' (ghiaccio) o null

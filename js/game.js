@@ -159,8 +159,8 @@
       els.playerList.appendChild(li);
     });
     const c = Object.keys(Net.players).length;
-    if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; els.lobbyHint.textContent = ''; els.lenPicker.style.display = els.modePicker.style.display = 'block'; }
-    else { els.btnStartRace.style.display = 'none'; els.lobbyHint.textContent = I18n.t('lobby.hostcfg'); els.lenPicker.style.display = els.modePicker.style.display = 'none'; }
+    if (Net.isHost) { els.btnStartRace.disabled = c < 1; els.btnStartRace.style.display = 'block'; els.lobbyHint.textContent = ''; els.lenPicker.style.display = els.modePicker.style.display = 'block'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'block'; }
+    else { els.btnStartRace.style.display = 'none'; els.lobbyHint.textContent = I18n.t('lobby.hostcfg'); els.lenPicker.style.display = els.modePicker.style.display = 'none'; const fp = document.getElementById('fmt-picker'); if (fp) fp.style.display = 'none'; }
   }
 
   // Scelta lunghezza pista (solo host). Le durate sono quelle misurate in simulazione con ruote diverse.
@@ -182,15 +182,44 @@
     els.modeHint.textContent = I18n.t('mode.hint.' + (crazy ? 'crazy' : 'normal'));
   }));
   els.modeHint.textContent = I18n.t('mode.hint.normal');
+  // ---- campionato: serie di 3 o 5 gare, una stagione diversa ciascuna, punti a ogni arrivo (l'ultima vale doppio) ----
+  //   champ (host) = { n, i, seasons[], totals{id:{id,name,color,pts}} } · (client) = { n, i, seasons[] } ricevuto da goToDraw / restartToDraw
+  const CHAMP_PTS = [10, 7, 5, 3, 2], fmtPicker = document.getElementById('fmt-picker'), fmtHint = document.getElementById('fmt-hint'), btnRes = els.btnRematch, resWait = document.getElementById('res-wait');
+  let champN = 1, champ = null, lastCh = null;
+  const fmtHintTxt = () => { if (fmtHint) fmtHint.textContent = I18n.t('fmt.hint.' + champN); };
+  if (fmtPicker) fmtPicker.querySelectorAll('[data-fmt]').forEach(btn => btn.addEventListener('click', () => {
+    champN = +btn.dataset.fmt; fmtPicker.querySelectorAll('[data-fmt]').forEach(b => b.classList.toggle('seg-btn--on', b === btn)); fmtHintTxt();
+  }));
+  fmtHintTxt();
+  function pickSeasons(n) {   // la prima è sempre la classica (partenza tranquilla), le altre sono a tema e tutte diverse
+    const themed = Terrain.SEASONS.map(q => q.key).filter(k => k !== 'classica'); for (let i = themed.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [themed[i], themed[j]] = [themed[j], themed[i]]; }
+    return ['classica'].concat(themed.slice(0, n - 1));
+  }
+  function champPublic() { return champ ? { n: champ.n, i: champ.i, seasons: champ.seasons } : null; }
+  function startChamp() { champ = champN > 1 ? { n: champN, i: 0, seasons: pickSeasons(champN), totals: {} } : null; }
+  function updateChampBanner() {
+    const el = document.getElementById('champ-banner'); if (!el) return;
+    if (!champ) { el.style.display = 'none'; return; }
+    el.textContent = I18n.t('champ.banner', { i: champ.i + 1, n: champ.n }) + (crazy ? '' : ' · ' + I18n.t('season.' + champ.seasons[champ.i])) + (champ.i === champ.n - 1 && champ.n >= 3 ? ' · ' + I18n.t('champ.double') : '');
+    el.style.display = 'block';
+  }
+  // l'host assegna i punti a fine gara e ne manda la classifica insieme ai risultati
+  function champAward(st) {
+    const last = champ.i >= champ.n - 1, mul = last ? 2 : 1, gains = {};
+    st.forEach((r, k) => { const g = r.finished ? (CHAMP_PTS[k] || 1) * mul : 0; gains[r.id] = g; const t = champ.totals[r.id] = champ.totals[r.id] || { id: r.id, name: r.name, color: r.color, pts: 0 }; t.name = r.name; t.color = r.color; t.pts += g; });
+    const table = Object.values(champ.totals).map(t => ({ id: t.id, name: t.name, color: t.color, pts: t.pts, gain: gains[t.id] || 0 })).sort((a, b) => b.pts - a.pts || b.gain - a.gain);
+    return { n: champ.n, i: champ.i, season: crazy ? null : Terrain.SEASON.key, final: last, gains, table };
+  }
 
   I18n.onChange(() => {
+    fmtHintTxt(); if (document.body.dataset.screen === 'results' && lastCh) { try { renderChamp(lastCh); } catch (e) {} }
     els.lenHint.textContent = I18n.t('len.hint.' + trackLen); els.modeHint.textContent = I18n.t('mode.hint.' + (crazy ? 'crazy' : 'normal'));
     if (els.btnRedrawTrigger && els.btnRedrawTrigger.textContent) els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft });
     if (lastCallEnd) updateLastCall();
     try { if (els.lobby.classList.contains('screen--active')) renderPlayerList(); } catch (e) {}
   });
 
-  els.btnStartRace.addEventListener('click', () => { if (Net.isHost) { wheels = {}; Net.broadcast({ type: 'goToDraw' }); enterDrawPhase(); } });
+  els.btnStartRace.addEventListener('click', () => { if (Net.isHost) { wheels = {}; startChamp(); Net.broadcast({ type: 'goToDraw', champ: champPublic() }); enterDrawPhase(); } });
   els.btnClear.addEventListener('click', () => preRaceDrawer.clear());
   els.drawCanvas.addEventListener('pointerup', () => els.btnSubmitWheel.disabled = !preRaceDrawer.isValid());
   els.btnSubmitWheel.addEventListener('click', () => submitWheel());
@@ -224,6 +253,7 @@
     if (document.body.dataset.screen !== 'race' || !raceLoopHandle || els.redrawModal.style.display === 'flex') return;
     const t = performance.now(); if (t - lastSprintTry < 120) return; lastSprintTry = t;
     try { if (navigator.vibrate) navigator.vibrate(14); } catch (_) {}
+    { const tip = document.getElementById('sprint-tip'); if (tip) tip.style.display = 'none'; }
     if (Net.isHost) Sim.sprint(Net.myId); else Net.send({ type: 'sprint' });
   }
   window.addEventListener('keydown', e => {
@@ -236,7 +266,10 @@
     const b = els.btnSprint; if (!b || !me) return;
     const p = me.sp === undefined ? 1 : me.sp, on = !!me.so;
     b.style.setProperty('--p', p); b.classList.toggle('ready', !on && p >= 1); b.classList.toggle('on', on); b.classList.toggle('cool', !on && p < 1);
+    const cd = document.getElementById('sprint-cd');   // secondi che mancano al prossimo scatto, in trasparenza sopra il fulmine
+    if (cd) { const sec = (!on && p < 1) ? Math.max(1, Math.ceil((1 - p) * SPRINT_RECHARGE_S - 0.001)) : 0; if (cd.dataset.s !== String(sec)) { cd.dataset.s = String(sec); cd.textContent = sec ? sec : ''; } }
   }
+  const SPRINT_RECHARGE_S = 22;   // = SPRINT_RECHARGE_MS della fisica
   window.addEventListener('keydown', e => {
     if (e.repeat || (e.code !== 'Space' && e.code !== 'ArrowUp' && e.code !== 'KeyW') || document.body.dataset.screen !== 'race') return;
     const tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable)) return;
@@ -247,13 +280,13 @@
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => { if (els.btnJump) els.btnJump.addEventListener(ev, () => els.btnJump.classList.remove('press')); });
 
   Net.on('data', ({ from, data }) => {
-    if (data.type === 'goToDraw') enterDrawPhase();
+    if (data.type === 'goToDraw') { champ = data.champ || null; enterDrawPhase(); }
     if (data.type === 'wheel' && Net.isHost) receiveWheel(from, data.vertices);
     if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; Terrain.applyLayout(data.trackLayout, crazy ? { crazy: true, np: data.np } : undefined); startCountdown(data.startTime); }
     if (data.type === 'snap') { if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); }
-    if (data.type === 'results') showResults(data.standings);
+    if (data.type === 'results') showResults(data.standings, data.champ);
     if (data.type === 'lastCall') showLastCall(data.ms);
-    if (data.type === 'restartToDraw') enterDrawPhase();
+    if (data.type === 'restartToDraw') { champ = data.champ || null; enterDrawPhase(); }
     if (data.type === 'wheelUpdate' && Net.isHost && raceMeta[from]) { Sim.updateRacerWheel(from, data.vertices); raceMeta[from].vertices = data.vertices; clearMelt(raceMeta[from]); Net.broadcast({ type: 'wheelUpdated', id: from, vertices: data.vertices }); }
     if (data.type === 'jump' && Net.isHost) Sim.jump(from);
     if (data.type === 'sprint' && Net.isHost) Sim.sprint(from);
@@ -287,7 +320,7 @@
 
   function enterDrawPhase() {
     requestWakeLock();
-    stopRaceLoops(); raceStarting = false; preRaceDrawer.clear(); myVertices = null; els.btnSubmitWheel.disabled = true; els.drawWait.textContent = ''; showScreen('draw');
+    stopRaceLoops(); raceStarting = false; preRaceDrawer.clear(); myVertices = null; els.btnSubmitWheel.disabled = true; els.drawWait.textContent = ''; updateChampBanner(); showScreen('draw');
     let t = 30; els.drawTimer.textContent = t; clearInterval(drawTimerHandle);
     drawTimerHandle = setInterval(() => { t--; els.drawTimer.textContent = Math.max(t, 0); if (t <= 0) { clearInterval(drawTimerHandle); if (!myVertices) submitWheel(true); } }, 1000);
   }
@@ -315,7 +348,7 @@
       raceStarting = true;
       const start = Date.now() + 3500 + 1500;  // breve attesa (la fisica finisce di prepararsi), poi 3-2-1
       // "Rigioca stessa pista" riusa il percorso appena giocato; altrimenti ne nasce uno nuovo della lunghezza scelta
-      const track = (keepTrack && currentLayout) ? currentLayout : Terrain.generateRandomLayout(Terrain.LENGTHS[trackLen] || Terrain.LENGTHS.lunga);
+      const track = (keepTrack && currentLayout) ? currentLayout : Terrain.generateRandomLayout(Terrain.LENGTHS[trackLen] || Terrain.LENGTHS.lunga, crazy, champ && !crazy ? champ.seasons[champ.i] : null);
       currentLayout = track; keepTrack = false;
       const np = ids.length; Terrain.applyLayout(track, crazy ? { crazy: true, np } : undefined); Net.broadcast({ type: 'allReady', wheels, startTime: start, trackLayout: track, crazy, np }); startCountdown(start);
     }
@@ -347,13 +380,13 @@
     const me = latestRacers[Net.myId]; smoothCamX = me ? me.x - viewW * 0.34 : 0; particles = []; cam.dy = 0; cam.vx = 0; cam.lead = 0.34; lastCamTs = 0;
     startRenderLoop();
 
-    resetPortals(); resetTrails(); let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false; aud.ang = undefined;
+    showSeasonTag(); resetPortals(); resetTrails(); let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false; aud.ang = undefined;
     const tick = setInterval(() => {
       const left = startTime - Date.now();
       const cd = left > 3000 ? -1 : left > 2000 ? 3 : left > 1000 ? 2 : left > 0 ? 1 : 0;
       if (cd !== lastCd) { lastCd = cd; if (cd >= 0 && typeof Sfx !== 'undefined') Sfx.beep(cd === 0 ? 0 : cd); }
       if (left > 3000) els.countdown.textContent = ''; else if (left > 2000) els.countdown.textContent = '3'; else if (left > 1000) els.countdown.textContent = '2'; else if (left > 0) els.countdown.textContent = '1';
-      else { els.countdown.textContent = I18n.t('race.go'); clearInterval(tick); setTimeout(() => els.countdown.textContent = '', 700); Scenery.announce(performance.now()); raceT0 = performance.now(); showCtrlHint();
+      else { els.countdown.textContent = I18n.t('race.go'); clearInterval(tick); setTimeout(() => els.countdown.textContent = '', 700); Scenery.announce(performance.now()); raceT0 = performance.now(); showCtrlHint(); hideSeasonTagSoon();
              if (Net.isHost) beginRace(); }
     }, 50);
   }
@@ -372,7 +405,7 @@
       // primo traguardo: gli altri hanno un tempo limitato, e lo sanno
       const gl = Sim.graceLeft();
       if (gl !== null && !lastCallSent) { lastCallSent = true; Net.broadcast({ type: 'lastCall', ms: gl }); showLastCall(gl); }
-      if (Sim.allFinished() || Sim.isTimedOut()) { Ticker.stop(snapshotLoopHandle); snapshotLoopHandle = null; const s = Sim.standings(); Net.broadcast({ type: 'results', standings: s }); showResults(s); }
+      if (Sim.allFinished() || Sim.isTimedOut()) { Ticker.stop(snapshotLoopHandle); snapshotLoopHandle = null; const s = Sim.standings(), ch = champ ? champAward(s) : null; Net.broadcast({ type: 'results', standings: s, champ: ch }); showResults(s, ch); }
     }, 16);
     startRenderLoop();
   }
@@ -952,7 +985,7 @@
   window.__dw = { racers: () => latestRacers, portals: () => pst, trails, meta: () => raceMeta, drawFinalTrace };   // solo per i test
   // ---- Lentezza: la propria bici va piano per un po' → lampeggia e il pulsante suggerisce di cambiare forma ----
   // px/tick (60 Hz): con il motore al massimo si sta sopra 5; sotto 2.4 si arranca (fango, salita, forma sbagliata). Isteresi per non sfarfallare.
-  const SLOW_ON = 2.4, SLOW_OFF = 3.6, SLOW_HOLD_MS = 1100, SLOW_FREE_MS = 3200;
+  const SLOW_ON = 2.4, SLOW_OFF = 3.6, SLOW_HOLD_MS = 1500, SLOW_FREE_MS = 12000;   // nei primi 12 s dal VIA mai: all inizio si parte da fermi e non ha senso consigliare un'altra ruota
   let raceT0 = 0, slowOn = false, slowSince = 0, fastSince = 0, ctrlHintT = 0;
   const jnSeen = {}, jaSeen = {};
   function setSlow(on) {
@@ -965,17 +998,32 @@
   function updateSlow(me, now) {
     const can = me && !me.finished && myRedrawsLeft > 0 && raceT0 && now - raceT0 > SLOW_FREE_MS && els.redrawModal.style.display !== 'flex' && !(me.im > 0) && (me.sc || 1) < 1.2;
     if (!can) { slowSince = fastSince = 0; setSlow(false); return; }
-    const v = Math.abs(me.vx || 0);
+    const v = Math.abs(me.vx || 0), plain = Terrain.plainAt(me.x);   // lento in un fossato, su una rampa o in salita ripida non è colpa della forma
+    if (!plain) { slowSince = fastSince = 0; if (slowOn) setSlow(false); return; }
     if (!slowOn) { if (v < SLOW_ON) { if (!slowSince) slowSince = now; else if (now - slowSince > SLOW_HOLD_MS) setSlow(true); } else slowSince = 0; }
     else { if (v > SLOW_OFF) { if (!fastSince) fastSince = now; else if (now - fastSince > 500) { fastSince = 0; slowSince = 0; setSlow(false); } } else fastSince = 0; }
   }
+  // etichetta di stagione e ritmo: appare nel conto alla rovescia, sfuma poco dopo il VIA (non nella modalità pazza, che ha già i suoi portali)
+  let seasonTagT = 0;
+  function showSeasonTag() {
+    const el = document.getElementById('season-tag'); if (!el) return; clearTimeout(seasonTagT);
+    const S = Terrain.SEASON; if (!S || crazy) { el.style.display = 'none'; return; }
+    el.textContent = ''; const a = document.createElement('b'), b = document.createElement('span');
+    a.dataset.i18n = 'season.' + S.key; a.textContent = (champ ? (champ.i + 1) + '/' + champ.n + ' · ' : '') + I18n.t(a.dataset.i18n); b.dataset.i18n = 'pace.' + Terrain.PACE; b.textContent = ' · ' + I18n.t(b.dataset.i18n);
+    el.append(a, b); el.classList.remove('fade'); el.style.display = 'block';
+  }
+  function hideSeasonTagSoon() { const el = document.getElementById('season-tag'); if (!el) return; clearTimeout(seasonTagT); seasonTagT = setTimeout(() => { el.classList.add('fade'); seasonTagT = setTimeout(() => { el.style.display = 'none'; }, 900); }, 5500); }
   // suggerimento sui comandi: compare al "VIA" per qualche secondo, poi sfuma
   function showCtrlHint() {
     if (!els.ctrlHint) return; clearTimeout(ctrlHintT);
+    const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches, j = document.getElementById('ctrl-hint-jump'), sp = document.getElementById('ctrl-hint-sprint'), tip = document.getElementById('sprint-tip');
+    if (j) { j.dataset.i18n = touch ? 'race.hintTouch' : 'race.hint'; j.textContent = I18n.t(j.dataset.i18n); }
+    if (sp) { sp.dataset.i18n = touch ? 'race.hintSprintTouch' : 'race.hintSprint'; sp.textContent = I18n.t(sp.dataset.i18n); }
+    if (tip && els.btnSprint) { tip.textContent = ''; const sp2 = document.createElement('span'); sp2.textContent = I18n.t('race.sprintTip'); sp2.dataset.i18n = 'race.sprintTip'; tip.appendChild(sp2); tip.style.display = 'block'; }
     els.ctrlHint.style.display = 'block'; els.ctrlHint.classList.remove('fade'); void els.ctrlHint.offsetWidth;
-    ctrlHintT = setTimeout(() => { els.ctrlHint.classList.add('fade'); ctrlHintT = setTimeout(hideCtrlHint, 900); }, 5200);
+    ctrlHintT = setTimeout(() => { els.ctrlHint.classList.add('fade'); ctrlHintT = setTimeout(hideCtrlHint, 900); }, 7000);   // un po' più a lungo: ora spiega anche lo scatto
   }
-  function hideCtrlHint() { clearTimeout(ctrlHintT); if (els.ctrlHint) els.ctrlHint.style.display = 'none'; }
+  function hideCtrlHint() { clearTimeout(ctrlHintT); if (els.ctrlHint) els.ctrlHint.style.display = 'none'; const tip = document.getElementById('sprint-tip'); if (tip) tip.style.display = 'none'; }
   // salto di qualcuno (contatore dall'host): nuvoletta di polvere dalle ruote; per la propria bici anche il suono
   function jumpFx(id, r) {
     const seen = jnSeen[id], aSeen = jaSeen[id]; jnSeen[id] = r.jn || 0; jaSeen[id] = r.ja || 0;
@@ -1273,8 +1321,26 @@
   function stopRaceLoops() { if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
   I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
-  function showResults(st) { lastStandings = st; stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st, true); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>`; els.resultsList.appendChild(li); }); showScreen('results'); }
-  els.btnRematch.addEventListener('click', () => { if (Net.isHost) { wheels = {}; keepTrack = true; Net.broadcast({ type: 'restartToDraw' }); enterDrawPhase(); } });
+  function showResults(st, ch) { lastStandings = st; lastCh = ch || null; stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st, true); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>${ch ? `<span class="results-gain">+${ch.gains[s.id] || 0}</span>` : ''}`; els.resultsList.appendChild(li); }); renderChamp(ch); showScreen('results'); }
+  // classifica del campionato sotto i risultati della gara + pulsanti coerenti (solo l'host lancia la prossima)
+  function renderChamp(ch) {
+    const box = document.getElementById('champ-box'), tb = document.getElementById('champ-table'), tt = document.getElementById('champ-title');
+    if (!box) return;
+    if (!ch) { box.style.display = 'none'; btnRes.style.display = ''; btnRes.textContent = I18n.t('res.rematch'); if (resWait) resWait.textContent = ''; return; }
+    tb.innerHTML = ''; ch.table.forEach((t, i) => { const li = document.createElement('li'); if (i === 0) li.className = 'champ-lead'; li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${t.color}"></span><span>${escapeHtml(t.name)}</span><span class="results-time">${t.pts} ${I18n.t('champ.pts')}</span><span class="results-gain">${t.gain ? '+' + t.gain : ''}</span>`; tb.appendChild(li); });
+    tt.textContent = ch.final ? I18n.t('champ.winner', { name: ch.table[0] ? ch.table[0].name : '' }) : I18n.t('champ.table') + ' · ' + (ch.i + 1) + '/' + ch.n;
+    box.style.display = 'block';
+    if (Net.isHost) { btnRes.style.display = ''; btnRes.textContent = ch.final ? I18n.t('champ.again') : I18n.t('champ.next', { i: ch.i + 2, n: ch.n }); if (resWait) resWait.textContent = ''; }
+    else { btnRes.style.display = 'none'; if (resWait) resWait.textContent = I18n.t(ch.final ? 'champ.waitEnd' : 'champ.wait'); }
+  }
+
+  els.btnRematch.addEventListener('click', () => {
+    if (!Net.isHost) return;
+    wheels = {};
+    if (champ && lastCh) { if (lastCh.final) startChamp(); else champ.i++; keepTrack = false; }   // campionato: prossima gara (o nuovo campionato dopo l'ultima), con pista nuova
+    else keepTrack = true;
+    Net.broadcast({ type: 'restartToDraw', champ: champPublic() }); enterDrawPhase();
+  });
   els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
   document.body.dataset.screen = 'menu'; I18n.init(); applyInvite(); if (typeof Sfx !== 'undefined') Sfx.init();
 })();

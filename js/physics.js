@@ -1015,7 +1015,7 @@ const Sim = (() => {
   }
 
   // Burrone (patch 'ravine'): chi cade nel vuoto e resta sul fondo oltre RAVINE_RESCUE_MS viene riportato sul bordo opposto (in retromarcia, prima della rampa)
-  const RAVINE_RESCUE_MS = 1500;
+  const RAVINE_RESCUE_MS = 1500, RAMP_STUCK_MS = 1600, RAMP_ASSIST_V = 3.4;
   function ravineStep(r, elapsed) {
     const p = Terrain.ravineAt ? Terrain.ravineAt(r.chassis.position.x) : null;
     if (!p) { r.pitAt = -1; return; }
@@ -1035,6 +1035,28 @@ const Sim = (() => {
   // (TUNE.rampDown) e il lancio vale come primo salto (in volo il tocco è subito un doppio salto). Il volo finisce quando la ruota anteriore tocca, dopo un salto o dopo 2,5 s. Finché la ruota dietro è ancora sulla rampa il pilota tiene il muso (TUNE.rampPitch smorza la rotazione).
   function rampStep(r, elapsed) {
     const fx = r.fw.position.x, px = r.rfx; r.rfx = fx;
+    // Salita assistita: una ruota sciolta dalla lava (spinta al 35%) non riesce a salire su una rampa. Sul tratto in salita di qualunque rampa la bici non scende
+    // sotto RAMP_ASSIST_V px/tick (si accompagna la velocità lungo il piano), così le rampe restano superabili anche con la ruota mangiata. Alla velocità normale non cambia nulla.
+    if ((r.dir || 1) === 1 && !r.rampFly && Terrain.rampAt) {
+      const cx0 = r.rw.position.x, rp1 = Terrain.rampAt(cx0, 330, 0);   // si guarda la ruota dietro: finché sta sul piano inclinato la bici va accompagnata, anche con il muso già oltre il labbro
+      if (rp1) {
+        const sl = (Terrain.height(cx0 + 40) - Terrain.height(cx0 - 40)) / 80;
+        if (sl > 0.17 && r.rw.gapNow <= TUNE.airGap && r.chassis.velocity.x < RAMP_ASSIST_V) {
+          for (const q of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(q, { x: q.velocity.x + (RAMP_ASSIST_V - q.velocity.x) * 0.3, y: q.velocity.y + (-RAMP_ASSIST_V * sl - q.velocity.y) * 0.3 });
+        }
+      }
+    }
+    // Salvataggio sulla rampa: se la bici resta ferma sul piano inclinato (non in volo) per RAMP_STUCK_MS viene rimessa, ferma, poco prima del labbro
+    if ((r.dir || 1) === 1 && !r.rampFly) {
+      const rp0 = Terrain.rampAt ? Terrain.rampAt(r.rw.position.x, 380, 0) : null;
+      const still = rp0 && Math.abs(r.chassis.velocity.x) < 0.45 && Terrain.height(r.rw.position.x + 30) - Terrain.height(r.rw.position.x - 30) > 10 && (r.fw.gapNow <= TUNE.airGap || r.rw.gapNow <= TUNE.airGap);
+      if (!still) r.rsT = 0; else if (!r.rsT) r.rsT = elapsed; else if (elapsed - r.rsT > RAMP_STUCK_MS) {
+        r.rsT = 0; teleport(r, rp0.a + rp0.u1 + (rp0.u2 === undefined ? rp0.ex + 120 : -110) - r.chassis.position.x);   // rampe semplici: oltre il labbro; con un vuoto dopo (burrone, fossato): poco prima del labbro Matter.Body.setAngle(r.chassis, 0);
+        { const c = r.chassis.position, k = 80 * (r.sc || 1); Matter.Body.setPosition(r.fw, { x: c.x + k, y: c.y }); Matter.Body.setPosition(r.rw, { x: c.x - k, y: c.y }); }
+        for (const q of [r.chassis, r.fw, r.rw]) { Matter.Body.setVelocity(q, { x: 0, y: 0 }); Matter.Body.setAngularVelocity(q, 0); }
+        r.lx = r.chassis.position.x; r.bestX = r.chassis.position.x; r.hopBaseX = r.bestX; r.progressAt = elapsed; r.stallStreak = 0; r.hops++; r.rampRescues = (r.rampRescues || 0) + 1;
+      }
+    }
     if (r.rampFly > 0) {
       r.rfT = (r.rfT || 0) + 1;
       if ((r.rfT > 10 && r.fw.gapNow <= TUNE.airGap) || r.rfT > 150) r.rampFly = 0;
