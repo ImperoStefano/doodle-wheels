@@ -134,7 +134,8 @@ const Scenery = (() => {
     A: BIOMES[0], B: BIOMES[0], t: 0, ia: 0, ib: 0, zi: 0, zi0: 0,
     camX: 0, w: 800, h: 600, gy: 480, hs: 1, now: 0, dt: 0.016,
     skyT: [0, 0, 0], skyB: [0, 0, 0],
-    bannerT: -10, bannerName: '', lastZone: -1,
+    bannerT: -10, bannerName: '', bannerWorld: null, lastZone: -1,
+    segment: null, segmentBlend: 0, segmentActive: false,
   };
   const RP = [0, 1, 2, 3].map(() => ({ A: 0, off: 0, f1: 1, f2: 1, f3: 1, p1: 0, p2: 0, p3: 0, wR: 1, wP: 0, wM: 0, col: [0, 0, 0], colB: [0, 0, 0], y0: 0 }));
   const LAYER = [
@@ -379,11 +380,18 @@ const Scenery = (() => {
   }
 
   // ---------- pista -------------------------------------------------------------------------
-  function setTrack(zones, fx, world = 'classic') {
+  function setTrack(zones, fx, world = 'classic', worldSegment = null) {
     Z.length = 0; finishX = fx;
-    S.world = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(world) ? world : 'classic';
+    const validWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(world) ? world : 'classic';
+    // I tre nuovi mondi sono set-piece locali: il resto della pista resta nel mondo classico.
+    S.segment = worldSegment && ['atlantis', 'enchanted', 'neon'].includes(worldSegment.world)
+      ? { world: worldSegment.world, start: worldSegment.start, end: worldSegment.end, length: worldSegment.length }
+      : null;
+    S.segmentBlend = 0; S.segmentActive = false;
+    S.world = S.segment ? 'classic' : validWorld;
+    S.bannerWorld = null;
     ACTIVE_BIOMES = makeWorldBiomes(S.world);
-    zones.forEach(z => Z.push({ start: z.start, end: z.end, biome: ZONE_TO_BIOME[z.key] != null ? ZONE_TO_BIOME[z.key] : 0, key: z.key }));
+    zones.forEach(z => Z.push({ start: z.start, end: z.end, biome: ZONE_TO_BIOME[z.key] != null ? ZONE_TO_BIOME[z.key] : 0, key: z.key, specialWorld: z.specialWorld || null, specialPart: z.specialPart || null }));
     S.zi = 0; S.zi0 = 0; S.lastZone = -1; S.bannerT = -10;
     P.forEach(p => { p.on = false; });
   }
@@ -394,10 +402,10 @@ const Scenery = (() => {
   }
   function warmup() { if (dirty || !atlas.trees) bakeAll(); preloadWorldArt(); }
   function bannerText() {
-    if (S.bannerName === '@world') return I18n.t('world.tag.' + S.world);
+    if (S.bannerName === '@world') return I18n.t('world.tag.' + (S.bannerWorld || S.world));
     const i = BIOMES.findIndex(b => b.name === S.bannerName); return i >= 0 ? I18n.t('biome.' + i) : S.bannerName;
   }
-  function announce(now) { S.bannerT = now; S.bannerName = S.world === 'classic' ? S.A.name : '@world'; S.lastZone = S.zi; }
+  function announce(now) { S.bannerT = now; S.bannerWorld = null; S.bannerName = S.world === 'classic' ? S.A.name : '@world'; S.lastZone = S.zi; }
 
   // ---------- stelle, uccelli, nuvole --------------------------------------------------------
   const STARS = Array.from({ length: 80 }, (_, i) => ({ x: rnd(i, 1), y: rnd(i, 2), r: 1 + rnd(i, 3) * 1.8, ph: rnd(i, 4) * 6.28 }));
@@ -517,6 +525,16 @@ const Scenery = (() => {
     const dt = clamp((now - S.now) / 1000, 0.001, 0.1); S.now = now; S.dt = dt;
     const dCam = prevCam === null ? 0 : clamp(camX - prevCam, -200, 200); prevCam = camX;
     S.camX = camX; S.w = w; S.h = h; S.gy = gy; S.hs = clamp(gy / 720, 0.7, 1.45);
+    if (S.segment) {
+      // Il set-piece entra in scena quando raggiunge il campo visivo e svanisce quando lo lascia.
+      // La sfumatura evita un cambio di fondale brusco ai bordi delle 2,5 zone speciali.
+      const viewL = camX + w * 0.16, viewR = camX + w * 0.82;
+      const overlap = Math.max(0, Math.min(viewR, S.segment.end) - Math.max(viewL, S.segment.start));
+      const feather = Math.max(120, w * 0.34);
+      S.segmentBlend = smooth(overlap / feather);
+      const center = camX + w * 0.40;
+      S.segmentActive = center >= S.segment.start && center <= S.segment.end;
+    } else { S.segmentBlend = 0; S.segmentActive = false; }
 
     // dall'alba al tramonto lungo la gara
     const bx = camX + w * 0.4;
@@ -563,7 +581,11 @@ const Scenery = (() => {
     while (z0 > 0 && Z[z0].start > camX) z0--;
     while (z0 < Z.length - 1 && Z[z0].end <= camX) z0++;
     S.zi0 = z0;
-    if (zi !== S.lastZone && u > 60) { S.lastZone = zi; S.bannerT = now; S.bannerName = z.biome === 6 ? ACTIVE_BIOMES[6].name : ACTIVE_BIOMES[z.biome].name; }
+    if (zi !== S.lastZone && u > 60) {
+      S.lastZone = zi; S.bannerT = now;
+      if (z.specialWorld) { S.bannerName = '@world'; S.bannerWorld = z.specialWorld; }
+      else { S.bannerWorld = null; S.bannerName = z.biome === 6 ? ACTIVE_BIOMES[6].name : ACTIVE_BIOMES[z.biome].name; }
+    }
 
     // cielo
     const A = S.A, B = S.B;
@@ -772,7 +794,8 @@ const Scenery = (() => {
   }
 
   function drawWorldEffects(ctx, camX, w, gy, raceTime = 0) {
-    if (S.world === 'paradise') {
+    const world = S.segment && (camX + w * 0.40 >= S.segment.start - 80) && (camX + w * 0.40 <= S.segment.end + 80) ? S.segment.world : S.world;
+    if (world === 'paradise') {
       for (const q of Terrain.CLOUD_PADS) {
         const x = q.x - camX; if (x < -80 || x > w + 80) continue;
         const y = gy - Terrain.height(q.x) - 2, pulse = 0.85 + 0.15 * Math.sin(raceTime / 240 + q.id);
@@ -791,7 +814,7 @@ const Scenery = (() => {
         for (let k = 0; k < 3; k++) { const yy = y - 22 - ((raceTime * 0.12 + k * 48 + q.id * 19) % Math.max(55, h - 30)); const xx = x + Math.sin(raceTime / 500 + k * 2 + q.id) * 23; ctx.beginPath(); ctx.moveTo(xx - 5, yy + 8); ctx.lineTo(xx, yy); ctx.lineTo(xx + 5, yy + 8); ctx.stroke(); }
         ctx.restore();
       }
-    } else if (S.world === 'inferno') {
+    } else if (world === 'inferno') {
       for (const q of Terrain.GEYSERS) {
         const x = q.x - camX; if (x < -100 || x > w + 100) continue;
         const phase = ((raceTime / 1000 + q.phase) % q.period + q.period) % q.period;
@@ -809,7 +832,7 @@ const Scenery = (() => {
         }
         ctx.restore();
       }
-    } else if (S.world === 'atlantis') {
+    } else if (world === 'atlantis') {
       for (const q of Terrain.BUBBLE_VENTS) {
         const x = q.x - camX; if (x < -q.width || x > w + q.width) continue;
         const y = gy - Terrain.height(q.x), pulse = 0.65 + 0.35 * Math.sin(raceTime / 430 + q.phase);
@@ -819,7 +842,7 @@ const Scenery = (() => {
         for (let i = 0; i < 8; i++) { const yy = y - ((raceTime * 0.09 + i * 28 + q.phase * 17) % Math.max(40, q.height)); const xx = x + Math.sin(raceTime / 600 + i * 1.4 + q.id) * (12 + i * 2); ctx.strokeStyle = 'rgba(206,255,250,0.9)'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(xx, yy, 3 + (i % 3), 0, TAU); ctx.stroke(); }
         ctx.restore();
       }
-    } else if (S.world === 'enchanted') {
+    } else if (world === 'enchanted') {
       for (const q of Terrain.CLOUD_PADS) {
         const x = q.x - camX; if (x < -90 || x > w + 90) continue;
         const y = gy - Terrain.height(q.x), pulse = 0.82 + 0.18 * Math.sin(raceTime / 330 + q.id);
@@ -828,7 +851,7 @@ const Scenery = (() => {
         ctx.fillStyle = '#e7d7bd'; ctx.fillRect(x - 8, y - 25, 16, 25); ctx.fillStyle = '#a85fd2'; ctx.beginPath(); ctx.ellipse(x, y - 28, 30, 13, 0, Math.PI, 0); ctx.closePath(); ctx.fill();
         ctx.fillStyle = '#f5e6ff'; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(x + i * 13, y - 32, 3, 0, TAU); ctx.fill(); } ctx.restore();
       }
-    } else if (S.world === 'neon') {
+    } else if (world === 'neon') {
       for (const q of Terrain.NEON_BOOSTS) {
         const x = q.x - camX; if (x < -100 || x > w + 100) continue;
         const y = gy - Terrain.height(q.x), pulse = 0.6 + 0.4 * Math.sin(raceTime / 190 + q.id);
@@ -1916,9 +1939,24 @@ const Scenery = (() => {
         }
       }
     }
+    if (S.segment && S.segmentBlend > 0.001) drawSegmentWorldBackdrop(ctx);
     drawDanteLovers(ctx);
     drawParadiseHeaven(ctx);
     drawParadiseIslands(ctx);
+  }
+
+  function drawSegmentWorldBackdrop(ctx) {
+    const world = S.segment && S.segment.world;
+    if (!world || S.segmentBlend <= 0.001) return;
+    const old = { world: S.world, e: S.e, warm: S.warm, night: S.night, day: S.day, starA: S.starA };
+    S.world = world;
+    if (world === 'atlantis') { S.e = 0.72; S.warm = 0; S.night = 0; S.day = 1; S.starA = 0; }
+    else if (world === 'enchanted') { S.e = 0.22; S.warm = 0.02; S.night = 0.48; S.day = 0.12; S.starA = 0.22; }
+    else { S.e = 0.12; S.warm = 0; S.night = 0.72; S.day = 0.04; S.starA = 0.12; }
+    ctx.save(); ctx.globalAlpha *= S.segmentBlend;
+    drawDedicatedWorldBackdrop(ctx);
+    ctx.restore();
+    S.world = old.world; S.e = old.e; S.warm = old.warm; S.night = old.night; S.day = old.day; S.starA = old.starA;
   }
 
   // coni vulcanici lontani (fra la prima e la seconda fila di montagne): fianchi scuri, cratere che brilla, un filo di lava, pennacchio di fumo

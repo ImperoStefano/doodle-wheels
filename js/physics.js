@@ -1101,7 +1101,9 @@ const Sim = (() => {
   // quindi restano sincronizzati con la simulazione autoritativa già esistente.
   function worldEffectStep(r, elapsed) {
     const bodies = [r.chassis, r.fw, r.rw], x = r.chassis.position.x;
-    if (Terrain.WORLD === 'paradise') {
+    const segment = Terrain.WORLD_SEGMENT;
+    const world = segment && x >= segment.start && x <= segment.end ? segment.world : Terrain.WORLD;
+    if (world === 'paradise') {
       let lift = 0;
       for (const q of Terrain.UPDRAFTS) {
         const k = 1 - Math.abs(x - q.x) / (q.width * 0.5);
@@ -1120,7 +1122,7 @@ const Sim = (() => {
           r.cloudPadHits[q.id] = true;
         }
       }
-    } else if (Terrain.WORLD === 'inferno') {
+    } else if (world === 'inferno') {
       r.geyserHits = r.geyserHits || {};
       const t = elapsed / 1000;
       for (const q of Terrain.GEYSERS) {
@@ -1132,7 +1134,7 @@ const Sim = (() => {
           r.geyserHits[q.id] = true;
         }
       }
-    } else if (Terrain.WORLD === 'atlantis') {
+    } else if (world === 'atlantis') {
       r.bubbleVentHits = r.bubbleVentHits || {};
       for (const q of Terrain.BUBBLE_VENTS) {
         const near = Math.abs(x - q.x) < q.width * 0.5;
@@ -1142,7 +1144,7 @@ const Sim = (() => {
           r.bubbleVentHits[q.id] = true;
         }
       }
-    } else if (Terrain.WORLD === 'enchanted') {
+    } else if (world === 'enchanted') {
       r.mushroomHits = r.mushroomHits || {};
       for (const q of Terrain.CLOUD_PADS) {
         const near = Math.abs(x - q.x) < q.width * 0.5;
@@ -1152,7 +1154,7 @@ const Sim = (() => {
           r.mushroomHits[q.id] = true;
         }
       }
-    } else if (Terrain.WORLD === 'neon') {
+    } else if (world === 'neon') {
       r.neonBoostHits = r.neonBoostHits || {};
       for (const q of Terrain.NEON_BOOSTS) {
         const near = Math.abs(x - q.x) < q.width * 0.5;

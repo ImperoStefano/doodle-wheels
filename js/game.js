@@ -392,7 +392,7 @@
     // l'host tara in anticipo ogni ruota (a fette, durante l'intro): così su terreno normale vanno tutte alla pari
     if (Net.isHost) { Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {})); Sim.prepareAsync(); }   // mondo fisico costruito a fette durante l'intro
     hideLastCall(); lastCallSent = false;
-    Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X, currentWorld); Flora.setTrack(); Scenery.setQuality(0); Flora.setQuality(0); qSlow = 0;
+    Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X, Terrain.WORLD, Terrain.WORLD_SEGMENT); Flora.setTrack(); Scenery.setQuality(0); Flora.setQuality(0); qSlow = 0;
     Scenery.warmup();
     placeGrid();
     const me = latestRacers[Net.myId]; smoothCamX = me ? me.x - viewW * 0.34 : 0; particles = []; cam.dy = 0; cam.vx = 0; cam.lead = 0.34; lastCamTs = 0;
@@ -1102,10 +1102,12 @@
 
     Props.drawPatches(ctx2d, camX, w, groundY, SC);
     Props.drawRamps(ctx2d, camX, w, groundY);
-    if (Terrain.WORLD === 'classic' || Terrain.WORLD === 'paradise' || Terrain.WORLD === 'inferno') Props.drawSigns(ctx2d, camX, w, groundY);
+    const localWorld = Terrain.WORLD_SEGMENT;
+    const inLocalWorld = localWorld && camX + w * 0.40 >= localWorld.start - 80 && camX + w * 0.40 <= localWorld.end + 80;
+    if (!inLocalWorld && (Terrain.WORLD === 'classic' || Terrain.WORLD === 'paradise' || Terrain.WORLD === 'inferno')) Props.drawSigns(ctx2d, camX, w, groundY);
     Props.drawFinish(ctx2d, camX, w, groundY, SC);
     Props.drawBridges(ctx2d, camX, w, groundY, SC);
-    if (Terrain.WORLD === 'classic' || Terrain.WORLD === 'paradise' || Terrain.WORLD === 'inferno') {
+    if (!inLocalWorld && (Terrain.WORLD === 'classic' || Terrain.WORLD === 'paradise' || Terrain.WORLD === 'inferno')) {
       Flora.drawLilies(ctx2d, camX, w, groundY, SC);
       Flora.draw(ctx2d, camX, w, groundY, SC);
     }
