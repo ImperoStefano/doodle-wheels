@@ -1225,7 +1225,11 @@ const Sim = (() => {
     accumulator += Math.min(dtMs, 100);
     const elapsed = performance.now() - startedAt;
 
+    // al massimo 3 passi per chiamata: se il dispositivo non regge, l'arretrato si scarta (leggero rallentatore) invece di innescare la spirale
+    // "più passi → frame più lungo → ancora più passi da recuperare"
+    let steps = 0;
     while (accumulator >= FIXED_DT) {
+      if (++steps > 3) { accumulator = 0; break; }
       const order = Object.values(racers); for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const tmp = order[i]; order[i] = order[j]; order[j] = tmp; }   // ordine casuale: se due bici toccano un portale nello stesso passo, non vince sempre la stessa
       for (const r of order) {
         stepRacer(r, elapsed);

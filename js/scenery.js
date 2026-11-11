@@ -2850,6 +2850,7 @@ const Scenery = (() => {
           if (r.width > 0 && w / 2 - half < hr + 6 && yy + fs * 0.6 > ht && yy - fs * 0.6 < hb + 4) yy = hb + fs * 0.6 + 10 * sc + slide;
         }
       } catch (e) {}
+      try { if (window.__layoutOverlays) { const cr = ctx.canvas.getBoundingClientRect(), sr = document.getElementById('screen-race').getBoundingClientRect(); window.__layoutOverlays((yy + fs * 0.75) * (cr.width / w) + (cr.top - sr.top)); } } catch (e) {}
       if (POSTER) {
         const tx = bannerText(), tw = ctx.measureText(tx).width, pw = tw + fs * 1.3, ph = fs * 1.5, px = w / 2 - pw / 2, py = yy - ph / 2, rr = ph / 2;
         const pill = (y0) => { ctx.beginPath(); ctx.moveTo(px + rr, y0); ctx.arcTo(px + pw, y0, px + pw, y0 + ph, rr); ctx.arcTo(px + pw, y0 + ph, px, y0 + ph, rr); ctx.arcTo(px, y0 + ph, px, y0, rr); ctx.arcTo(px, y0, px + pw, y0, rr); ctx.closePath(); };

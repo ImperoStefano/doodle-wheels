@@ -593,3 +593,16 @@ input[type="text"]:focus { border-color: var(--teal); }
 /* Nota sui mondi speciali sorteggiati automaticamente. */
 .world-info { margin: 0 0 14px; }
 .world-info .hint { margin-top: 5px; font-size: .78rem; line-height: 1.25; }
+
+/* ---- fix layout comandi/suggerimenti (V9.1): nessuna sovrapposizione tra HUD, scatto, salto e fumetti ---- */
+/* Ritmo e comandi sono posizionati da game.js (layoutOverlays) sotto il titolo della zona */
+/* Finestre basse (telefono in orizzontale, desktop poco alto): lo scatto sta accanto al salto invece che sopra, così non finisce sotto il pannello classifica */
+@media (max-height: 600px) and (orientation: landscape) {
+  .sprint-btn { left: calc(32px + 92px + 14px + env(safe-area-inset-left, 0px)); bottom: calc(32px + 13px + env(safe-area-inset-bottom, 0px)); width: 66px; height: 66px; }
+  .sprint-tip { left: calc(32px + 92px + 14px + 66px + 18px + env(safe-area-inset-left, 0px)); bottom: calc(32px + 13px + 33px - 17px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 768px) and (max-height: 600px) and (pointer: coarse) and (orientation: landscape) {
+  .sprint-btn { left: calc(20px + 80px + 12px + env(safe-area-inset-left, 0px)); bottom: calc(20px + 11px + env(safe-area-inset-bottom, 0px)); width: 58px; height: 58px; }
+  .sprint-tip { left: calc(20px + 80px + 12px + 58px + 16px + env(safe-area-inset-left, 0px)); bottom: calc(20px + 11px + 29px - 17px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (min-width: 769px) { .ctrl-hint { max-width: min(420px, calc(100vw - 600px)); } }   /* sui desktop il fumetto dei comandi va a capo invece di toccare il pannello */

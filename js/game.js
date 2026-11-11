@@ -405,7 +405,7 @@
       const cd = left > 3000 ? -1 : left > 2000 ? 3 : left > 1000 ? 2 : left > 0 ? 1 : 0;
       if (cd !== lastCd) { lastCd = cd; if (cd >= 0 && typeof Sfx !== 'undefined') Sfx.beep(cd === 0 ? 0 : cd); }
       if (left > 3000) els.countdown.textContent = ''; else if (left > 2000) els.countdown.textContent = '3'; else if (left > 1000) els.countdown.textContent = '2'; else if (left > 0) els.countdown.textContent = '1';
-      else { els.countdown.textContent = I18n.t('race.go'); clearInterval(tick); setTimeout(() => els.countdown.textContent = '', 700); Scenery.announce(performance.now()); raceT0 = performance.now(); showCtrlHint(); hideSeasonTagSoon();
+      else { els.countdown.textContent = I18n.t('race.go'); clearInterval(tick); setTimeout(() => els.countdown.textContent = '', 700); Scenery.announce(performance.now()); raceT0 = performance.now(); hideSeasonTagNow(); showCtrlHint();
              if (Net.isHost) beginRace(); }
     }, 50);
   }
@@ -507,11 +507,34 @@
   // La mappa dei biomi rimane in una texture offscreen finché non cambia la pista o la dimensione.
   let minimapBase = null, minimapBaseDirty = true, lastHudOrder = '';
 
+  // Risoluzione adattiva: il costo del disegno cresce coi pixel (un telefono a DPR 3 riempie ~9 volte i pixel di uno a DPR 1).
+  // Densità massima 2 (oltre non si distingue) e, se i fotogrammi si allungano, il canvas scende a gradini (min 0.55) — gli sprite restano a piena risoluzione.
+  // Dopo ogni riduzione si verifica che serva davvero: se i fps non migliorano (es. risparmio energetico che limita a 30 fps) si torna indietro e si smette di provare.
+  const DPR_CAP = 2, RS_MIN = 0.55;
+  let rScale = 1, rAvg = 16.7, rLast = 0, rHold = 0, rLock = false, rCheckAt = 0, rFails = 0, rBefore = 0, rPrev = 1, rUpAt = 0;
+  function adaptRes(ts) {
+    if (Perf.on) { Perf.D.rs = rScale; Perf.D.rl = rLock; }
+    if (rLock) return;
+    const d = ts - rLast; rLast = ts;
+    if (!rHold) { rHold = ts + 3500; return; }
+    if (d <= 0 || d > 250) { rHold = Math.max(rHold, ts + 1500); return; }   // scheda in secondo piano o blocco: non conta
+    rAvg += (d - rAvg) * Math.min(0.3, d / 700);   // costante di tempo ~0,7 s qualunque sia il frame rate
+    if (ts < rHold) return;
+    if (rCheckAt) {   // verifica dell'ultima riduzione
+      if (ts < rCheckAt) return;
+      rCheckAt = 0;
+      if (rAvg > rBefore * 0.95) { rScale = rPrev; resizeCanvas(); if (++rFails >= 2) rLock = true; else rHold = ts + 10000; return; }   // non è servito: indietro, un solo altro tentativo
+      rUpAt = ts + 20000;
+    }
+    if (rAvg > 26 && rScale > RS_MIN + 0.01) { rBefore = rAvg; rPrev = rScale; rScale = Math.max(RS_MIN, rScale * 0.72); rHold = ts + 1200; rCheckAt = ts + 4200; resizeCanvas(); }
+    else if (rAvg < 17.5 && rScale < 1 && ts > rUpAt) { rScale = Math.min(1, rScale * 1.15); rHold = ts + 5000; resizeCanvas(); }
+  }
+
   function resizeCanvas() {
     const cssW = window.innerWidth, cssH = window.innerHeight;
     // Su Retina 3x il Canvas richiederebbe 9 volte i pixel di uno schermo 1x.
     // Limitiamo solo la risoluzione interna; CSS, fisica e area visibile non cambiano.
-    const dpr = Math.min(window.devicePixelRatio || 1, Math.min(cssW, cssH) < 650 ? 1.5 : 2);
+    const dprFull = Math.min(window.devicePixelRatio || 1, Math.min(cssW, cssH) < 650 ? 1.5 : 2), dpr = Math.max(0.6, dprFull * rScale);
 
     baseVS = viewScale = Math.min(1, Math.max(MIN_VIEW_SCALE, Math.min(cssW / REF_W, cssH / REF_H)));
     cssWv = cssW; cssHv = cssH; dprV = dpr; viewScale = baseVS * gzoom;
@@ -526,7 +549,7 @@
     els.raceCanvas.style.width = cssW + 'px';
     els.raceCanvas.style.height = cssH + 'px';
     if (ctx2d) ctx2d.setTransform(dpr * viewScale, 0, 0, dpr * viewScale, 0, 0);
-    Scenery.setView(dpr, baseVS);
+    Scenery.setView(dprFull, baseVS);
 
     resizeMinimap();
   }
@@ -1033,6 +1056,16 @@
     if (!slowOn) { if (v < SLOW_ON) { if (!slowSince) slowSince = now; else if (now - slowSince > SLOW_HOLD_MS) setSlow(true); } else slowSince = 0; }
     else { if (v > SLOW_OFF) { if (!fastSince) fastSince = now; else if (now - fastSince > 500) { fastSince = 0; slowSince = 0; setSlow(false); } } else fastSince = 0; }
   }
+  // Impila i cartelli centrali sotto il titolo della zona (disegnato sul canvas, che lo sposta sotto il pannello in verticale): titolo → ritmo → comandi. Mai sovrapposti.
+  let bannerBot = 0;
+  function layoutOverlays(bb) {
+    if (typeof bb === 'number') bannerBot = bb;
+    let y = (bannerBot || 128) + 10;
+    const tag = document.getElementById('season-tag'), hint = els.ctrlHint;
+    if (tag && tag.style.display !== 'none') { const v = Math.round(y) + 'px'; if (tag.style.top !== v) tag.style.top = v; y += tag.offsetHeight + 8; }
+    if (hint && hint.style.display !== 'none') { const v = Math.round(y) + 'px'; if (hint.style.top !== v) { hint.style.top = v; hint.style.bottom = 'auto'; } }
+  }
+  window.__layoutOverlays = layoutOverlays;
   // etichetta di stagione e ritmo: appare nel conto alla rovescia, sfuma poco dopo il VIA (non nella modalità pazza, che ha già i suoi portali)
   let seasonTagT = 0;
   function showSeasonTag() {
@@ -1040,8 +1073,10 @@
     const S = Terrain.SEASON; if (!S || crazy) { el.style.display = 'none'; return; }
     el.textContent = ''; const a = document.createElement('b'), b = document.createElement('span');
     a.dataset.i18n = 'season.' + S.key; a.textContent = (champ ? (champ.i + 1) + '/' + champ.n + ' · ' : '') + I18n.t(a.dataset.i18n); b.dataset.i18n = 'pace.' + Terrain.PACE; b.textContent = ' · ' + I18n.t(b.dataset.i18n);
-    el.append(a, b); el.classList.remove('fade'); el.style.display = 'block';
+    el.append(a, b); el.classList.remove('fade'); el.style.display = 'block'; layoutOverlays();
   }
+  // il ritmo si legge durante il 3-2-1; al VIA lascia il posto al titolo della zona e ai comandi (mai tutto insieme)
+  function hideSeasonTagNow() { const el = document.getElementById('season-tag'); if (!el) return; clearTimeout(seasonTagT); el.style.display = 'none'; }
   function hideSeasonTagSoon() { const el = document.getElementById('season-tag'); if (!el) return; clearTimeout(seasonTagT); seasonTagT = setTimeout(() => { el.classList.add('fade'); seasonTagT = setTimeout(() => { el.style.display = 'none'; }, 900); }, 5500); }
   // suggerimento sui comandi: compare al "VIA" per qualche secondo, poi sfuma
   function showCtrlHint() {
@@ -1049,8 +1084,8 @@
     const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches, j = document.getElementById('ctrl-hint-jump'), sp = document.getElementById('ctrl-hint-sprint'), tip = document.getElementById('sprint-tip');
     if (j) { j.dataset.i18n = touch ? 'race.hintTouch' : 'race.hint'; j.textContent = I18n.t(j.dataset.i18n); }
     if (sp) { sp.dataset.i18n = touch ? 'race.hintSprintTouch' : 'race.hintSprint'; sp.textContent = I18n.t(sp.dataset.i18n); }
-    if (tip && els.btnSprint) { tip.textContent = ''; const sp2 = document.createElement('span'); sp2.textContent = I18n.t('race.sprintTip'); sp2.dataset.i18n = 'race.sprintTip'; tip.appendChild(sp2); tip.style.display = 'block'; }
-    els.ctrlHint.style.display = 'block'; els.ctrlHint.classList.remove('fade'); void els.ctrlHint.offsetWidth;
+    if (tip && els.btnSprint) { tip.textContent = ''; const sp2 = document.createElement('span'); sp2.textContent = I18n.t('race.sprintTip'); sp2.dataset.i18n = 'race.sprintTip'; tip.appendChild(sp2); }
+    els.ctrlHint.style.display = 'block'; layoutOverlays(); els.ctrlHint.classList.remove('fade'); void els.ctrlHint.offsetWidth;
     ctrlHintT = setTimeout(() => { els.ctrlHint.classList.add('fade'); ctrlHintT = setTimeout(hideCtrlHint, 900); }, 7000);   // un po' più a lungo: ora spiega anche lo scatto
   }
   function hideCtrlHint() { clearTimeout(ctrlHintT); if (els.ctrlHint) els.ctrlHint.style.display = 'none'; const tip = document.getElementById('sprint-tip'); if (tip) tip.style.display = 'none'; }
@@ -1073,6 +1108,7 @@
   // (prima, un'eccezione qui impediva di richiedere il fotogramma successivo e lo schermo restava congelato).
   let drawErrs = 0;
   function renderRace(ts) {
+    adaptRes(ts);
     try { renderRaceFrame(ts); }
     catch (e) {
       if (drawErrs++ < 5) { try { console.error('draw', e); } catch (_) {} }

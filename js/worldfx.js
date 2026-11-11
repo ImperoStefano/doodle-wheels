@@ -425,7 +425,8 @@ const WorldFX = (() => {
     }
     // portali a inizio e fine ostacolo
     for (const ex of [p.a, p.b]) {
-      const px = sx(ex); if (px < -40 || px > ctx.canvas.width + 40) continue; const py = Y(ex), pulse = 0.65 + 0.35 * Math.sin(t * 2.4 + ex * 0.01);
+      const px = sx(ex); if (px < -40 || px > ctx.canvas.width / (ctx.getTransform().a || 1) + 40) continue;   // larghezza in unità logiche (non in pixel del canvas: cambia con la risoluzione adattiva)
+       const py = Y(ex), pulse = 0.65 + 0.35 * Math.sin(t * 2.4 + ex * 0.01);
       ctx.save(); ctx.translate(px, py);
       if (W === 'neon') { ctx.fillStyle = '#16123e'; ctx.fillRect(-3, -46, 6, 46); ctx.fillStyle = '#46f2ef'; ctx.fillRect(-3, -46, 6, 2.5); ctx.globalCompositeOperation = 'screen'; blob(ctx, 'rgba(244,87,222,1)', 0, -50, 22 * pulse + 6, 0.9); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = '#ffc2f4'; ctx.beginPath(); ctx.arc(0, -50, 3.2, 0, TAU); ctx.fill(); }
       else if (W === 'enchanted') { ctx.strokeStyle = '#5a3d28'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -42); ctx.quadraticCurveTo(8, -48, 12, -40); ctx.stroke(); ctx.globalCompositeOperation = 'screen'; blob(ctx, 'rgba(255,200,90,1)', 12, -36, 20 * pulse + 6, 0.9); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = '#ffe3a0'; ctx.beginPath(); ctx.ellipse(12, -36, 3.5, 5, 0, 0, TAU); ctx.fill(); }
