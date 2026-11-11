@@ -1105,10 +1105,10 @@
     Props.drawRamps(ctx2d, camX, w, groundY);
     const localWorld = Terrain.WORLD_SEGMENT;
     const inLocalWorld = localWorld && camX + w * 0.40 >= localWorld.start - 80 && camX + w * 0.40 <= localWorld.end + 80;
-    if (!inLocalWorld && (Terrain.WORLD === 'classic' || Terrain.WORLD === 'paradise' || Terrain.WORLD === 'inferno')) Props.drawSigns(ctx2d, camX, w, groundY);
+    if (!inLocalWorld && Terrain.WORLD === 'classic') Props.drawSigns(ctx2d, camX, w, groundY);
     Props.drawFinish(ctx2d, camX, w, groundY, SC);
     Props.drawBridges(ctx2d, camX, w, groundY, SC);
-    if (!inLocalWorld && (Terrain.WORLD === 'classic' || Terrain.WORLD === 'paradise' || Terrain.WORLD === 'inferno')) {
+    if (!inLocalWorld && Terrain.WORLD === 'classic') {
       Flora.drawLilies(ctx2d, camX, w, groundY, SC);
       Flora.draw(ctx2d, camX, w, groundY, SC);
     }

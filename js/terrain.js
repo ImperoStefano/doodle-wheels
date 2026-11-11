@@ -12,9 +12,9 @@
  */
 const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
-  let SEASON = null, PACE = "classica", WORLD = 'classic', WORLD_SEGMENT = null, ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [];
+  let SEASON = null, PACE = "classica", WORLD = 'classic', WORLD_SEGMENT = null, ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], INFERNO_ISLANDS = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [];
   const WORLD_KEYS = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'];
-  const SEGMENT_WORLDS = ['atlantis', 'enchanted', 'neon'];
+  const SEGMENT_WORLDS = ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon'];
   const isSegmentWorld = world => SEGMENT_WORLDS.includes(world);
   const overlapsWorldSegment = z => !!(WORLD_SEGMENT && z.start < WORLD_SEGMENT.end && z.end > WORLD_SEGMENT.start);
   const zoneInsideWorldSegment = z => overlapsWorldSegment(z) && WORLD_SEGMENT && WORLD_SEGMENT.world === 'neon';
@@ -436,7 +436,10 @@ const Terrain = (() => {
         picks.sort((a, b) => (LIGHT[a] ? 1 : 0) - (LIGHT[b] ? 1 : 0));   // prima i pezzi lunghi, i corti riempiono gli spazi che restano
       }
       if (WORLD_SEGMENT && overlapsWorldSegment(z)) {
-        const forbidden = WORLD_SEGMENT.world === 'neon'
+        const forbidden = WORLD_SEGMENT.world === 'paradise'
+          ? ['ravine', 'gapland', 'pipe', 'mud', 'sand', 'boulders', 'logs', 'holes']
+          : WORLD_SEGMENT.world === 'inferno' ? ['ravine', 'gapland', 'pipe', 'mud', 'sand', 'logs', 'holes', 'arch']
+          : WORLD_SEGMENT.world === 'neon'
           ? ['ravine', 'gapland', 'pipe', 'arch', 'stairs', 'boulders', 'sand', 'mud', 'holes', 'logs', 'rack']
           : WORLD_SEGMENT.world === 'enchanted' ? ['ravine', 'gapland', 'pipe', 'sand']
           : WORLD_SEGMENT.world === 'atlantis' ? ['ravine', 'gapland', 'pipe', 'sand', 'mud'] : [];
@@ -560,10 +563,10 @@ const Terrain = (() => {
     const inWorld = z => !WORLD_SEGMENT || overlapsWorldSegment(z);
     const rnd = mulberry32(hashStr(layoutKeys.join(',') + '#world-' + eventWorld));
     ZONES.forEach(z => {
-      if (eventWorld === 'paradise' && ['hills', 'ice', 'water', 'ramps'].includes(z.key) && rnd() < 0.82) {
+      if (eventWorld === 'paradise' && inWorld(z) && ['hills', 'ice', 'water', 'ramps'].includes(z.key) && rnd() < 0.82) {
         UPDRAFTS.push({ id: UPDRAFTS.length, x: Math.round(z.start + z.len * (0.42 + rnd() * 0.16)), width: 230 + Math.round(rnd() * 50), height: 190 + Math.round(rnd() * 45), strength: 1 });
       }
-      if (eventWorld === 'paradise' && ['hills', 'ramps', 'gravel'].includes(z.key) && rnd() < 0.48) {
+      if (eventWorld === 'paradise' && inWorld(z) && ['hills', 'ramps', 'gravel'].includes(z.key) && rnd() < 0.48) {
         // Le nuvole elastiche devono cadere su un tratto guidabile: mai dentro un lago,
         // un ostacolo/una rampa già disegnata o una pendenza troppo marcata.
         const start = Math.floor(rnd() * 9), candidates = Array.from({ length: 9 }, (_, i) => z.start + z.len * (0.24 + i * 0.065));
@@ -577,11 +580,11 @@ const Terrain = (() => {
         }
         if (padX !== null) CLOUD_PADS.push({ id: CLOUD_PADS.length, x: padX, width: 112, power: 6.4 });
       }
-      if (eventWorld === 'inferno' && z.key === 'lava' && z.gap && !z.bridge) {
+      if (eventWorld === 'inferno' && inWorld(z) && z.key === 'lava' && z.gap && !z.bridge) {
         const span = z.gap.g1 - z.gap.g0;
         for (let i = 0; i < 2; i++) {
           const period = 3.5 + rnd() * 1.2;
-          GEYSERS.push({ id: GEYSERS.length, x: Math.round(z.gap.g0 + span * (i ? 0.72 : 0.28)), width: 124, period, phase: rnd() * period, burst: 0.62, power: 5.8 + rnd() * 0.8 });
+          GEYSERS.push({ id: GEYSERS.length, x: Math.round(z.gap.g0 + span * (i ? 0.655 : 0.355)), width: 94, period, phase: rnd() * period, burst: 0.62, power: 5.8 + rnd() * 0.8 }); // nei canali incandescenti, non sugli appoggi
         }
       }
       if (eventWorld === 'atlantis' && inWorld(z) && z.key === 'water' && rnd() < 0.92) {
@@ -627,10 +630,12 @@ const Terrain = (() => {
       segmentOffset = 1 + Math.floor(sr() * maxOffset); // indice nell'array dei biomi (zona reale = indice + 1)
       const motif = selectedWorld === 'atlantis' ? ['water', 'water', 'hills']
         : selectedWorld === 'enchanted' ? ['hills', 'ramps', 'hills']
-        : ['ramps', 'hills', 'ramps'];
+        : selectedWorld === 'neon' ? ['ramps', 'hills', 'ramps']
+        : selectedWorld === 'paradise' ? ['hills', 'ramps', 'hills']
+        : ['hills', 'lava', 'ramps']; // Dante V: un solo bacino delle anime deformato, fra bufera e architetture gotiche
       for (let i = 0; i < 3; i++) keys[segmentOffset + i] = motif[i];
     }
-    ZONES = []; BRIDGES = []; lastZ = 0;
+    ZONES = []; BRIDGES = []; INFERNO_ISLANDS = []; lastZ = 0;
     let x = TRACK_START, level = 0;
 
     const LEVEL_DELTA = { hills: [-90, 110], gravel: [-50, 70], ramps: [-30, 30], water: [-20, 20], ice: [-25, 25], lava: [-30, 40] };
@@ -675,14 +680,17 @@ const Terrain = (() => {
   //  - zona canyon -> crepaccio profondo + ponte sospeso di assi e corde
   // Il ponte è la quota su cui guidano le ruote; il vuoto sotto è solo terreno "naturale" più basso.
   function planGaps(rnd, crazy) {
-    const cand = ZONES.filter(z => (z.key === 'water' || z.key === 'gravel') && !zoneInsideWorldSegment(z));   // nella Città Neon niente canyon, gole o vuoti sotto la strada
+    const cand = ZONES.filter(z => (z.key === 'water' || z.key === 'gravel') && !overlapsWorldSegment(z));   // nella Città Neon niente canyon, gole o vuoti sotto la strada
     const wants = new Map();
     cand.forEach(z => wants.set(z, rnd() < (crazy ? (z.key === 'water' ? 0.85 : 0.8) : (SEASON.bridge != null ? SEASON.bridge : (z.key === 'water' ? 0.55 : 0.5)))));
     if (crazy && cand.length && ![...wants.values()].some(Boolean)) wants.set(cand[Math.floor(rnd() * cand.length)], true); // modalità pazza: almeno un ponte; in gara normale può non esserci
 
     ZONES.forEach(z => {
       if (z.key === 'water') {
-        if (wants.get(z)) {
+        if (overlapsWorldSegment(z)) {
+          // Nei mondi speciali: niente ponte in pietra generico. Passaggio continuo decorato a tema.
+          z.gap = null; z.bridge = null;
+        } else if (wants.get(z)) {
           const span = 520, mid = z.start + z.len * (0.46 + rnd() * 0.08);
           z.gap = { g0: mid - span / 2, g1: mid + span / 2, D: 110, W: 150 };
           z.bridge = { kind: 'arch', start: z.gap.g0, end: z.gap.g1, peak: 58 };
@@ -692,9 +700,29 @@ const Terrain = (() => {
       } else if (z.key === 'lava') {
         // lago di lava: bacino largo, 56 px di fondo con pareti dolci; il pelo sta 26 px sotto la riva (come l'acqua), quindi la lava è profonda al più 30 px.
         // Solo di rado (circa una volta su quattordici) c'è un ponte di basalto (arco in pietra): chi lo prende non tocca la lava.
-        const span = 940, mid = z.start + z.len * (0.44 + rnd() * 0.12);   // lago lungo: la ruota ha il tempo di sciogliersi davvero
-        z.gap = { g0: mid - span / 2, g1: mid + span / 2, D: 56, W: 300 };
-        if (rnd() < 0.07) z.bridge = { kind: 'arch', start: z.gap.g0, end: z.gap.g1, peak: 52 };
+        const damned = !!(WORLD_SEGMENT && WORLD_SEGMENT.world === 'inferno' && overlapsWorldSegment(z));
+        // L'Inferno usa una voragine a lobi e contrafforti di pietra, non un cratere vulcanico.
+        // Tutti i parametri sono deterministici fra host e client; la deformazione E' collisione.
+        const span = damned ? 1420 : 940, mid = z.start + z.len * (damned ? 0.515 : 0.44 + rnd() * 0.12);
+        z.gap = { g0: mid - span / 2, g1: mid + span / 2, D: damned ? 78 : 56, W: damned ? 360 : 300, damned };
+        if (damned) {
+          // Bacino più grande e leggibile: due modi per attraversarlo.
+          // 1) tenere la linea bassa, immergendosi nella lava e uscendo dall'altra riva;
+          // 2) usare il doppio salto per atterrare su un unico isolotto monumentale e poi rilanciarsi.
+          // L'isolotto è fisico, non decorativo: la sommità coincide con la collisione.
+          const spanI = z.gap.g1 - z.gap.g0;
+          z.islands = [
+            { t: 0.52, width: 426, topDepth: 4.6, id: 0, kind: 'cathedral' },
+          ].map(q => ({ ...q, zone: z.index, x: Math.round(z.gap.g0 + spanI * q.t) }));
+          z.thorns = {
+            left:  { x: Math.round(z.gap.g0 + 170), width: 210, topDepth: 18 },
+            midL:  { x: Math.round(z.islands[0].x - 126), width: 126, topDepth: 9.2 },
+            midR:  { x: Math.round(z.islands[0].x + 126), width: 126, topDepth: 9.2 },
+            right: { x: Math.round(z.gap.g1 - 170), width: 210, topDepth: 18 },
+          };
+          INFERNO_ISLANDS.push(...z.islands);
+        }
+        if (!damned && !overlapsWorldSegment(z) && rnd() < 0.07) z.bridge = { kind: 'arch', start: z.gap.g0, end: z.gap.g1, peak: 52 };
       } else if (z.key === 'gravel' && wants.get(z)) {
         const span = 560, mid = z.start + z.len * (0.46 + rnd() * 0.08);
         z.gap = { g0: mid - span / 2, g1: mid + span / 2, D: 150, W: 130 };
@@ -736,7 +764,34 @@ const Terrain = (() => {
 
   function gapDepth(z, x) {
     const g = z.gap; if (!g || x <= g.g0 || x >= g.g1) return 0;
-    return g.D * smooth((x - g.g0) / g.W) * smooth((g.g1 - x) / g.W);
+    const edge = smooth((x - g.g0) / g.W) * smooth((g.g1 - x) / g.W);
+    if (!g.damned) return g.D * edge;
+    const t = (x - g.g0) / (g.g1 - g.g0);
+    // Bacino asimmetrico e contorto, con una nervatura gotica centrale e bordi corrosi dal vento.
+    // Oscillazioni ampie ma lisce: pendenza compatibile con la fisica delle ruote.
+    const folds = 0.91 + 0.115 * Math.sin(t * Math.PI * 5.3 + 0.35) + 0.032 * Math.sin(t * Math.PI * 14.4 + 1.4);
+    const rib = 0.35 * Math.exp(-Math.pow((t - 0.55) / 0.085, 2));
+    let depth = g.D * edge * Math.max(0.34, folds - rib);
+    // Picchi piatti al centro, spalle curve agli estremi: isole fisiche indipendenti dalla grafica.
+    // Non creano un ponte continuo: fra gli isolotti resta lava vera e pericolosa.
+    if (z.islands) for (const island of z.islands) {
+      const a = Math.abs(x - island.x) / (island.width * 0.5);
+      if (a < 1) {
+        const crown = 1 - smooth((a - 0.24) / 0.76);
+        depth = depth * (1 - crown) + island.topDepth * crown;
+      }
+    }
+    if (g.damned && z.thorns) {
+      const helpers = [z.thorns.left, z.thorns.midL, z.thorns.midR, z.thorns.right];
+      for (const h of helpers) {
+        const a = Math.abs(x - h.x) / (h.width * 0.5);
+        if (a < 1) {
+          const kick = 1 - smooth((a - 0.10) / 0.90);
+          depth = depth * (1 - kick) + h.topDepth * kick;
+        }
+      }
+    }
+    return depth;
   }
 
   // Terreno "vero", compreso il vuoto sotto i ponti (serve a chi disegna: acqua, crepaccio…)
@@ -771,7 +826,14 @@ const Terrain = (() => {
   function isWater(x) { const z = zoneAt(x); return z.key === 'water' && !bridgeAt(x) && naturalHeight(x) < waterLevel(x); }
 
   // Lava: il pelo sta 26 px sotto la riva; dove il fondo è più in alto non c'è lava, e sotto il ponte non si tocca.
-  function lavaLevel(x) { const z = zoneAt(x); return z.key === 'lava' && z.gap ? zoneBase(z, x) - 26 : -Infinity; }
+  function lavaLevel(x) {
+    const z = zoneAt(x); if (z.key !== 'lava' || !z.gap) return -Infinity;
+    if (!z.gap.damned) return zoneBase(z, x) - 26;
+    // Liquido rosso-violaceo contorto: livello fisico identico per tutti i client.
+    const t = (x - z.gap.g0) / (z.gap.g1 - z.gap.g0);
+    const curl = 3.2 * Math.sin(t * Math.PI * 5.8 + .6) + 1.5 * Math.sin(t * Math.PI * 12.6);
+    return zoneBase(z, x) - (26 + curl);
+  }
   function isLava(x) { const z = zoneAt(x); return z.key === 'lava' && z.gap && !bridgeAt(x) && naturalHeight(x) < lavaLevel(x); }
   // x dentro il tratto (con un po' di margine) dove può esserci lava: serve a non fare conti inutili altrove
   function nearLava(x, m) { const z = zoneAt(x); return z.key === 'lava' && !!z.gap && !z.bridge && x > z.gap.g0 - (m || 0) && x < z.gap.g1 + (m || 0); }
@@ -857,7 +919,7 @@ const Terrain = (() => {
     LENGTHS,
     get SEASON() { return SEASON; }, get PACE() { return PACE; }, get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; },
     get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; }, get LILIES() { return LILIES; },
-    get BRIDGES() { return BRIDGES; }, get PATCHES() { return PATCHES; }, get PORTALS() { return PORTALS; }, PORTAL_RY: 88, landOk, ravineAt, rampAt, onRamp, makePatch, mkRamp, rampY,
+    get BRIDGES() { return BRIDGES; }, get INFERNO_ISLANDS() { return INFERNO_ISLANDS; }, get PATCHES() { return PATCHES; }, get PORTALS() { return PORTALS; }, PORTAL_RY: 88, landOk, ravineAt, rampAt, onRamp, makePatch, mkRamp, rampY,
     // tipo di presa speciale sotto la ruota: 'mud' (fango), 'ice' (ghiaccio) o null
     // N lati della strada ad archi sotto la ruota (0 se non è una strada ad archi): serve a chi ha esattamente N punte
     gripN: x => { const z = zoneAt(x); if (z.patches) for (const p of z.patches) if (p.kind === 'arch' && x >= p.a && x <= p.b) return p.n; return 0; },

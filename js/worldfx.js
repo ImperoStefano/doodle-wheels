@@ -38,8 +38,8 @@ const WorldFX = (() => {
   //  DECORAZIONI SUL TERRENO
   // =============================================================================================
   function props(ctx, camX, w, gy, t, A) {
-    const cell = A.world === 'atlantis' ? 150 : A.world === 'enchanted' ? 130 : A.world === 'neon' ? 170 : 0; if (!cell) return;
-    const seed = A.world === 'atlantis' ? 1 : A.world === 'enchanted' ? 2 : 3;
+    const cell = A.world === 'atlantis' ? 150 : A.world === 'enchanted' ? 130 : A.world === 'neon' ? 170 : (A.world === 'inferno' || A.world === 'paradise') ? 235 : 0; if (!cell) return;
+    const seed = A.world === 'atlantis' ? 1 : A.world === 'enchanted' ? 2 : A.world === 'neon' ? 3 : A.world === 'inferno' ? 4 : 5;
     const i0 = Math.floor((camX - 120) / cell), i1 = Math.floor((camX + w + 120) / cell);
     for (let i = i0; i <= i1; i++) {
       if (H(i, seed) > 0.66) continue;
@@ -50,9 +50,30 @@ const WorldFX = (() => {
       ctx.save(); ctx.translate(sx, y + 1); ctx.rotate(ang); ctx.globalAlpha = A.k;
       if (A.world === 'atlantis') atlantisProp(ctx, kind, r, ph, t, wx);
       else if (A.world === 'enchanted') enchantedProp(ctx, kind, r, ph, t, wx);
-      else neonProp(ctx, kind, r, ph, t, wx);
+      else if (A.world === 'neon') neonProp(ctx, kind, r, ph, t, wx);
+      else if (A.world === 'inferno') infernoProp(ctx, kind, r, ph, t);
+      else paradiseProp(ctx, kind, r, ph, t);
       ctx.restore();
     }
+  }
+
+  // Ostacoli scenici al suolo: niente cespugli, sassi o arredi di altri biomi.
+  function infernoProp(ctx, kind, r, ph, t) {
+    if (kind % 3 === 0) { // lama di roccia gotica, a lato della traiettoria
+      ctx.fillStyle='#322237';ctx.strokeStyle='#b05b70';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(-16,2);ctx.lineTo(-9,-26-r*23);ctx.lineTo(0,-55-r*37);ctx.lineTo(9,-17);ctx.lineTo(18,2);ctx.closePath();ctx.fill();ctx.stroke();
+    } else if (kind % 3 === 1) { // anime che sorgono nel vento
+      ctx.globalAlpha *= .64;ctx.fillStyle='#a87895';ctx.beginPath();ctx.arc(0,-29,7,0,TAU);ctx.fill();
+      ctx.beginPath();ctx.moveTo(-6,-20);ctx.quadraticCurveTo(-28,-8,-17,0);ctx.quadraticCurveTo(8,-6,19,-22);ctx.quadraticCurveTo(10,1,18,5);ctx.lineTo(-12,5);ctx.closePath();ctx.fill();
+    } else { // ceneri e schegge al suolo
+      ctx.strokeStyle='#ea897d';ctx.lineWidth=2;ctx.beginPath();
+      for(let j=0;j<4;j++){let x=(j-1.5)*13;ctx.moveTo(x,0);ctx.lineTo(x+Math.sin(t*2+ph+j)*5,-12-j*5)}ctx.stroke();
+    }
+  }
+  function paradiseProp(ctx, kind, r, ph, t) {
+    if(kind%3===0){ctx.fillStyle='#f8f5e3';ctx.strokeStyle='#d6b878';ctx.lineWidth=2;ctx.fillRect(-7,-39-r*19,14,39+r*19);ctx.strokeRect(-7,-39-r*19,14,39+r*19);ctx.beginPath();ctx.arc(0,-40-r*19,12,Math.PI,0);ctx.stroke();}
+    else if(kind%3===1){ctx.fillStyle='#f2e2a2';ctx.beginPath();ctx.ellipse(0,-9,16,4,0,0,TAU);ctx.fill();ctx.fillStyle='#ffffff';ctx.beginPath();ctx.ellipse(-7,-13,12,9,0,0,TAU);ctx.ellipse(7,-14,12,10,0,0,TAU);ctx.fill();}
+    else {ctx.strokeStyle='#e9d6a0';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-27);ctx.moveTo(-9,-18);ctx.lineTo(9,-18);ctx.stroke();}
   }
 
   function atlantisProp(ctx, kind, r, ph, t) {
@@ -331,12 +352,14 @@ const WorldFX = (() => {
   //  vengono rimappati mentre la skin è attiva; la mappa è in cache, quindi il costo è trascurabile.
   // =============================================================================================
   const SK = {
+    paradise: { dark: [64, 112, 137], mid: [185, 213, 208], light: [255, 252, 225], acc: [[236, 209, 137], [242, 246, 234]] },
+    inferno: { dark: [35, 21, 37], mid: [118, 59, 79], light: [245, 164, 152], acc: [[232, 93, 86], [174, 115, 172]] },
     atlantis: { dark: [5, 45, 66], mid: [31, 163, 155], light: [205, 255, 240], acc: [[255, 127, 156], [255, 176, 110]] },
     enchanted: { dark: [14, 33, 27], mid: [84, 160, 98], light: [236, 255, 208], acc: [[180, 95, 224], [255, 205, 110]] },
     neon: { dark: [10, 8, 36], mid: [66, 52, 150], light: [143, 252, 255], acc: [[244, 87, 222], [70, 245, 238]] },
   };
   const mixc = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-  const skCache = { atlantis: new Map(), enchanted: new Map(), neon: new Map() };
+  const skCache = Object.fromEntries(Object.keys(SK).map(k => [k, new Map()]));
   function parseCol(s) {
     let m;
     if ((m = /^#([0-9a-f]{3})$/i.exec(s))) { const h = m[1]; return [parseInt(h[0] + h[0], 16), parseInt(h[1] + h[1], 16), parseInt(h[2] + h[2], 16), 1]; }
@@ -379,6 +402,12 @@ const WorldFX = (() => {
       ctx.globalCompositeOperation = 'screen'; ctx.strokeStyle = 'rgba(70,245,238,0.22)'; ctx.lineWidth = 9; ctx.stroke(); ctx.strokeStyle = 'rgba(244,87,222,0.9)'; ctx.lineWidth = 2.4; ctx.stroke();
     } else if (W === 'enchanted') {
       ctx.strokeStyle = 'rgba(96,180,92,0.7)'; ctx.lineWidth = 6; ctx.stroke(); ctx.strokeStyle = 'rgba(190,255,150,0.55)'; ctx.lineWidth = 1.8; ctx.stroke();
+    } else if (W === 'inferno') {
+      ctx.strokeStyle = 'rgba(182,111,145,0.60)'; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = 'rgba(230,164,165,0.53)'; ctx.lineWidth = 1.7; ctx.stroke();
+    } else if (W === 'paradise') {
+      ctx.strokeStyle = 'rgba(232,205,140,0.72)'; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,250,226,0.78)'; ctx.lineWidth = 1.9; ctx.stroke();
     } else {
       ctx.strokeStyle = 'rgba(210,255,246,0.55)'; ctx.lineWidth = 2.2; ctx.stroke();
     }
@@ -389,6 +418,8 @@ const WorldFX = (() => {
       ctx.save(); ctx.translate(px, py);
       if (W === 'atlantis') { const sw = Math.sin(t * 1.3 + i) * 3; ctx.strokeStyle = r > 0.3 ? '#2fae8f' : '#ff7f9c'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(sw, -9, sw * 1.6, -14 - r * 8); ctx.stroke(); ctx.fillStyle = '#e8fffb'; ctx.beginPath(); ctx.arc(sw * 1.6, -14 - r * 8, 1.8, 0, TAU); ctx.fill(); }
       else if (W === 'enchanted') { ctx.fillStyle = r > 0.3 ? '#ffd88a' : '#ff9ad0'; const p2 = 0.6 + 0.4 * Math.sin(t * 2 + i); ctx.globalCompositeOperation = 'screen'; blob(ctx, r > 0.3 ? 'rgba(255,216,138,1)' : 'rgba(255,154,208,1)', 0, -5, 9 * p2 + 3, 0.8); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(0, -5, 1.8, 0, TAU); ctx.fill(); }
+      else if (W === 'inferno') { ctx.fillStyle='#a56e8a'; ctx.beginPath();ctx.moveTo(0,-11);ctx.lineTo(-4,0);ctx.lineTo(4,0);ctx.closePath();ctx.fill(); }
+      else if (W === 'paradise') { ctx.fillStyle='#f8e4aa';ctx.beginPath();ctx.arc(0,-4,2.3,0,TAU);ctx.fill(); }
       else { const on = Math.sin(t * 4 + i * 1.7) > -0.3; ctx.fillStyle = i % 2 ? '#46f2ef' : '#f457de'; if (on) { ctx.globalCompositeOperation = 'screen'; blob(ctx, i % 2 ? 'rgba(70,245,238,1)' : 'rgba(244,87,222,1)', 0, -3, 8, 0.8); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; } ctx.fillRect(-1.2, -5, 2.4, 5); }
       ctx.restore();
     }
@@ -398,15 +429,67 @@ const WorldFX = (() => {
       ctx.save(); ctx.translate(px, py);
       if (W === 'neon') { ctx.fillStyle = '#16123e'; ctx.fillRect(-3, -46, 6, 46); ctx.fillStyle = '#46f2ef'; ctx.fillRect(-3, -46, 6, 2.5); ctx.globalCompositeOperation = 'screen'; blob(ctx, 'rgba(244,87,222,1)', 0, -50, 22 * pulse + 6, 0.9); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = '#ffc2f4'; ctx.beginPath(); ctx.arc(0, -50, 3.2, 0, TAU); ctx.fill(); }
       else if (W === 'enchanted') { ctx.strokeStyle = '#5a3d28'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -42); ctx.quadraticCurveTo(8, -48, 12, -40); ctx.stroke(); ctx.globalCompositeOperation = 'screen'; blob(ctx, 'rgba(255,200,90,1)', 12, -36, 20 * pulse + 6, 0.9); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.fillStyle = '#ffe3a0'; ctx.beginPath(); ctx.ellipse(12, -36, 3.5, 5, 0, 0, TAU); ctx.fill(); }
-      else { ctx.strokeStyle = '#ff7f9c'; ctx.lineWidth = 4; ctx.lineCap = 'round'; for (const [dx, hh] of [[-5, 30], [0, 44], [5, 26]]) { ctx.beginPath(); ctx.moveTo(dx, 0); ctx.quadraticCurveTo(dx + Math.sin(t + dx) * 2, -hh * 0.5, dx * 1.6, -hh); ctx.stroke(); } ctx.globalCompositeOperation = 'screen'; blob(ctx, 'rgba(210,255,250,1)', 0, -46, 16 * pulse + 5, 0.8); ctx.globalCompositeOperation = 'source-over'; }
+      else if (W === 'inferno') {
+        ctx.fillStyle='#261d30';ctx.strokeStyle='#a76180';ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.moveTo(-9,0);ctx.lineTo(-7,-31);ctx.lineTo(0,-56);ctx.lineTo(7,-31);ctx.lineTo(9,0);ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.fillStyle='#e6a0a1';ctx.fillRect(-1.5,-36,3,9);
+      } else if (W === 'paradise') {
+        ctx.fillStyle='#f7f0dd';ctx.strokeStyle='#d7bf8c';ctx.lineWidth=2.5;
+        ctx.beginPath();ctx.moveTo(-10,0);ctx.lineTo(-10,-35);ctx.quadraticCurveTo(0,-50,10,-35);ctx.lineTo(10,0);ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.strokeStyle='#debd82';ctx.beginPath();ctx.moveTo(0,-57);ctx.lineTo(0,-73);ctx.moveTo(-8,-66);ctx.lineTo(8,-66);ctx.stroke();
+      } else { ctx.strokeStyle = '#ff7f9c'; ctx.lineWidth = 4; ctx.lineCap = 'round'; for (const [dx, hh] of [[-5, 30], [0, 44], [5, 26]]) { ctx.beginPath(); ctx.moveTo(dx, 0); ctx.quadraticCurveTo(dx + Math.sin(t + dx) * 2, -hh * 0.5, dx * 1.6, -hh); ctx.stroke(); } ctx.globalCompositeOperation = 'screen'; blob(ctx, 'rgba(210,255,250,1)', 0, -46, 16 * pulse + 5, 0.8); ctx.globalCompositeOperation = 'source-over'; }
       ctx.restore();
     }
   }
 
   // =============================================================================================
+  // Portali monumentali sotto cui correre: sono scenografie senza collisione.
+  // Le rampe e i salti rimangono affidati alla fisica del terreno.
+  function monuments(ctx, camX, w, gy, t, A) {
+    if (!A.seg) return;
+    const span = 930, origin = A.seg.start + 350;
+    const left = Math.max(0, Math.floor((camX - origin - 250) / span));
+    const right = Math.ceil((camX + w - origin + 250) / span);
+    for(let i=left; i<=right; i++) {
+      const wx=origin+i*span;
+      if(wx<A.seg.start+180 || wx>A.seg.end-200)continue;
+      const x=wx-camX, y=gy-Terrain.height(wx);
+      // Rimane a distanza dalla ruota; si apre un grande varco centrale.
+      ctx.save();ctx.translate(x,y);ctx.globalAlpha=A.k*.89;
+      const arch=A.world==='neon', sea=A.world==='atlantis', wood=A.world==='enchanted', heaven=A.world==='paradise';
+      const main=arch?'#3c2c81':sea?'#88c4b5':wood?'#594b63':heaven?'#f9edcf':'#3c293e';
+      const edge=arch?'#5cfff5':sea?'#c6eadd':wood?'#bce4a3':heaven?'#e8cc88':'#ad687c';
+      ctx.strokeStyle=main;ctx.lineWidth=21;ctx.lineCap='round';ctx.beginPath();
+      ctx.moveTo(-130,-1);ctx.lineTo(-130,-118);ctx.quadraticCurveTo(-130,-194,0,-202);
+      ctx.quadraticCurveTo(130,-194,130,-118);ctx.lineTo(130,-1);ctx.stroke();
+      ctx.strokeStyle=edge;ctx.lineWidth=4;ctx.beginPath();
+      ctx.moveTo(-118,-4);ctx.lineTo(-118,-116);ctx.quadraticCurveTo(-118,-182,0,-190);
+      ctx.quadraticCurveTo(118,-182,118,-116);ctx.lineTo(118,-4);ctx.stroke();
+      if(arch){
+        ctx.fillStyle='#d45df6';for(let j=0;j<7;j++)ctx.fillRect(-110+j*37,-137-26*Math.sin(j*Math.PI/6),13,5);
+        ctx.strokeStyle='#ff7be0';ctx.beginPath();ctx.moveTo(-27,-201);ctx.lineTo(-27,-238);ctx.lineTo(27,-238);ctx.lineTo(27,-201);ctx.stroke();
+      }else if(sea){
+        ctx.strokeStyle='#e7e8c7';ctx.lineWidth=3;
+        for(let j=0;j<4;j++){const px=j%2?-136:136;ctx.beginPath();ctx.moveTo(px,-28-j*18);ctx.lineTo(px+(j%2?17:-17),-41-j*18);ctx.stroke();}
+        ctx.fillStyle='#f5dba9';ctx.beginPath();ctx.arc(0,-195,17,0,TAU);ctx.fill();
+      }else if(wood){
+        ctx.strokeStyle='#a0d179';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(-132,-110);ctx.bezierCurveTo(-173,-164,-160,-213,-110,-227);ctx.moveTo(132,-110);ctx.bezierCurveTo(177,-163,158,-213,108,-229);ctx.stroke();
+        for(let j=-1;j<=1;j++){ctx.fillStyle=j%2?'#f3b3f1':'#b7f6b0';ctx.beginPath();ctx.ellipse(j*26,-205,9,5,0,0,TAU);ctx.fill();}
+      }else if(heaven){
+        ctx.fillStyle='#fff8d9';ctx.beginPath();ctx.arc(0,-201,15,0,TAU);ctx.fill();ctx.strokeStyle='#e8cc88';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(0,-225);ctx.lineTo(0,-251);ctx.moveTo(-11,-240);ctx.lineTo(11,-240);ctx.stroke();
+      }else{
+        ctx.strokeStyle='#e38a97';ctx.lineWidth=2;
+        for(let j=0;j<3;j++){const yy=-55-j*45;ctx.beginPath();ctx.moveTo(-130,yy);ctx.bezierCurveTo(-48,yy-24,48,yy+26,130,yy);ctx.stroke();}
+        ctx.fillStyle='#bd849a';ctx.beginPath();ctx.arc(0,-202,14,0,TAU);ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
   function drawGround(ctx, camX, w, gy, t) {
     skinOff(ctx);   // rete di sicurezza: a inizio frame la skin degli ostacoli non deve mai restare attiva
     const q = qual(); if (q >= 2) return; const A = active(camX, w); if (!A) return;
+    monuments(ctx, camX, w, gy, t / 1000, A);
     props(ctx, camX, w, gy, t / 1000, A);
     ctx.globalAlpha = 1;
   }

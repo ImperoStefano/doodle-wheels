@@ -29,19 +29,33 @@ const Scenery = (() => {
   const rnd = (a, b = 0, c = 0) => fract(Math.sin(a * 12.9898 + b * 78.233 + c * 37.719) * 43758.5453);
   const TAU = Math.PI * 2;
 
-  // Illustrazioni panoramiche originali dei tre mondi aggiuntivi. Sono SVG locali:
+  // Illustrazioni panoramiche originali dei tre mondi aggiuntivi. Sono PNG rasterizzati dagli SVG originali per ridurre il carico di rendering:
   // nitide su desktop e mobile, senza richieste esterne e senza dipendenze di rete.
   const WORLD_ART = Object.create(null);
   const WORLD_FRONT_ART = Object.create(null);
+  // V9: tre landmark unici per ogni tratto speciale. Non si ripetono con il tiling del cielo.
+  const WORLD_LANDMARKS = Object.create(null);
+  const LANDMARK_WORLDS = ['paradise', 'atlantis', 'enchanted', 'neon'];
+  function preloadWorldLandmarks(world) {
+    if (typeof Image === 'undefined' || !LANDMARK_WORLDS.includes(world) || WORLD_LANDMARKS[world]) return;
+    WORLD_LANDMARKS[world] = ['entry', 'heart', 'exit'].map(stage => {
+      const img = new Image(); img.decoding = 'async';
+      img.src = `img/worlds/landmarks/${world}-${stage}.png`;
+      return img;
+    });
+  }
+  // Caricamento pigro: solo le tre illustrazioni del mondo corrente (non 12 PNG su mobile).
   const WORLD_ART_PATHS = {
-    atlantis: 'img/worlds/atlantis.svg',
-    enchanted: 'img/worlds/enchanted.svg',
-    neon: 'img/worlds/neon.svg',
+    paradise: 'img/worlds/paradise.png',
+    inferno: 'img/worlds/inferno.png',
+    atlantis: 'img/worlds/atlantis.png',
+    enchanted: 'img/worlds/enchanted.png',
+    neon: 'img/worlds/neon.png',
   };
   const WORLD_FRONT_ART_PATHS = {
-    atlantis: 'img/worlds/atlantis-front.svg',
-    enchanted: 'img/worlds/enchanted-front.svg',
-    neon: 'img/worlds/neon-front.svg',
+    atlantis: 'img/worlds/atlantis-front.png',
+    enchanted: 'img/worlds/enchanted-front.png',
+    neon: 'img/worlds/neon-front.png',
   };
   function preloadWorldArt() {
     if (typeof Image === 'undefined') return;
@@ -394,10 +408,11 @@ const Scenery = (() => {
     Z.length = 0; finishX = fx;
     const validWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(world) ? world : 'classic';
     // I tre nuovi mondi sono set-piece locali: il resto della pista resta nel mondo classico.
-    S.segment = worldSegment && ['atlantis', 'enchanted', 'neon'].includes(worldSegment.world)
+    S.segment = worldSegment && ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(worldSegment.world)
       ? { world: worldSegment.world, start: worldSegment.start, end: worldSegment.end, length: worldSegment.length }
       : null;
     S.segmentBlend = 0; S.segmentActive = false;
+    if (S.segment) preloadWorldLandmarks(S.segment.world); // avvia il caricamento prima dell'ingresso nel mondo
     S.world = S.segment ? 'classic' : validWorld;
     S.bannerWorld = null;
     ACTIVE_BIOMES = makeWorldBiomes(S.world);
@@ -836,10 +851,10 @@ const Scenery = (() => {
         if (!warning && !active) continue;
         const k = active ? Math.sin(Math.PI * phase / q.burst) : 0.22 + 0.18 * Math.sin(raceTime / 75 + q.id);
         ctx.save(); ctx.globalAlpha = active ? 0.9 : 0.55;
-        ctx.fillStyle = warning ? 'rgba(255,190,80,0.55)' : 'rgba(255,110,35,0.5)'; ctx.beginPath(); ctx.ellipse(x, y + 2, 24 + 10 * k, 6 + 2 * k, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = warning ? 'rgba(244,150,198,0.65)' : 'rgba(185,53,119,0.55)'; ctx.beginPath(); ctx.ellipse(x, y + 2, 24 + 10 * k, 6 + 2 * k, 0, 0, TAU); ctx.fill();
         if (active) {
           const h = 48 + 108 * k, half = 13 + 13 * k;
-          const flame = ctx.createLinearGradient(0, y - h, 0, y); flame.addColorStop(0, 'rgba(255,238,150,0.08)'); flame.addColorStop(0.35, 'rgba(255,160,48,0.8)'); flame.addColorStop(1, 'rgba(220,45,20,0.92)');
+          const flame = ctx.createLinearGradient(0, y - h, 0, y); flame.addColorStop(0, 'rgba(239,175,219,0.05)'); flame.addColorStop(0.35, 'rgba(253,123,167,0.83)'); flame.addColorStop(1, 'rgba(157,26,91,0.94)');
           ctx.fillStyle = flame; ctx.beginPath(); ctx.moveTo(x - 5, y); ctx.quadraticCurveTo(x - half * 1.4, y - h * 0.55, x + Math.sin(raceTime / 90 + q.id) * half * 0.35, y - h); ctx.quadraticCurveTo(x + half * 1.4, y - h * 0.54, x + 5, y); ctx.closePath(); ctx.fill();
         }
         ctx.restore();
@@ -960,97 +975,28 @@ const Scenery = (() => {
     ctx.globalAlpha = 1; ctx.restore();
   }
 
-  // Paolo e Francesca: due figure unite nell'abbraccio, trascinate per sempre dalla bufera.
-  // Sono una silhouette poetica, non un elemento di gameplay né un ostacolo.
+  // Paolo e Francesca: due piccole ombre indivisibili nel vento, senza ritratti illustrativi.
   function drawDanteLovers(ctx) {
-    if (S.world !== 'inferno' || quality >= 2) return;
-    const w = S.w, gy = S.gy, now = S.now / 1000, spacing = 2240; // apparizioni narrative più rare e leggibili
-    const par = S.camX * 0.052;
-    const first = Math.floor((par - 900) / spacing), last = Math.floor((par + w + 900) / spacing);
-    for (let n = first; n <= last; n++) {
-      const cx = n * spacing + 960 + (rnd(n, 881) - 0.5) * 220 - par;
-      if (cx < -340 || cx > w + 340) continue;
-      const cy = gy * (0.40 + 0.028 * Math.sin(now * 0.7 + n));
-      const sc = 1.24 + rnd(n, 880) * 0.10;
-      const rot = -0.19 + 0.16 * Math.sin(now * 1.45 + n * 2.2);
-      ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(sc * S.hs, sc * S.hs);
-
-      // alone morbido: i due amanti sono sospesi, ma non confusi con il cielo
-      const aura = ctx.createRadialGradient(0, -12, 8, 0, -12, 142);
-      aura.addColorStop(0, 'rgba(238,157,153,0.28)'); aura.addColorStop(0.48, 'rgba(132,68,91,0.16)'); aura.addColorStop(1, 'rgba(50,29,49,0)');
-      ctx.fillStyle = aura; ctx.fillRect(-155, -165, 310, 310);
-
-      // vortice che li trascina, disegnato dietro alle figure
-      ctx.globalAlpha = 0.52; ctx.strokeStyle = '#d28a98'; ctx.lineWidth = 3.0;
-      ctx.beginPath(); ctx.ellipse(0, -3, 111, 47, -0.22, 0.06, Math.PI * 1.7); ctx.stroke();
-      ctx.globalAlpha = 0.30; ctx.strokeStyle = '#e2c3b7'; ctx.lineWidth = 1.7;
-      ctx.beginPath(); ctx.ellipse(0, -3, 132, 61, -0.22, Math.PI, Math.PI * 2.75); ctx.stroke();
-      ctx.globalAlpha = 1;
-
-      // mantello di Paolo e veste di Francesca, entrambe trascinate dal vento
-      ctx.fillStyle = '#241f31'; ctx.beginPath();
-      ctx.moveTo(-25, -23); ctx.bezierCurveTo(-65, -54, -111, -52, -151, -93);
-      ctx.bezierCurveTo(-133, -48, -91, -22, -48, -8);
-      ctx.bezierCurveTo(-104, 0, -133, 24, -161, 16);
-      ctx.bezierCurveTo(-113, 48, -57, 29, -15, 11); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(223,151,150,0.62)'; ctx.lineWidth = 2.4;
-      ctx.beginPath(); ctx.moveTo(-134, -77); ctx.quadraticCurveTo(-88, -34, -34, -9); ctx.moveTo(-145, 17); ctx.quadraticCurveTo(-82, 40, -12, 7); ctx.stroke();
-
-      ctx.fillStyle = '#54283f'; ctx.beginPath();
-      ctx.moveTo(6, -20); ctx.bezierCurveTo(39, -48, 65, -22, 60, 19);
-      ctx.bezierCurveTo(58, 48, 83, 66, 111, 72);
-      ctx.bezierCurveTo(61, 92, 7, 70, -8, 45);
-      ctx.bezierCurveTo(7, 18, -7, -1, 6, -20); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(229,154,157,0.64)'; ctx.lineWidth = 2.2;
-      ctx.beginPath(); ctx.moveTo(38, -13); ctx.quadraticCurveTo(48, 36, 89, 65); ctx.stroke();
-
-      // busto di Paolo: figura maschile a sinistra
-      ctx.fillStyle = '#30263a'; ctx.beginPath();
-      ctx.moveTo(-44, -23); ctx.quadraticCurveTo(-64, 4, -57, 45);
-      ctx.lineTo(-27, 65); ctx.lineTo(3, 48); ctx.quadraticCurveTo(4, 7, -7, -18);
-      ctx.closePath(); ctx.fill();
-      // collo e volto di Paolo, rivolto verso Francesca
-      ctx.fillStyle = '#c39086'; ctx.fillRect(-31, -42, 15, 24);
-      ctx.beginPath(); ctx.ellipse(-24, -54, 18, 21, -0.08, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#211d2b'; ctx.beginPath();
-      ctx.moveTo(-43, -58); ctx.quadraticCurveTo(-47, -82, -22, -82);
-      ctx.quadraticCurveTo(0, -78, -4, -51); ctx.quadraticCurveTo(-12, -62, -21, -63);
-      ctx.quadraticCurveTo(-31, -51, -43, -58); ctx.fill();
-      // profilo di Paolo: naso e guancia in luce
-      ctx.fillStyle = '#d9a398'; ctx.beginPath(); ctx.moveTo(-10, -56); ctx.lineTo(-3, -51); ctx.lineTo(-11, -47); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(250,204,183,0.88)'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(-15, -40); ctx.quadraticCurveTo(-24, -34, -33, -41); ctx.stroke();
-
-      // busto di Francesca: figura femminile a destra, vicina al volto di Paolo
-      ctx.fillStyle = '#663047'; ctx.beginPath();
-      ctx.moveTo(-1, -22); ctx.quadraticCurveTo(23, -37, 46, -13);
-      ctx.quadraticCurveTo(66, 17, 49, 58); ctx.quadraticCurveTo(24, 79, -8, 56);
-      ctx.quadraticCurveTo(9, 15, -1, -22); ctx.closePath(); ctx.fill();
-      // collo e volto di Francesca, rivolto verso Paolo
-      ctx.fillStyle = '#d3a09a'; ctx.fillRect(10, -43, 16, 24);
-      ctx.beginPath(); ctx.ellipse(18, -55, 17, 21, 0.08, 0, TAU); ctx.fill();
-      // lunghi capelli mossi dal vento
-      ctx.fillStyle = '#211a2a'; ctx.beginPath();
-      ctx.moveTo(3, -62); ctx.quadraticCurveTo(0, -88, 26, -82);
-      ctx.quadraticCurveTo(51, -78, 42, -52); ctx.quadraticCurveTo(58, -29, 108, -10);
-      ctx.quadraticCurveTo(70, -12, 42, -32); ctx.quadraticCurveTo(35, -41, 31, -50);
-      ctx.quadraticCurveTo(19, -43, 3, -62); ctx.fill();
-      // profilo di Francesca e piccolo riflesso sul viso
-      ctx.fillStyle = '#e0afa2'; ctx.beginPath(); ctx.moveTo(2, -57); ctx.lineTo(-5, -52); ctx.lineTo(3, -47); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,217,195,0.9)'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(9, -39); ctx.quadraticCurveTo(18, -33, 29, -41); ctx.stroke();
-
-      // l'abbraccio leggibile: il braccio di Paolo avvolge le spalle di Francesca
-      ctx.strokeStyle = '#ba827e'; ctx.lineWidth = 8; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(-8, -14); ctx.quadraticCurveTo(10, -31, 31, -17); ctx.quadraticCurveTo(45, -9, 48, 1); ctx.stroke();
-      // il braccio di Francesca attraversa il petto di Paolo
-      ctx.strokeStyle = '#d1a098'; ctx.lineWidth = 7;
-      ctx.beginPath(); ctx.moveTo(43, 3); ctx.quadraticCurveTo(15, 19, -8, 9); ctx.quadraticCurveTo(-23, 3, -29, -7); ctx.stroke();
-      // mani unite al centro
-      ctx.fillStyle = '#e0b0a2'; ctx.beginPath(); ctx.ellipse(5, 3, 8, 5, -0.3, 0, TAU); ctx.fill();
-
-      // riflessi di tempesta sui contorni, per separarli dalle nubi
-      ctx.strokeStyle = 'rgba(244,177,164,0.70)'; ctx.lineWidth = 2.2;
-      ctx.beginPath(); ctx.moveTo(-43, -67); ctx.quadraticCurveTo(-54, -48, -43, -29);
-      ctx.moveTo(4, -70); ctx.quadraticCurveTo(30, -83, 40, -58); ctx.stroke();
+    if ((S.world !== 'inferno' && !(S.segmentActive && S.segment && S.segment.world === 'inferno')) || quality >= 2) return;
+    const w=S.w, gy=S.gy, t=S.now/1000, p=S.camX*.13;
+    for(let n=Math.floor((p-650)/1180); n<=Math.floor((p+w+650)/1180); n++) {
+      const x=n*1180+540-p, y=gy*(.29+.045*Math.sin(t*.55+n)), sc=.78*S.hs;
+      if(x < -170 || x>w+170) continue;
+      ctx.save();ctx.translate(x,y);ctx.rotate(-.26+.1*Math.sin(t*.7+n));ctx.scale(sc,sc);
+      // nastri del turbine: il vento è il protagonista
+      ctx.lineCap='round';
+      for(let j=0;j<3;j++){
+        ctx.strokeStyle=j===1?'rgba(248,182,189,.36)':'rgba(180,137,182,.29)';ctx.lineWidth=3-j*.45;
+        ctx.beginPath();ctx.moveTo(-120,-23+j*17);ctx.bezierCurveTo(-58,-62+j*14,38,38+j*8,121,-23+j*13);ctx.stroke();
+      }
+      const ghost=(xx,yy,flip)=>{
+        ctx.save();ctx.translate(xx,yy);ctx.scale(flip,1);
+        ctx.fillStyle='rgba(227,194,203,.72)';ctx.beginPath();ctx.arc(0,-23,8.5,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='rgba(190,158,181,.43)';ctx.beginPath();ctx.moveTo(-8,-14);ctx.quadraticCurveTo(-26,0,-29,16);ctx.quadraticCurveTo(-3,7,6,30);ctx.quadraticCurveTo(31,19,46,24);ctx.quadraticCurveTo(18,0,11,-14);ctx.closePath();ctx.fill();
+        ctx.strokeStyle='rgba(255,208,209,.5)';ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(-7,-15);ctx.quadraticCurveTo(1,-21,9,-12);ctx.stroke();ctx.restore();
+      };
+      ghost(-11,0,1);ghost(13,9,-1);
+      ctx.strokeStyle='rgba(247,209,204,.74)';ctx.lineWidth=2.3;ctx.beginPath();ctx.moveTo(-3,-4);ctx.quadraticCurveTo(8,5,14,-1);ctx.stroke();
       ctx.restore();
     }
   }
@@ -1445,7 +1391,7 @@ const Scenery = (() => {
       // Fasce di nebbia basse, molto morbide e in movimento lento.
       ctx.globalAlpha = 0.10; ctx.fillStyle = '#c9e8d0';
       for (let i = 0; i < 3; i++) { const x = ((i * 0.43 * w - now * (7 + i * 3)) % (w + 360) + (w + 360)) % (w + 360) - 180; const y = gy * (0.55 + i * 0.055); ctx.beginPath(); ctx.ellipse(x, y, 190 + i * 28, 18 + i * 3, 0, 0, TAU); ctx.fill(); }
-    } else {
+    } else if (world === 'neon') {
       // Pioggia fine inclinata e scie al neon, solo sul fondale.
       ctx.globalAlpha = 0.22; ctx.strokeStyle = '#9be8ff'; ctx.lineWidth = 1.3;
       for (let i = 0; i < 34; i++) {
@@ -1952,9 +1898,156 @@ const Scenery = (() => {
       }
     }
     if (S.segment && S.segmentBlend > 0.001) drawSegmentWorldBackdrop(ctx);
+    // Gerarchia: i landmark principali vivono nel fondale precomposto; nessun tempietto ripetuto sopra di essi.
     drawDanteLovers(ctx);
     drawParadiseHeaven(ctx);
     drawParadiseIslands(ctx);
+  }
+
+  // Il Canto V non e un vulcano: e il cerchio dei lussuriosi trascinati dalla bufera.
+  // Dipinto locale opaco, cosi nessun bioma classico trapela durante il segmento speciale.
+  function drawDanteWorldBackdrop(ctx, world) {
+    const w = S.w, h = S.h, gy = S.gy, t = S.now / 1000, p = S.camX * 0.12;
+    const heaven = world === 'paradise';
+    let g = ctx.createLinearGradient(0, 0, 0, h);
+    if (heaven) { g.addColorStop(0, '#78b6d4'); g.addColorStop(0.45, '#c5e5e2'); g.addColorStop(1, '#fff2d8'); }
+    else { g.addColorStop(0, '#101024'); g.addColorStop(0.4, '#30233b'); g.addColorStop(0.82, '#5a3142'); g.addColorStop(1, '#b45e58'); }
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    if (heaven) {
+      const gx = w * 0.74, gy0 = gy * 0.16;
+      const aura = ctx.createRadialGradient(gx, gy0, 0, gx, gy0, gy * 0.72);
+      aura.addColorStop(0, 'rgba(255,255,240,.9)'); aura.addColorStop(0.35, 'rgba(255,246,199,.35)'); aura.addColorStop(1, 'rgba(255,246,199,0)');
+      ctx.fillStyle = aura; ctx.fillRect(0, 0, w, gy);
+      for (let k = 0; k < 11; k++) {
+        const x = k * 180 - ((p * 0.25) % 180) - 80;
+        ctx.fillStyle = k % 2 ? '#eef8e9' : '#f7f7e6';
+        ctx.beginPath(); ctx.ellipse(x, gy * (0.62 + 0.018 * Math.sin(k)), 175, 46, 0, 0, Math.PI*2); ctx.fill();
+      }
+      // Basiliche sospese, arcate percorribili otticamente, cupole e croci dorate.
+      for (let i = Math.floor((p - 650)/1200); i <= Math.floor((p + w + 650)/1200); i++) {
+        const x = i * 1200 + 470 - p, y = gy * 0.58;
+        ctx.save(); ctx.translate(x, y);
+        ctx.fillStyle = '#f9f0d7'; ctx.strokeStyle = '#d9bd82'; ctx.lineWidth = 4;
+        ctx.fillRect(-200,-88,400,115); ctx.strokeRect(-200,-88,400,115);
+        for (let j=-3; j<=3; j++) {
+          const xx=j*49; ctx.fillStyle='#bbd7d2'; ctx.beginPath(); ctx.arc(xx,-40,17,Math.PI,0); ctx.lineTo(xx+17,24);ctx.lineTo(xx-17,24);ctx.closePath();ctx.fill();
+          ctx.strokeStyle='#cfb481';ctx.lineWidth=5;ctx.stroke();
+        }
+        ctx.fillStyle='#eee4cb'; ctx.beginPath();ctx.arc(0,-89,89,Math.PI,0);ctx.closePath();ctx.fill();
+        ctx.fillStyle='#efd99c';ctx.fillRect(-4,-218,8,48);ctx.fillRect(-21,-203,42,8);
+        ctx.restore();
+      }
+    } else {
+      // Cerchi della bufera: bande di vento dinamiche ma leggibili, senza fiamme ovunque.
+      const haze = ctx.createLinearGradient(0, gy * .2, 0, gy);
+      haze.addColorStop(0,'rgba(165,89,117,0)'); haze.addColorStop(.7,'rgba(183,94,125,.22)');haze.addColorStop(1,'rgba(28,14,31,.25)');
+      ctx.fillStyle=haze;ctx.fillRect(0,gy*.2,w,gy*.8);
+      for (let j=0;j<14;j++) {
+        const cx = (((j*227-t*(27+j*3)-p*.38)%(w+620))+(w+620))%(w+620)-310;
+        const cy = gy*(.14+.057*(j%10)) + Math.sin(t*.8+j)*19;
+        ctx.strokeStyle = j%3===0?'rgba(244,174,169,.25)':'rgba(198,157,190,.18)';
+        ctx.lineWidth = 2+(j%3)*1.3; ctx.beginPath();
+        ctx.moveTo(cx-235,cy+18);ctx.bezierCurveTo(cx-90,cy-48,cx+85,cy+48,cx+225,cy-14);ctx.stroke();
+      }
+      // Porte, colonnati spezzati, torri torturate dal vento, mai canyon della gara classica.
+      for (let i=Math.floor((p-650)/1160);i<=Math.floor((p+w+650)/1160);i++) {
+        const x=i*1160+540-p, y=gy*.83;
+        ctx.save();ctx.translate(x,y);
+        ctx.fillStyle='#211b2a';ctx.strokeStyle='#7d4b5e';ctx.lineWidth=5;
+        ctx.beginPath();ctx.moveTo(-260,0);ctx.lineTo(-243,-175);ctx.lineTo(-211,-205);ctx.lineTo(-181,-168);ctx.lineTo(-163,-15);ctx.lineTo(-130,-15);ctx.lineTo(-107,-119);ctx.quadraticCurveTo(0,-218,107,-119);ctx.lineTo(130,-15);ctx.lineTo(166,-15);ctx.lineTo(191,-261);ctx.lineTo(211,-303);ctx.lineTo(239,-256);ctx.lineTo(258,0);ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.fillStyle='#462d3f';ctx.beginPath();ctx.moveTo(-86,0);ctx.lineTo(-84,-103);ctx.quadraticCurveTo(0,-187,84,-103);ctx.lineTo(86,0);ctx.closePath();ctx.fill();
+        // Silhouette di una cattedrale gotica: pinnacoli, trafori e contrafforti.
+        ctx.fillStyle='#161522';ctx.strokeStyle='#ad7086';ctx.lineWidth=2.3;
+        for(const [sx,hh] of [[-228,94],[-177,142],[-126,80],[126,80],[177,142],[228,94]]){
+          ctx.beginPath();ctx.moveTo(sx-15,-118);ctx.lineTo(sx-11,-118-hh*.45);ctx.lineTo(sx,-118-hh);ctx.lineTo(sx+11,-118-hh*.45);ctx.lineTo(sx+15,-118);ctx.closePath();ctx.fill();ctx.stroke();
+          ctx.fillStyle='rgba(226,105,117,.57)';ctx.fillRect(sx-2,-118-hh*.35,4,17);ctx.fillStyle='#161522';
+        }
+        for(const sx of [-144,144]){
+          ctx.fillStyle='#181521';ctx.beginPath();ctx.moveTo(sx-27,-147);ctx.lineTo(sx-21,-205);ctx.lineTo(sx,-270);ctx.lineTo(sx+20,-205);ctx.lineTo(sx+27,-147);ctx.closePath();ctx.fill();
+          ctx.strokeStyle='#94556b';ctx.stroke();
+          // gargoyle appollaiato, silhouette con ali e testa cornuta
+          ctx.save();ctx.translate(sx+(sx<0?-17:17),-162);ctx.scale(sx<0?-1:1,1);
+          ctx.fillStyle='#120f1b';ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(18,-10);ctx.quadraticCurveTo(29,-22,36,-14);ctx.lineTo(31,-4);ctx.lineTo(48,8);ctx.lineTo(27,5);ctx.lineTo(14,15);ctx.closePath();ctx.fill();
+          ctx.beginPath();ctx.moveTo(12,-6);ctx.lineTo(4,-34);ctx.lineTo(31,-20);ctx.lineTo(44,-28);ctx.lineTo(35,-8);ctx.closePath();ctx.fill();
+          ctx.beginPath();ctx.moveTo(31,-16);ctx.lineTo(29,-27);ctx.lineTo(37,-21);ctx.lineTo(40,-30);ctx.lineTo(44,-14);ctx.closePath();ctx.fill();
+          ctx.fillStyle='#ef897e';ctx.fillRect(38,-15,2.5,2.5);ctx.restore();
+        }
+        // Rosone traforato sopra l'arco, un segno iconico facilmente riconoscibile.
+        ctx.strokeStyle='rgba(218,127,144,.68)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,-177,20,0,Math.PI*2);ctx.stroke();
+        for(let r=0;r<8;r++){let ang=r*Math.PI/4;ctx.beginPath();ctx.moveTo(Math.cos(ang)*7,-177+Math.sin(ang)*7);ctx.lineTo(Math.cos(ang)*19,-177+Math.sin(ang)*19);ctx.stroke();}
+        // Lancette di luce nelle feritoie, senza effetto lava dominante.
+        ctx.fillStyle='rgba(231,139,145,.46)';for(const xx of [-210,-168,168,210])ctx.fillRect(xx,-135,3,21);
+        ctx.strokeStyle='rgba(242,139,142,.5)';ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,-100,103,Math.PI,0);ctx.stroke();
+        ctx.restore();
+      }
+      // Anime erranti lontane in silhouette, attraversate dalla stessa corrente.
+      for (let i=0;i<9;i++) {
+        const x = (((i*305-t*47-p*.46)%(w+350))+(w+350))%(w+350)-175;
+        const y = gy*(.21+(i%4)*.105)+Math.sin(t*1.4+i)*18;
+        ctx.save();ctx.translate(x,y);ctx.rotate(-.32+Math.sin(t+i)*.1);
+        ctx.fillStyle='rgba(212,162,178,.32)';ctx.beginPath();ctx.arc(0,-9,7,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.moveTo(-7,-1);ctx.quadraticCurveTo(-23,7,-37,-5);ctx.quadraticCurveTo(-23,27,4,37);ctx.quadraticCurveTo(21,11,29,-8);ctx.quadraticCurveTo(8,8,-7,-1);ctx.fill();ctx.restore();
+      }
+    }
+  }
+
+  // Landmark a bassa complessità: decorazioni legate al mondo speciale, mai a un bioma normale.
+  function drawSpecialWorldDetails(ctx) {
+    if(!S.segment || S.segmentBlend < .06 || quality>=2)return;
+    const world=S.segment.world, w=S.w, gy=S.gy, t=S.now/1000, p=S.camX*.18;
+    if(world==='inferno')return; // il gotico è disegnato nel fondale principale
+    ctx.save();ctx.globalAlpha*=S.segmentBlend*.8;
+    const gap=world==='atlantis'?770:world==='enchanted'?920:world==='neon'?690:850;
+    for(let i=Math.floor((p-350)/gap);i<=Math.floor((p+w+350)/gap);i++){
+      const x=i*gap+gap*.48-p, y=gy*.68;
+      ctx.save();ctx.translate(x,y);
+      if(world==='atlantis'){
+        // Tempietto di conchiglia e colonne corinzie sommerse.
+        ctx.fillStyle='#7cc9bf';ctx.strokeStyle='#b4fff0';ctx.lineWidth=3;
+        for(let k=-1;k<=1;k++){const xx=k*61;ctx.fillRect(xx-9,-93,18,114);ctx.strokeRect(xx-9,-93,18,114);ctx.fillRect(xx-17,-99,34,9);}
+        ctx.fillStyle='#398e91';ctx.beginPath();ctx.moveTo(-105,-108);ctx.lineTo(0,-153);ctx.lineTo(105,-108);ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.strokeStyle='rgba(246,218,171,.65)';for(let k=0;k<4;k++){ctx.beginPath();ctx.arc(-50+k*34,2,11+k%2*3,Math.PI,Math.PI*2);ctx.stroke();}
+      }else if(world==='enchanted'){
+        // Casa sugli alberi con ponte di funi sullo sfondo e cristalli luminosi.
+        ctx.strokeStyle='#8bc78b';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-127,13);ctx.lineTo(-132,-156);ctx.moveTo(113,13);ctx.lineTo(118,-130);ctx.stroke();
+        ctx.fillStyle='#573d52';ctx.fillRect(-78,-114,142,69);ctx.fillStyle='#b47bb8';ctx.beginPath();ctx.moveTo(-96,-112);ctx.lineTo(-5,-177);ctx.lineTo(80,-112);ctx.closePath();ctx.fill();
+        ctx.fillStyle='#f6cb92';ctx.fillRect(-15,-95,27,32);ctx.strokeStyle='#d6c29b';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(72,-65);ctx.quadraticCurveTo(111,-42,155,-70);ctx.stroke();
+        for(let k=0;k<3;k++){ctx.fillStyle=k%2?'#e6abff':'#a6ffdb';ctx.beginPath();ctx.moveTo(-120+k*110,-10);ctx.lineTo(-113+k*110,-33);ctx.lineTo(-105+k*110,-10);ctx.closePath();ctx.fill();}
+      }else if(world==='neon'){
+        // Treno maglev sospeso: linee pulite, mai rocce o canyon.
+        ctx.fillStyle='#25224e';ctx.fillRect(-225,-83,450,9);ctx.fillStyle='#43e7e8';ctx.fillRect(-225,-86,450,3);
+        const off=((t*30+i*31)%185)-92;ctx.fillStyle='#343663';ctx.beginPath();ctx.roundRect(-142+off*.3,-123,255,39,13);ctx.fill();
+        ctx.strokeStyle='#ff7be8';ctx.lineWidth=2;ctx.stroke();ctx.fillStyle='#81f9ef';for(let j=0;j<7;j++)ctx.fillRect(-121+off*.3+j*32,-113,20,13);
+        ctx.strokeStyle='#8769cd';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(-120,-78);ctx.lineTo(-120,13);ctx.moveTo(130,-78);ctx.lineTo(130,13);ctx.stroke();
+      }else if(world==='paradise'){
+        // Scala celeste e piccole campane dorate accanto ai templi.
+        ctx.strokeStyle='rgba(255,244,204,.84)';ctx.lineWidth=4;
+        for(let k=0;k<7;k++){ctx.beginPath();ctx.moveTo(-94+k*19,-12-k*12);ctx.lineTo(-50+k*19,-12-k*12);ctx.stroke();}
+        ctx.fillStyle='#fff9d9';ctx.beginPath();ctx.arc(90,-128,15,Math.PI,0);ctx.lineTo(105,-100);ctx.lineTo(75,-100);ctx.closePath();ctx.fill();
+        ctx.fillStyle='#d2b46b';ctx.beginPath();ctx.arc(90,-99,4,0,Math.PI*2);ctx.fill();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function drawWorldLandmarks(ctx, world) {
+    if (!S.segment || !WORLD_LANDMARKS[world]) return;
+    preloadWorldLandmarks(world);
+    const span = S.segment.end - S.segment.start;
+    const stagePts = [0.17, 0.50, 0.83];
+    const scale = Math.max(0.68, Math.min(1.02, S.w / 1280));
+    const drawW = 800 * scale, drawH = 560 * scale;
+    for (let i = 0; i < 3; i++) {
+      const art = WORLD_LANDMARKS[world][i];
+      if (!art || !art.complete || !art.naturalWidth) continue;
+      const anchorX = S.segment.start + span * stagePts[i];
+      const screenX = anchorX - S.camX; // locali alla pista, mai ripetuti come il fondale
+      if (screenX < -drawW * .55 || screenX > S.w + drawW * .55) continue;
+      const bob = world === 'enchanted' ? Math.sin(S.now * 0.00065 + i) * 2 : 0;
+      // Le strutture rimangono dietro al terreno e alle ruote; il gameplay resta leggibile.
+      ctx.drawImage(art, screenX - drawW * .5, S.gy - drawH + 45 * scale + bob, drawW, drawH);
+    }
   }
 
   function drawSegmentWorldBackdrop(ctx) {
@@ -1966,7 +2059,11 @@ const Scenery = (() => {
     else if (world === 'enchanted') { S.e = 0.22; S.warm = 0.02; S.night = 0.48; S.day = 0.12; S.starA = 0.22; }
     else { S.e = 0.12; S.warm = 0; S.night = 0.72; S.day = 0.04; S.starA = 0.12; }
     ctx.save(); ctx.globalAlpha *= S.segmentBlend;
-    drawDedicatedWorldBackdrop(ctx);
+    if ((world === 'paradise' || world === 'inferno') && !(WORLD_ART[world] && WORLD_ART[world].complete && WORLD_ART[world].naturalWidth)) {
+      // Fallback originale senza rete, prima che termini il caricamento del PNG ottimizzato.
+      drawDanteWorldBackdrop(ctx, world);
+    } else drawDedicatedWorldBackdrop(ctx);
+    if (LANDMARK_WORLDS.includes(world)) drawWorldLandmarks(ctx, world);
     ctx.restore();
     S.world = old.world; S.e = old.e; S.warm = old.warm; S.night = old.night; S.day = old.day; S.starA = old.starA;
   }
@@ -2139,7 +2236,7 @@ const Scenery = (() => {
       for (let i = i1; i >= i0; i--) { const y = gy - surf[i]; if (y > yBot) yBot = y; ctx.lineTo(i * step, y); }
       ctx.closePath();
       if (POSTER) {
-        const c1 = lavaZ ? [74, 50, 58] : canyon ? [201, 118, 80] : [190, 150, 96], c2 = lavaZ ? [48, 32, 40] : canyon ? [168, 88, 62] : [150, 112, 72];
+        const c1 = tz.gap.damned ? [48, 28, 59] : lavaZ ? [74, 50, 58] : canyon ? [201, 118, 80] : [190, 150, 96], c2 = tz.gap.damned ? [24, 15, 38] : lavaZ ? [48, 32, 40] : canyon ? [168, 88, 62] : [150, 112, 72];
         ctx.fillStyle = rgb(tod(c1, 0.2, 0.4)); ctx.fill();
         ctx.save(); ctx.clip(); ctx.fillStyle = rgb(tod(c2, 0.2, 0.4)); ctx.fillRect(i0 * step - 4, yTop + (yBot - yTop) * 0.55, (i1 - i0) * step + 8, yBot - yTop); ctx.restore();
         continue;
@@ -2193,6 +2290,8 @@ const Scenery = (() => {
           ? [[34, [113, 160, 91], 0.30, 0.010], [100, [51, 102, 71], 0.48, 0.0075], [178, [28, 63, 51], 0.68, 0.0062], [270, [12, 31, 39], 0.84, 0.005]]
         : wd === 'neon'
           ? [[34, [85, 88, 160], 0.28, 0.010], [100, [53, 47, 108], 0.5, 0.0075], [178, [29, 29, 70], 0.68, 0.0062], [270, [8, 14, 34], 0.86, 0.005]]
+        : wd === 'inferno'
+          ? [[34, [72, 47, 74], 0.52, 0.010], [100, [49, 34, 60], 0.60, 0.0075], [178, [33, 27, 47], 0.74, 0.0062], [270, [17, 16, 32], 0.86, 0.005]]
         : [[34, [236, 189, 111], 0.42, 0.010], [100, [206, 98, 56], 0.5, 0.0075], [178, [112, 56, 44], 0.62, 0.0062], [270, [29, 37, 64], 0.82, 0.005]];
       let BANDS = bandsFor(S.world);
       if (S.segment && S.segmentBlend > 0.001) { const B1 = bandsFor(S.segment.world), sb = S.segmentBlend; BANDS = BANDS.map((b, i) => [b[0], mix(b[1], B1[i][1], sb), b[2] + (B1[i][2] - b[2]) * sb, b[3]]); }
@@ -2279,7 +2378,7 @@ const Scenery = (() => {
 
     // 4. dettagli di superficie dei biomi classici; i nuovi mondi hanno segni dedicati sopra.
     if (quality < 2 && !(S.world === 'atlantis' || S.world === 'enchanted' || S.world === 'neon')) {
-      const grass = {}, crk = new Path2D(), snow = new Path2D(), spark = new Path2D(), peb = new Path2D(), leafs = [new Path2D(), new Path2D(), new Path2D()];
+      const grass = {}, crk = new Path2D(), snow = new Path2D(), spark = new Path2D(), peb = new Path2D(), special = new Path2D(), leafs = [new Path2D(), new Path2D(), new Path2D()];
       let zi = S.zi0;
       for (let s = Math.floor(camX / 34) - 1; s <= Math.floor((camX + w) / 34) + 1; s++) {
         const wx = s * 34 + rnd(s, 1) * 26, sx = wx - camX; if (sx < -20 || sx > w + 20) continue;
@@ -2287,6 +2386,19 @@ const Scenery = (() => {
         const tz = Terrain.ZONES[zi]; if (tz && tz.gap && wx > tz.gap.g0 - 40 && wx < tz.gap.g1 + 40) continue;
         const bi = Z[zi].biome, fi = clamp(sx / step, 0, n - 2), i = Math.floor(fi), f = fi - i;
         const y = gy - (surf[i] * (1 - f) + surf[i + 1] * f), r = rnd(s, 2);
+        // Nei cinque mondi speciali non disegnare ciuffi d'erba, foglie e sassolini del bioma classico.
+        // Incisioni poco frequenti nella stessa palette del mondo, senza confondere gli ostacoli.
+        const theme = S.segment && wx >= S.segment.start && wx < S.segment.end ? S.segment.world : null;
+        if (theme) {
+          if (r < 0.14) {
+            if (theme === 'inferno') { special.moveTo(sx-5,y-3); special.lineTo(sx,y-12);special.lineTo(sx+5,y-3); }
+            else if (theme === 'paradise') { special.moveTo(sx-3,y-8);special.lineTo(sx+3,y-8);special.moveTo(sx,y-11);special.lineTo(sx,y-5); }
+            else if (theme === 'atlantis') { special.moveTo(sx-5,y-2);special.quadraticCurveTo(sx,y-7,sx+5,y-2); }
+            else if (theme === 'enchanted') { special.moveTo(sx-5,y-2);special.quadraticCurveTo(sx,y-10,sx+5,y-2); }
+            else if (theme === 'neon') { special.moveTo(sx-5,y-4);special.lineTo(sx+5,y-4); }
+          }
+          continue;
+        }
         if (S.world === 'paradise') {
           if (r < 0.20) { spark.moveTo(sx - 4, y - 7); spark.lineTo(sx + 4, y - 7); spark.moveTo(sx, y - 11); spark.lineTo(sx, y - 3); }
           else if (r < 0.28) { const rr = 1.5 + r * 3; peb.moveTo(sx + rr, y - 3); peb.ellipse(sx, y - 3, rr, rr * 0.7, 0, 0, TAU); }
@@ -2311,6 +2423,10 @@ const Scenery = (() => {
           g2.moveTo(sx + 4, y + 1); g2.quadraticCurveTo(sx + 5, y - hh * 0.6, sx + 8, y - hh);
         }
       }
+      if (S.segment) {
+        ctx.strokeStyle = {inferno:'#a9687e',paradise:'#dcc991',atlantis:'#93ddce',enchanted:'#b8d6a5',neon:'#65e6ea'}[S.segment.world] || '#8c9a9f';
+        ctx.lineWidth = 1.5; ctx.globalAlpha = 0.75; ctx.stroke(special); ctx.globalAlpha = 1;
+      }
       ctx.lineWidth = 2.6;
       for (const k in grass) {
         const b = ACTIVE_BIOMES[k]; ctx.strokeStyle = rgb(tod(mix(b.surf, POSTER ? [42, 100, 70] : k == 3 ? [120, 90, 50] : k == 5 ? [160, 70, 20] : [14, 90, 40], 0.45), 0.25, 0.5)); ctx.stroke(grass[k]);
@@ -2321,6 +2437,8 @@ const Scenery = (() => {
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(255,110,30,0.55)'; ctx.lineWidth = 5; ctx.stroke(crk); ctx.strokeStyle = 'rgba(255,200,90,0.8)'; ctx.lineWidth = 1.8; ctx.stroke(crk); ctx.restore();
       ['#d9531f', '#f08a2a', '#c9372c'].forEach((c, k) => { ctx.fillStyle = c; ctx.fill(leafs[k]); });
     }
+    // Piattaforme dietro le ruote: il liquido resta davanti soltanto alle parti immerse.
+    drawInfernoIslands(ctx);
   }
 
   // ---------- acqua: trasparente, disegnata DAVANTI alle bici ---------------------------------
@@ -2337,12 +2455,15 @@ const Scenery = (() => {
     while (i < n) {
       const ll0 = Terrain.lavaLevel(camX + i * step);
       if (!(ll0 > surf[i] + 0.5)) { i++; continue; }
+      const zone = Terrain.zoneAt(camX + i * step), damned = !!(zone && zone.gap && zone.gap.damned);
       let j = i, yTop = gy - ll0, yBot = gy - surf[i];
       const tops = [];
       while (j < n) {
         const ll = Terrain.lavaLevel(camX + j * step);
         if (!(ll > surf[j] + 0.5)) break;
-        const x = j * step, wx = x + camX, wv = 2.6 * Math.sin(wx * 0.025 + now * 1.6) + 1.7 * Math.sin(wx * 0.06 - now * 2.4) + 1.1 * Math.sin(wx * 0.13 + now * 3.1);
+        const x = j * step, wx = x + camX;
+        const wv = damned ? (2.5 * Math.sin(wx * 0.020 + now * 1.0) + 2.1 * Math.sin(wx * 0.054 - now * 1.35))
+          : (2.6 * Math.sin(wx * 0.025 + now * 1.6) + 1.7 * Math.sin(wx * 0.06 - now * 2.4) + 1.1 * Math.sin(wx * 0.13 + now * 3.1));
         tops.push(x, gy - ll + wv); yBot = Math.max(yBot, gy - surf[j]); j++;
       }
       const x0 = i * step, x1 = (j - 1) * step;
@@ -2353,40 +2474,47 @@ const Scenery = (() => {
       ctx.translate(hcx, yTop + 4); ctx.scale(hhw / 120, 1);
       const hg = ctx.createRadialGradient(0, 0, 0, 0, 0, 120);
       const ha = (0.36 + nightK).toFixed(3);
-      hg.addColorStop(0, `rgba(255,110,30,${ha})`); hg.addColorStop(0.45, `rgba(255,95,25,${(ha * 0.45).toFixed(3)})`); hg.addColorStop(1, 'rgba(255,90,20,0)');
+      hg.addColorStop(0, damned ? `rgba(207,65,137,${ha})` : `rgba(255,110,30,${ha})`);
+      hg.addColorStop(0.45, damned ? `rgba(135,35,105,${(ha * 0.45).toFixed(3)})` : `rgba(255,95,25,${(ha * 0.45).toFixed(3)})`);
+      hg.addColorStop(1, damned ? 'rgba(70,16,86,0)' : 'rgba(255,90,20,0)');
       ctx.fillStyle = hg; ctx.fillRect(-120, -120, 240, 240); ctx.restore(); }
       ctx.beginPath(); ctx.moveTo(tops[0], tops[1]);
       for (let k = 2; k < tops.length; k += 2) ctx.lineTo(tops[k], tops[k + 1]);
       for (let k = j - 1; k >= i; k--) ctx.lineTo(k * step, gy - surf[k]);
       ctx.closePath();
       if (POSTER) {
-        ctx.fillStyle = '#fb5f35'; ctx.fill();
+        ctx.fillStyle = damned ? '#812149' : '#fb5f35'; ctx.fill();
         ctx.save(); ctx.clip();
-        ctx.fillStyle = '#ff8a4c'; ctx.fillRect(x0 - 4, yTop - 10, x1 - x0 + 8, 20);
-        ctx.fillStyle = '#c7411f'; ctx.fillRect(x0 - 4, yTop + (yBot - yTop) * 0.62, x1 - x0 + 8, yBot);
+        ctx.fillStyle = damned ? '#da557f' : '#ff8a4c'; ctx.fillRect(x0 - 4, yTop - 10, x1 - x0 + 8, 20);
+        ctx.fillStyle = damned ? '#290e31' : '#c7411f'; ctx.fillRect(x0 - 4, yTop + (yBot - yTop) * 0.62, x1 - x0 + 8, yBot);
         ctx.restore();
       }
       const g = ctx.createLinearGradient(0, yTop, 0, yBot);
-      g.addColorStop(0, 'rgba(255,176,50,0.97)'); g.addColorStop(0.18, 'rgba(255,112,26,0.97)'); g.addColorStop(0.6, 'rgba(214,52,14,0.97)'); g.addColorStop(1, 'rgba(120,16,8,0.98)');
+      if (damned) { g.addColorStop(0, '#fa9eab'); g.addColorStop(0.22, '#bc3c72'); g.addColorStop(0.64, '#6a194b'); g.addColorStop(1, '#1d102e'); }
+      else { g.addColorStop(0, 'rgba(255,176,50,0.97)'); g.addColorStop(0.18, 'rgba(255,112,26,0.97)'); g.addColorStop(0.6, 'rgba(214,52,14,0.97)'); g.addColorStop(1, 'rgba(120,16,8,0.98)'); }
       if (!POSTER) { ctx.fillStyle = g; ctx.fill(); }
       if (quality < 2) {
         ctx.save(); ctx.clip();
         // vene luminose che scorrono
-        ctx.strokeStyle = POSTER ? 'rgba(245,229,148,0.5)' : 'rgba(255,226,120,0.34)'; ctx.lineWidth = POSTER ? 3 : 2.4; ctx.beginPath();
+        ctx.strokeStyle = damned ? 'rgba(248,157,199,0.48)' : POSTER ? 'rgba(245,229,148,0.5)' : 'rgba(255,226,120,0.34)'; ctx.lineWidth = POSTER ? 3 : 2.4; ctx.beginPath();
         for (let k = 1; yTop + 7 + k * 13 < yBot; k++) {
           const y = yTop + 7 + k * 13; ctx.moveTo(x0, y);
           for (let x = x0; x <= x1; x += 18) ctx.lineTo(x, y + 3 * Math.sin((x + camX) * 0.045 - now * (0.9 + k * 0.25) + k * 1.7));
         }
         ctx.stroke();
         // croste scure che galleggiano e vanno alla deriva (più dense in superficie)
-        ctx.fillStyle = POSTER ? '#8f2f17' : 'rgba(52,18,14,0.82)';
+        ctx.fillStyle = damned ? '#1b1328' : POSTER ? '#8f2f17' : 'rgba(52,18,14,0.82)';
         const s0 = Math.floor((camX + x0 - 120) / 95), s1 = Math.floor((camX + x1 + 120) / 95);
         for (let sI = s0; sI <= s1; sI++) {
           const drift = (now * (7 + 5 * rnd(sI, 81))) % 95, wx = sI * 95 + rnd(sI, 82) * 70 - drift + 95, sx = wx - camX; if (sx < x0 - 40 || sx > x1 + 40) continue;
           const fi = clamp((sx - x0) / step, 0, tops.length / 2 - 1), a = Math.floor(fi), f = fi - a, ty = tops[a * 2 + 1] * (1 - f) + tops[Math.min(tops.length / 2 - 1, a + 1) * 2 + 1] * f;
           const rw = 14 + 22 * rnd(sI, 83), rh = 3.2 + 3 * rnd(sI, 84), yy = ty + 3 + 14 * rnd(sI, 85) * rnd(sI, 85);
-          ctx.beginPath(); ctx.ellipse(sx, yy, rw, rh, 0, 0, TAU); ctx.fill();
-          if (!POSTER) { ctx.strokeStyle = 'rgba(255,140,40,0.55)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(sx, yy, rw, rh, 0, Math.PI, TAU); ctx.stroke(); }
+          ctx.beginPath();
+          if (damned) { // scaglie contorte come rosoni spezzati, non croste da vulcano
+            ctx.moveTo(sx-rw,yy); ctx.lineTo(sx-rw*.45,yy-rh*1.5); ctx.lineTo(sx,yy-rh*.6);ctx.lineTo(sx+rw*.43,yy-rh*1.8);ctx.lineTo(sx+rw,yy+rh*.2);ctx.lineTo(sx+rw*.16,yy+rh);ctx.closePath();
+          } else ctx.ellipse(sx, yy, rw, rh, 0, 0, TAU);
+          ctx.fill();
+          if (!POSTER) { ctx.strokeStyle = damned ? 'rgba(238,123,175,0.48)' : 'rgba(255,140,40,0.55)'; ctx.lineWidth = 1.5; ctx.stroke(); }
         }
         ctx.restore();
         // bolle: si gonfiano, scoppiano, lanciano due scintille
@@ -2397,22 +2525,243 @@ const Scenery = (() => {
           const R = 5 + 7 * rnd(b, 94);
           if (ph < 0.72) {
             const k = smooth(ph / 0.72), r = R * k;
-            ctx.fillStyle = 'rgba(255,184,66,0.9)'; ctx.beginPath(); ctx.ellipse(bx, ty + 1, r, r * 0.75, 0, Math.PI, TAU); ctx.fill();
-            if (!POSTER) { ctx.strokeStyle = 'rgba(255,238,160,0.9)'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.ellipse(bx, ty + 1, r, r * 0.75, 0, Math.PI, TAU); ctx.stroke(); }
+            ctx.fillStyle = damned ? 'rgba(248,160,192,0.82)' : 'rgba(255,184,66,0.9)'; ctx.beginPath(); ctx.ellipse(bx, ty + 1, r, r * 0.75, 0, Math.PI, TAU); ctx.fill();
+            if (!POSTER) { ctx.strokeStyle = damned ? 'rgba(255,198,222,0.92)' : 'rgba(255,238,160,0.9)'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.ellipse(bx, ty + 1, r, r * 0.75, 0, Math.PI, TAU); ctx.stroke(); }
           } else if (quality < 1) {
             const k = (ph - 0.72) / 0.28;   // scoppio: due gocce che saltano
-            ctx.fillStyle = `rgba(255,200,80,${(0.9 * (1 - k)).toFixed(3)})`;
+            ctx.fillStyle = damned ? `rgba(245,135,193,${(0.9 * (1-k)).toFixed(3)})` : `rgba(255,200,80,${(0.9 * (1 - k)).toFixed(3)})`;
             for (let d = -1; d <= 1; d += 2) { const dx = d * (6 + 14 * k), dy = -(Math.sin(k * Math.PI) * (14 + R)); ctx.beginPath(); ctx.arc(bx + dx, ty + dy, 2.2 * (1 - k * 0.5), 0, TAU); ctx.fill(); }
           }
         }
       }
       // bordo: filo chiaro, alone arancio
       ctx.beginPath(); ctx.moveTo(tops[0], tops[1]); for (let k = 2; k < tops.length; k += 2) ctx.lineTo(tops[k], tops[k + 1]);
-      ctx.lineJoin = 'round'; if (!POSTER) { ctx.strokeStyle = 'rgba(255,150,40,0.45)'; ctx.lineWidth = 9; ctx.stroke(); }
-      ctx.strokeStyle = POSTER ? '#f5e594' : 'rgba(255,244,176,0.95)'; ctx.lineWidth = POSTER ? 5 : 3; ctx.stroke();
+      ctx.lineJoin = 'round'; if (!POSTER) { ctx.strokeStyle = damned ? 'rgba(202,68,136,0.48)' : 'rgba(255,150,40,0.45)'; ctx.lineWidth = 9; ctx.stroke(); }
+      ctx.strokeStyle = damned ? '#ff9cc4' : POSTER ? '#f5e594' : 'rgba(255,244,176,0.95)'; ctx.lineWidth = POSTER ? 5 : 3; ctx.stroke();
+      if (damned && quality < 2 && x1 - x0 > 70) {
+        // Nel secondo cerchio le anime sembrano affiorare e sparire nel liquido.
+        // Simboli rari, molto piccoli, decorativi e nessuna nuova collisione.
+        const start = Math.floor((camX + x0 + 24) / 145), end = Math.floor((camX + x1 - 24) / 145);
+        ctx.lineCap = 'round'; ctx.lineWidth = 2.2;
+        for (let q=start; q<=end; q++) {
+          if (rnd(q, 902) > 0.46) continue;
+          const xx = q * 145 + 42 + rnd(q, 903) * 35 - camX;
+          if (xx < x0 + 23 || xx > x1 - 23) continue;
+          const p = Math.max(0, Math.min(tops.length/2-1,(xx-x0)/step)), idx=Math.floor(p), f=p-idx;
+          const yy=tops[idx*2+1]*(1-f)+tops[Math.min(tops.length/2-1,idx+1)*2+1]*f;
+          ctx.strokeStyle = 'rgba(237,160,201,0.46)';
+          ctx.beginPath();ctx.moveTo(xx-8,yy+1);ctx.quadraticCurveTo(xx-13,yy-14,xx-5,yy-18);ctx.quadraticCurveTo(xx,yy-22,xx+4,yy-18);ctx.quadraticCurveTo(xx+12,yy-13,xx+8,yy+1);ctx.stroke();
+          ctx.beginPath();ctx.moveTo(xx-9,yy);ctx.quadraticCurveTo(xx-20,yy-7,xx-22,yy-15);ctx.moveTo(xx+9,yy);ctx.quadraticCurveTo(xx+22,yy-8,xx+25,yy-17);ctx.stroke();
+        }
+      }
       i = j + 1;
     }
   }
+
+  // Isolotti fisicamente percorribili nel secondo cerchio. Contorni e creste sono calcolati
+  // dal profilo di collisione: il disegno non promette una superficie inesistente.
+  function drawInfernoIslands(ctx) {
+    // Un'unica isola reale sopra il Lago delle Anime: frammento di una cattedrale
+    // gotica spezzata. Le decorazioni sono disegnate dietro al bordo percorribile:
+    // il giocatore riconosce sempre il punto in cui le ruote possono atterrare.
+    const islands = Terrain.INFERNO_ISLANDS;
+    if (!islands || !islands.length) return;
+    const camX = S.camX, gy = S.gy, now = S.now * 0.001;
+    for (const q of islands) {
+      if (q.x + q.width < camX || q.x - q.width > camX + S.w) continue;
+      const z = Terrain.zoneAt(q.x) || null;
+      const pts = [], n = 42;
+      for (let k = 0; k <= n; k++) {
+        const wx = q.x - q.width * .54 + k * (q.width * 1.08 / n);
+        if (Terrain.naturalHeight(wx) - Terrain.lavaLevel(wx) > 1.5) {
+          pts.push({ x: wx - camX, y: gy - Terrain.naturalHeight(wx) });
+        } else if (pts.length && k < n) break;
+      }
+      if (pts.length < 3) continue;
+      const cx = q.x - camX, l = pts[0], r = pts[pts.length - 1];
+      const top = gy - Terrain.naturalHeight(q.x), lava = gy - Terrain.lavaLevel(q.x);
+      const bottom = lava + 39;
+      ctx.save();
+      // La massa emerge dal lago, con ombra e riflesso cremisi separati.
+      ctx.fillStyle = 'rgba(13,5,22,.46)';
+      ctx.beginPath(); ctx.ellipse(cx + 6, lava + 24, (r.x - l.x) * .48, 13, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(252,78,139,.3)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(cx + 2, lava + 21, (r.x-l.x)*.47, 6, 0, 0, TAU); ctx.stroke();
+
+      const drawBrambleLaunch = (wx, padHalf, side, topBias = 0) => {
+        const px = wx - camX;
+        const py = gy - Terrain.naturalHeight(wx) + topBias;
+        if (px < -120 || px > S.w + 120) return;
+        // massa scura del roveto / spina monumentale
+        ctx.save();
+        ctx.strokeStyle = 'rgba(34,18,44,0.98)';
+        ctx.lineWidth = 6.5;
+        ctx.lineCap = 'round';
+        for (let i = 0; i < 6; i++) {
+          const off = (i - 2.5) * 12;
+          ctx.beginPath();
+          ctx.moveTo(px - side * (padHalf * 0.34) + off * 0.25, py + 2);
+          ctx.bezierCurveTo(
+            px - side * (padHalf * 0.12) + off * 0.6, py - 18 - i * 2,
+            px + side * (padHalf * 0.12) + off * 0.35, py - 26 - i * 6,
+            px + side * (padHalf * 0.34) + off * 0.1, py - 32 - i * 9
+          );
+          ctx.stroke();
+        }
+        // spine laterali violacee, ben visibili ma non ingombranti
+        ctx.strokeStyle = 'rgba(208,106,176,0.82)';
+        ctx.lineWidth = 2.2;
+        for (let i = 0; i < 8; i++) {
+          const bx = px - side * (padHalf * 0.26) + i * (padHalf * 0.065) * side;
+          const by = py - 7 - (i % 3) * 8;
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.lineTo(bx - side * (8 + (i % 2) * 4), by - 10);
+          ctx.moveTo(bx + side * 2, by + 1);
+          ctx.lineTo(bx + side * (10 + (i % 3) * 2), by - 8);
+          ctx.stroke();
+        }
+        // bagliore sottile sulle punte
+        ctx.strokeStyle = 'rgba(255,182,219,0.65)';
+        ctx.lineWidth = 1.2;
+        for (let i = 0; i < 4; i++) {
+          const tx = px + side * (padHalf * 0.12 + i * 12);
+          const ty = py - 28 - i * 11;
+          ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + side * 8, ty - 8); ctx.stroke();
+        }
+        ctx.restore();
+      };
+      if (z && z.thorns) {
+        drawBrambleLaunch(z.thorns.left.x, z.thorns.left.width * 0.5, 1, -2);
+        drawBrambleLaunch(z.thorns.right.x, z.thorns.right.width * 0.5, -1, -2);
+        drawBrambleLaunch(z.thorns.midL.x, z.thorns.midL.width * 0.5, 1, -1);
+        drawBrambleLaunch(z.thorns.midR.x, z.thorns.midR.width * 0.5, -1, -1);
+      }
+
+      // Nervature della navata spezzata: sono sagome, non ostacoli con collisione.
+      const stoneEdge = '#a1728e', stoneFace = '#25172d';
+      ctx.lineJoin = 'round';
+      for (const side of [-1, 1]) {
+        const bx = cx + side * 132;
+        // Contrafforte con pinnacolo asimmetrico e taglio diagonale.
+        ctx.beginPath();
+        ctx.moveTo(bx - 14, top + 4);
+        ctx.lineTo(bx - 13, top - 66);
+        ctx.lineTo(bx - 7, top - 71);
+        ctx.lineTo(bx, top - 115 + (side > 0 ? 9 : 0));
+        ctx.lineTo(bx + 7, top - 73);
+        ctx.lineTo(bx + 17, top - 68);
+        ctx.lineTo(bx + 17, top + 5); ctx.closePath();
+        ctx.fillStyle = '#241729';ctx.fill();
+        ctx.strokeStyle = stoneEdge;ctx.lineWidth = 3;ctx.stroke();
+        // Feritoia interna, luce viola dal lago.
+        ctx.beginPath(); ctx.moveTo(bx - 3, top - 27);ctx.lineTo(bx - 3,top - 49);
+        ctx.quadraticCurveTo(bx + 1,top - 61,bx + 5,top - 49);
+        ctx.lineTo(bx + 5,top - 27);ctx.closePath();
+        ctx.fillStyle='#bb4b88';ctx.globalAlpha=.73;ctx.fill();ctx.globalAlpha=1;
+        // Arco rampante incornicia la porta, la volta centrale resta vuota.
+        ctx.beginPath();
+        ctx.moveTo(bx - side * 6, top - 67);
+        ctx.quadraticCurveTo(cx + side * 82, top - 124, cx + side * 51, top - 89);
+        ctx.strokeStyle='#53354b';ctx.lineWidth=14;ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(bx - side * 6, top - 68);
+        ctx.quadraticCurveTo(cx + side * 82, top - 123, cx + side * 51, top - 89);
+        ctx.strokeStyle='#ae768e';ctx.lineWidth=2;ctx.stroke();
+        // Gargoyle scolpito alla sommità del contrafforte, rivolto verso il lago.
+        ctx.save(); ctx.translate(bx + side*9, top - 76);ctx.scale(side,1);
+        ctx.fillStyle='#190f22';ctx.strokeStyle='#ae7190';ctx.lineWidth=1.7;
+        ctx.beginPath();ctx.moveTo(-3,0);ctx.lineTo(6,-21);ctx.lineTo(15,-10);
+        ctx.lineTo(26,-15);ctx.lineTo(18,-2);ctx.lineTo(34,3);
+        ctx.lineTo(13,7);ctx.lineTo(3,19);ctx.lineTo(-8,14);ctx.closePath();
+        ctx.fill();ctx.stroke();
+        ctx.fillStyle='#ff83a6';ctx.beginPath();ctx.arc(20,-2,2.1,0,TAU);ctx.fill();
+        ctx.restore();
+      }
+      // Porta gotica crollata: arco trilobato con aperture, pensato come silhouette dominante.
+      const yBase = top + 2;
+      ctx.fillStyle = stoneFace; ctx.strokeStyle = '#9f6a86'; ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(cx - 65, yBase);
+      ctx.lineTo(cx - 64, top - 68);
+      ctx.quadraticCurveTo(cx - 58, top - 116, cx - 6, top - 153);
+      ctx.lineTo(cx + 3, top - 162); // pinnacolo spezzato
+      ctx.lineTo(cx + 11, top - 139);
+      ctx.quadraticCurveTo(cx + 61, top - 108, cx + 65, top - 64);
+      ctx.lineTo(cx + 65, yBase);
+      ctx.lineTo(cx + 42, yBase);
+      ctx.lineTo(cx + 42, top - 66);
+      ctx.quadraticCurveTo(cx + 35, top - 97, cx, top - 120);
+      ctx.quadraticCurveTo(cx - 36, top - 91, cx - 42, top - 66);
+      ctx.lineTo(cx - 42, yBase);ctx.closePath();ctx.fill();ctx.stroke();
+      // Intaglio sul frontone e rosa incompleta (evoca la cattedrale frantumata).
+      ctx.strokeStyle = '#d298a8'; ctx.lineWidth=2.3;
+      ctx.beginPath();ctx.moveTo(cx-50,top-70);ctx.quadraticCurveTo(cx,top-139,cx+50,top-70);ctx.stroke();
+      ctx.beginPath();ctx.arc(cx, top-105, 16, 0.28, Math.PI*1.87);ctx.stroke();
+      for (let i = 0; i < 7; i++) {
+        const a = i*TAU/8+.25;
+        ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*5,top-105+Math.sin(a)*5);
+        ctx.lineTo(cx+Math.cos(a)*15,top-105+Math.sin(a)*15);ctx.stroke();
+      }
+      ctx.fillStyle='#b34b78';ctx.beginPath();ctx.arc(cx,top-105,3.2,0,TAU);ctx.fill();
+      // Muri fratturati, piccoli frammenti di muratura che restano sospesi ai lati.
+      for(const side of [-1,1]){
+        const xx=cx+side*91;
+        ctx.fillStyle='#2a192c';ctx.strokeStyle='#81526d';ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(xx-13,top-2);ctx.lineTo(xx-12,top-32);
+        ctx.lineTo(xx-5,top-47);ctx.lineTo(xx+7,top-36);
+        ctx.lineTo(xx+14,top-40);ctx.lineTo(xx+18,top-1);
+        ctx.closePath();ctx.fill();ctx.stroke();
+        ctx.strokeStyle='#b57c99';ctx.lineWidth=1;
+        ctx.beginPath();ctx.moveTo(xx-7,top-18);ctx.lineTo(xx+6,top-18);ctx.stroke();
+      }
+      // Isola fisica: corpo inferiore fratturato, punta di roccia che entra nel lago.
+      ctx.beginPath();ctx.moveTo(l.x,l.y+1);
+      for(const p of pts) ctx.lineTo(p.x,p.y+1);
+      ctx.lineTo(r.x-7,lava+9);
+      ctx.lineTo(cx+(r.x-cx)*.7,bottom-3);
+      ctx.lineTo(cx+33,bottom+6);
+      ctx.lineTo(cx+8,bottom-8);
+      ctx.lineTo(cx-6,bottom+16);
+      ctx.lineTo(cx-(cx-l.x)*.53,bottom-1);
+      ctx.lineTo(l.x+8,lava+7);ctx.closePath();
+      const g=ctx.createLinearGradient(cx,top,cx,bottom+12);
+      g.addColorStop(0,'#665067');g.addColorStop(.23,'#433149');
+      g.addColorStop(.68,'#211525');g.addColorStop(1,'#0f0a17');
+      ctx.fillStyle=g;ctx.fill();ctx.strokeStyle='#0e0a17';ctx.lineWidth=3;ctx.stroke();
+      // Sotto il piano si vedono archi della cripta, scavature e crepe accese.
+      for(const dx of [-84,-28,28,84]){
+        const yy=top+15;
+        ctx.beginPath();ctx.moveTo(cx+dx-11,yy+29);
+        ctx.lineTo(cx+dx-11,yy+9);
+        ctx.quadraticCurveTo(cx+dx,yy-3,cx+dx+11,yy+9);
+        ctx.lineTo(cx+dx+11,yy+29);ctx.closePath();
+        ctx.fillStyle='#130c19';ctx.fill();
+        ctx.strokeStyle='#8e566d';ctx.lineWidth=1.9;ctx.stroke();
+        ctx.strokeStyle='rgba(241,89,146,.52)';ctx.lineWidth=1.2;
+        ctx.beginPath();ctx.moveTo(cx+dx,yy+7);ctx.lineTo(cx+dx,yy+25);ctx.stroke();
+      }
+      ctx.strokeStyle='rgba(248,88,142,.48)';ctx.lineWidth=2;
+      for(const dx of [-146,-52,60,140]){
+        ctx.beginPath();ctx.moveTo(cx+dx,top+6);
+        ctx.lineTo(cx+dx-7,lava+6);ctx.lineTo(cx+dx+3,bottom-8);ctx.stroke();
+      }
+      // Il contorno chiaro è l'esatta superficie fisica: nessun falso appoggio.
+      ctx.beginPath();ctx.moveTo(l.x,l.y-1);
+      for(const p of pts)ctx.lineTo(p.x,p.y-1);
+      ctx.strokeStyle='#dbb4c5';ctx.lineWidth=6;ctx.lineJoin='round';ctx.stroke();
+      ctx.strokeStyle='#fff0e8';ctx.lineWidth=1.7;ctx.stroke();
+      // Riflessi sulla superficie del lago e polvere spettrale, poche particelle.
+      ctx.strokeStyle='rgba(248,90,169,.27)';ctx.lineWidth=2;
+      for(const side of [-1,1]){
+        const x=cx+side*155;
+        ctx.beginPath();ctx.moveTo(x,lava+9);
+        ctx.quadraticCurveTo(x+side*18,lava+17+Math.sin(now*1.3)*3,x+side*49,lava+11);ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
 
   function drawWater(ctx, surf, n, step) {
     if (!Z.length) return;
@@ -2467,7 +2816,7 @@ const Scenery = (() => {
   function drawFront(ctx) {
     if (!Z.length) return;
     const w = S.w, h = S.h, camX = S.camX;
-    if (quality < 2 && (S.world === 'classic' || S.world === 'paradise' || S.world === 'inferno')) {
+    if (quality < 2 && !S.segmentActive && (S.world === 'classic' || S.world === 'paradise' || S.world === 'inferno')) {
       const par = camX * 1.45;
       const draw = (b, a) => {
         const tile = atlas.fg[b.fg]; if (!tile || a < 0.02) return;
@@ -2481,7 +2830,7 @@ const Scenery = (() => {
     drawParticles(ctx);
 
     // La tinta alba/notte è usata dai mondi classici; i tre nuovi hanno già luce e contrasto propri.
-    if (S.world === 'classic' || S.world === 'paradise' || S.world === 'inferno') {
+    if (!S.segmentActive && (S.world === 'classic' || S.world === 'paradise' || S.world === 'inferno')) {
       if (S.warm > 0.02) { ctx.fillStyle = `rgba(255,140,60,${(S.warm * 0.11).toFixed(3)})`; ctx.fillRect(0, 0, w, h); }
       if (S.night > 0.02) { ctx.fillStyle = `rgba(8,16,64,${(S.night * 0.32).toFixed(3)})`; ctx.fillRect(0, 0, w, h); }
     }

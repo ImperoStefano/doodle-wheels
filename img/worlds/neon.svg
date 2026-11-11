@@ -255,4 +255,54 @@
 <path d="M1490 800q65.0 -12 260 0" fill="none" stroke="#a34de0" stroke-width="6" opacity=".28" filter="url(#glow)"/>
 <path d="M1850 745q37.5 -12 150 0" fill="none" stroke="#df4ec9" stroke-width="6" opacity=".28" filter="url(#glow)"/>
 <path d="M2160 790q45.0 -12 180 0" fill="none" stroke="#5aeef0" stroke-width="6" opacity=".28" filter="url(#glow)"/>
+<g opacity=".92">
+   <!-- urban landmark: large civic holographic ring, axis in the skyline -->
+   <ellipse cx="1190" cy="301" rx="173" ry="123" fill="none" stroke="#74f9ed" stroke-width="13" opacity=".40"/>
+   <ellipse cx="1190" cy="301" rx="161" ry="111" fill="none" stroke="#ff83ea" stroke-width="4" opacity=".82"/>
+   <path d="M1035 301H1345M1190 194V406" stroke="#a3eaff" stroke-width="2" opacity=".55"/>
+   <path d="M1090 306L1150 259L1194 305L1249 225L1300 276" fill="none" stroke="#73f0ed" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+   <path d="M1090 306L1150 259L1194 305L1249 225L1300 276" fill="none" stroke="#e9ffff" stroke-width="4"/>
+   <rect x="1137" y="453" width="110" height="36" rx="14" fill="#252852" stroke="#ff8eec" stroke-width="5"/>
+   <path d="M1154 470H1230" stroke="#60e9f2" stroke-width="8" stroke-dasharray="16 10"/>
+   </g>
+<!-- v7 focal-landmark art direction -->
+<defs>
+ <linearGradient id="n7train" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#6278a1"/><stop offset=".42" stop-color="#303c70"/><stop offset="1" stop-color="#1a204a"/></linearGradient>
+ <radialGradient id="n7holo"><stop stop-color="#67f4f9" stop-opacity=".30"/><stop offset="1" stop-color="#e972f6" stop-opacity="0"/></radialGradient>
+</defs>
+<!-- Futuristic transit port is the skyline focal point. -->
+<g transform="translate(1250 269)" opacity=".87">
+ <ellipse rx="230" ry="165" fill="url(#n7holo)"/>
+ <ellipse rx="158" ry="51" fill="none" stroke="#43e2ec" stroke-width="8" transform="rotate(-13)"/>
+ <ellipse rx="138" ry="34" fill="none" stroke="#cc67ea" stroke-width="3" transform="rotate(-13)"/>
+ <path d="M-21-77H21V-15H-21Z" fill="#283d65" stroke="#60dfe8" stroke-width="5"/>
+ <path d="M0-124V-72M-35-100L0-124 35-100" fill="none" stroke="#ec83e1" stroke-width="6"/>
+ <circle cy="-124" r="9" fill="#ffe1fb"/>
+ </g>
+<g opacity=".87">
+<path d="M270 438Q780 390 1350 423T2330 410" stroke="#14234e" stroke-width="24" fill="none"/>
+<path d="M270 424Q780 376 1350 409T2330 396" stroke="#49dde8" stroke-width="5" fill="none"/>
+<path d="M270 444Q780 395 1350 427T2330 414" stroke="#f070ec" stroke-width="3" fill="none"/>
+</g><g transform="translate(1580 382)" opacity=".98">
+ <path d="M-205 10Q-206-10 -160-39L154-39Q196-30 219-7Q231 17 193 28L-170 28Q-205 23-205 10Z" fill="url(#n7train)" stroke="#70f1f3" stroke-width="7"/>
+ <path d="M-180 -6H176" stroke="#da72ef" stroke-width="9"/>
+ <path d="M-161 8H167" stroke="#72d8f5" stroke-width="4" opacity=".82"/>
+<rect x="-144" y="-26" width="27" height="17" rx="5" fill="#9afffa" opacity=".87"/><path d="M-130 -26v17" stroke="#f5bdff" opacity=".65" stroke-width="1.5"/><rect x="-104" y="-26" width="27" height="17" rx="5" fill="#9afffa" opacity=".87"/><path d="M-90 -26v17" stroke="#f5bdff" opacity=".65" stroke-width="1.5"/><rect x="-64" y="-26" width="27" height="17" rx="5" fill="#9afffa" opacity=".87"/><path d="M-50 -26v17" stroke="#f5bdff" opacity=".65" stroke-width="1.5"/><rect x="-24" y="-26" width="27" height="17" rx="5" fill="#9afffa" opacity=".87"/><path d="M-10 -26v17" stroke="#f5bdff" opacity=".65" stroke-width="1.5"/><rect x="16" y="-26" width="27" height="17" rx="5" fill="#9afffa" opacity=".87"/><path d="M30 -26v17" stroke="#f5bdff" opacity=".65" stroke-width="1.5"/><rect x="56" y="-26" width="27" height="17" rx="5" fill="#9afffa" opacity=".87"/><path d="M70 -26v17" stroke="#f5bdff" opacity=".65" stroke-width="1.5"/><rect x="96" y="-26" width="27" height="17" rx="5" fill="#9afffa" opacity=".87"/><path d="M110 -26v17" stroke="#f5bdff" opacity=".65" stroke-width="1.5"/><rect x="136" y="-26" width="27" height="17" rx="5" fill="#9afffa" opacity=".87"/><path d="M150 -26v17" stroke="#f5bdff" opacity=".65" stroke-width="1.5"/><path d="M184-31Q209-24 218-7L184-7Z" fill="#d1eaff" opacity=".5"/>
+ <path d="M-160 28L-142 37H172L192 27" fill="#30376b" stroke="#c466d3" stroke-width="3"/>
+ </g>
+<g transform="translate(475 325)" opacity=".86">
+ <rect x="-99" y="-99" width="198" height="157" rx="20" fill="#152047" stroke="#ed6deb" stroke-width="8"/>
+ <rect x="-85" y="-86" width="170" height="131" rx="12" fill="#202a59" stroke="#5ce9f2" stroke-width="3" opacity=".73"/>
+ <path d="M-55-4L-22-42 12-4 53-52M-55 17H55" fill="none" stroke="#66eff2" stroke-width="8" stroke-linecap="round"/>
+ <circle cx="-44" cy="-49" r="4" fill="#f9c7fa"/>
+ </g>
+<g transform="translate(710 175) scale(1 1)" opacity=".66">
+ <path d="M-42 4Q-34-17-8-20H22L46-3 27 11H-31Z" fill="#343a75" stroke="#69e9ee" stroke-width="3"/>
+ <path d="M-14-16H20L28-4H-18Z" fill="#83faff" opacity=".55"/>
+ <path d="M-48 14H-27M24 14H44" stroke="#ef78dd" stroke-width="5"/>
+ </g><g transform="translate(2050 205) scale(-1 1)" opacity=".66">
+ <path d="M-42 4Q-34-17-8-20H22L46-3 27 11H-31Z" fill="#343a75" stroke="#69e9ee" stroke-width="3"/>
+ <path d="M-14-16H20L28-4H-18Z" fill="#83faff" opacity=".55"/>
+ <path d="M-48 14H-27M24 14H44" stroke="#ef78dd" stroke-width="5"/>
+ </g>
 </svg>

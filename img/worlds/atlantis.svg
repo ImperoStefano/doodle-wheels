@@ -262,4 +262,51 @@
 <path d="M0 270Q260 244 520 270T1040 270T1560 270T2080 270T2600 270" fill="none" stroke="#a4fff1" stroke-width="2" opacity=".11"/>
 <path d="M0 415Q260 389 520 415T1040 415T1560 415T2080 415T2600 415" fill="none" stroke="#a4fff1" stroke-width="2" opacity=".11"/>
 <path d="M0 550Q260 524 520 550T1040 550T1560 550T2080 550T2600 550" fill="none" stroke="#a4fff1" stroke-width="2" opacity=".11"/>
+<g opacity=".82">
+   <!-- Royal gate with sunburst medallion: warm gold accent within cool ruins -->
+   <path d="M1730 635V395Q1830 260 1930 395V635" fill="none" stroke="#b7e0d5" stroke-width="31"/>
+   <path d="M1730 635V395Q1830 260 1930 395V635" fill="none" stroke="#d6bf82" stroke-width="7"/>
+   <circle cx="1830" cy="331" r="44" fill="#2a788b" stroke="#e7daab" stroke-width="7"/>
+   <circle cx="1830" cy="331" r="21" fill="#e5dbb0" opacity=".77"/>
+   <path d="M1830 268V289M1830 374V394M1767 331H1788M1872 331H1894M1786 286L1800 300M1860 361L1875 376" stroke="#e2d5a4" stroke-width="4"/>
+   <path d="M1705 640H1955" stroke="#d6d4aa" stroke-width="12"/>
+   <path d="M1767 616V441M1893 616V441" stroke="#a8d3c6" stroke-width="13"/>
+   <path d="M1767 451L1739 458M1893 451L1921 458" stroke="#d5c191" stroke-width="6"/>
+   </g>
+<!-- v7 focal-landmark art direction -->
+<defs>
+ <linearGradient id="a7stone" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#c4e9d8"/><stop offset=".5" stop-color="#4fa9a7"/><stop offset="1" stop-color="#1d6479"/></linearGradient>
+ <radialGradient id="a7aura"><stop stop-color="#d4fff1" stop-opacity=".30"/><stop offset="1" stop-color="#d4fff1" stop-opacity="0"/></radialGradient>
+</defs>
+<!-- Distant ceremonial sun-disc; the pale negative space keeps it behind the track. -->
+<g opacity=".73" transform="translate(1230 310)">
+ <circle r="154" fill="url(#a7aura)"/>
+ <circle r="108" fill="none" stroke="#76bbbd" stroke-width="15" stroke-dasharray="190 27 110 41" transform="rotate(-19)"/>
+ <circle r="85" fill="none" stroke="#e5d2a0" stroke-width="5" stroke-dasharray="37 17" opacity=".92"/>
+ <circle r="63" fill="#154d64" fill-opacity=".27" stroke="#8cdad1" stroke-width="5"/>
+ <path d="M0-55L21-11 55 0 18 18 0 57-20 17-55 0-18-17Z" fill="#bce7cd" fill-opacity=".56" stroke="#f0d59a" stroke-width="3"/>
+ <circle r="14" fill="#e8d7a2"/>
+<path d="M0.0 118.0L0.0 132.0" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M59.0 102.2L66.0 114.3" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M102.2 59.0L114.3 66.0" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M118.0 0.0L132.0 0.0" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M102.2 -59.0L114.3 -66.0" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M59.0 -102.2L66.0 -114.3" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M0.0 -118.0L0.0 -132.0" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M-59.0 -102.2L-66.0 -114.3" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M-102.2 -59.0L-114.3 -66.0" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M-118.0 -0.0L-132.0 -0.0" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M-102.2 59.0L-114.3 66.0" stroke="#c6eadb" stroke-width="3" opacity=".6"/><path d="M-59.0 102.2L-66.0 114.3" stroke="#c6eadb" stroke-width="3" opacity=".6"/></g><g transform="translate(480 548) rotate(-8)" opacity=".81">
+ <path d="M-38 0L-32 -218L-8 -260L10 -247L33 -218L39 0Z" fill="url(#a7stone)" stroke="#9edbd4" stroke-width="5"/>
+ <path d="M-17 -10L-12 -214L0 -240L14 -214L20 -10Z" fill="#0e6875" opacity=".5"/>
+ <path d="M-47 0H47M-40 -16H40" stroke="#e1d6a0" stroke-width="7"/>
+ <circle cy="-140.4" r="17" fill="none" stroke="#e6c887" stroke-width="4"/>
+ <path d="M-11 -140.4H11M0 -151.4V-129.4" stroke="#e6c887" stroke-width="3"/>
+ <path d="M-22 -91.0L-8 -111.8L4 -85.8L19 -104.0" fill="none" stroke="#c8eccf" stroke-width="3"/>
+ <path d="M-38 -12Q-62 -32 -52 -62M37 -30Q70 -52 61 -88" fill="none" stroke="#48d0bd" stroke-width="10" opacity=".65"/>
+ </g><g transform="translate(2025 549) rotate(11)" opacity=".81">
+ <path d="M-38 0L-32 -276L-8 -318L10 -305L33 -276L39 0Z" fill="url(#a7stone)" stroke="#9edbd4" stroke-width="5"/>
+ <path d="M-17 -10L-12 -272L0 -298L14 -272L20 -10Z" fill="#0e6875" opacity=".5"/>
+ <path d="M-47 0H47M-40 -16H40" stroke="#e1d6a0" stroke-width="7"/>
+ <circle cy="-171.7" r="17" fill="none" stroke="#e6c887" stroke-width="4"/>
+ <path d="M-11 -171.7H11M0 -182.7V-160.7" stroke="#e6c887" stroke-width="3"/>
+ <path d="M-22 -111.3L-8 -136.7L4 -104.9L19 -127.2" fill="none" stroke="#c8eccf" stroke-width="3"/>
+ <path d="M-38 -12Q-62 -32 -52 -62M37 -30Q70 -52 61 -88" fill="none" stroke="#48d0bd" stroke-width="10" opacity=".65"/>
+ </g><g transform="translate(1730 490)" opacity=".8">
+ <path d="M-128 23Q-112-90 -30-101Q76-119 101-21Q109 58 36 77Q-30 92-44 34Q-49-13-9-29Q25-34 29-2Q28 17 12 23" fill="none" stroke="#c8dbb3" stroke-width="17"/>
+ <path d="M-125 24Q-113-87 -30-97Q73-112 97-19Q104 54 35 72Q-28 88-39 34Q-44-11-8-24Q23-29 24-1Q23 11 10 17" fill="none" stroke="#f3dc9a" stroke-width="3"/>
+ <path d="M-87 37L-44 71M-91 8L-39 50M-54-55L-13-7M35-66L47-12" stroke="#b5ead1" stroke-width="4" opacity=".65"/>
+ <circle cx="-3" cy="4" r="8" fill="#f7dc97"/>
+ </g>
+
 </svg>

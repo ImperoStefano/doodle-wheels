@@ -130,8 +130,20 @@ const Props = (() => {
         WorldFX.skinX(ctx, wx);
         const y = gy - Terrain.height(wx), sl = (Terrain.height(wx + 7) - Terrain.height(wx - 7)) / 14, a = Math.atan(sl);
         ctx.save(); ctx.translate(sx, y - 1.5); ctx.rotate(-a);
-        ctx.fillStyle = (Math.floor(u / 14) % 2) ? '#a8723a' : '#94622f'; ctx.fillRect(-6.5, -3, 13, 6);
-        ctx.strokeStyle = 'rgba(60,32,10,0.55)'; ctx.lineWidth = 1; ctx.strokeRect(-6.5, -3, 13, 6);
+        // Pavimentazioni dei mondi speciali: non lasciare mai assi autunnali/legno standard.
+        const sg = Terrain.WORLD_SEGMENT;
+        const theme = sg && wx >= sg.start && wx < sg.end ? sg.world : null;
+        const panels = {
+          paradise: ['#fff8e2','#d7e8e7','#d0b780'],
+          atlantis: ['#8dd9d1','#448e99','#f2d7a1'],
+          enchanted: ['#4f8f66','#2c5e50','#b2d38c'],
+          neon: ['#283c68','#252652','#5deae9'],
+        };
+        const pal = panels[theme];
+        ctx.fillStyle = pal ? pal[Math.floor(u / 14) % 2] : ((Math.floor(u / 14) % 2) ? '#a8723a' : '#94622f');
+        ctx.fillRect(-6.5, -3, 13, 6);
+        ctx.strokeStyle = pal ? pal[2] : 'rgba(60,32,10,0.55)';
+        ctx.lineWidth = 1; ctx.strokeRect(-6.5, -3, 13, 6);
         ctx.restore();
       }
       WorldFX.skinOff(ctx);
@@ -143,6 +155,9 @@ const Props = (() => {
     const Zs = Terrain.ZONES;
     for (let zi = 1; zi < Zs.length; zi++) {
       const z = Zs[zi], sx = z.start + 150 - camX; if (sx < -90 || sx > w + 90) continue;
+      // Dentro un mondo speciale il cartello del bioma classico spezzerebbe l'immersione.
+      const seg = Terrain.WORLD_SEGMENT;
+      if (seg && seg.world !== 'inferno' && z.start >= seg.start && z.start < seg.end) continue;
       if (!ZONE_LABEL[z.key]) continue; const label = I18n.t('sign.' + z.key);
       const y = gy - Terrain.height(z.start + 150);
       ctx.save(); ctx.translate(sx, y);
@@ -447,7 +462,15 @@ const Props = (() => {
     if (m === 'ice') { lineOff(ctx, camX, xa, xb, H, () => -1.5, 5); ctx.strokeStyle = 'rgba(80,140,200,0.4)'; ctx.lineWidth = 1.2; ctx.stroke(); }
   }
   function rampDraw(ctx, p, camX, x0, x1, H, t) {
-    const th0 = RAMP_THEME[p.zkey] || RAMP_THEME.hills, isPipe = p.kind === 'pipe', th = isPipe ? Object.assign({}, th0, { nose: ['#e6eaee', '#8f98a2'] }) : th0, n = isPipe ? 3 : (p.tier || 0) + (p.kind === 'ravine' ? 3 : 1);
+    const sg = Terrain.WORLD_SEGMENT, mid = (p.a + p.b) / 2;
+    const special = sg && mid >= sg.start && mid < sg.end ? sg.world : null;
+    let th0 = RAMP_THEME[p.zkey] || RAMP_THEME.hills;
+    // Rivestimento reale delle rampe: cristallo/marmo/mosaico invece di canne marroni o legno fuori tema.
+    if (special === 'atlantis') th0 = { ...th0, mat: 'ice', pit: 'channel', post: '#7bbebd', nose: ['#dbfff1','#c3af85'] };
+    else if (special === 'paradise') th0 = { ...th0, mat: 'ice', pit: 'stream', post: '#e8e3d4', nose: ['#fffdf0','#e9cf98'] };
+    else if (special === 'neon') th0 = { ...th0, mat: 'ice', pit: 'channel', post: '#4c82aa', nose: ['#65ebed','#d56be5'] };
+    else if (special === 'enchanted') th0 = { ...th0, mat: 'log', pit: 'leaves', post: '#2e6253', nose: ['#b8e9a8','#b881d5'] };
+    const isPipe = p.kind === 'pipe', th = isPipe ? Object.assign({}, th0, { nose: ['#e6eaee', '#8f98a2'] }) : th0, n = isPipe ? 3 : (p.tier || 0) + (p.kind === 'ravine' ? 3 : 1);
     if (p.kind === 'jump' || p.kind === 'ravine' || p.kind === 'gapland') pitDraw(ctx, p, camX, x0, x1, H, t, th);
     let xs = p.a + p.s; const xl = p.a + p.u1, yb = H(isPipe ? p.a + p.s0 - 4 : xs - 1), xdeck0 = isPipe ? p.a + p.s0 + 24 : xs + 4;
     if (isPipe) { xs = p.a + p.s; while (xs < xl && H(xs) > yb - 0.5) xs += 2; }   // il muro del tubo sopra il livello di partenza

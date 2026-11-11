@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="560" viewBox="0 0 800 560">
+<defs>
+ <linearGradient id="mA" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#d4fff3"/><stop offset=".33" stop-color="#75c6c0"/><stop offset=".68" stop-color="#267e87"/><stop offset="1" stop-color="#0c435a"/></linearGradient>
+ <linearGradient id="mB" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#6fd6c9"/><stop offset=".5" stop-color="#1b6b76"/><stop offset="1" stop-color="#082a4c"/></linearGradient>
+ <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff7c5"/><stop offset=".5" stop-color="#dbbf84"/><stop offset="1" stop-color="#7fa69d"/></linearGradient>
+ <linearGradient id="bark" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ad8d65"/><stop offset=".22" stop-color="#655848"/><stop offset=".64" stop-color="#244e43"/><stop offset="1" stop-color="#0c3436"/></linearGradient>
+ <linearGradient id="leaf" x1="0" y1="0" x2=".6" y2="1"><stop stop-color="#a6dc94"/><stop offset=".44" stop-color="#4d956c"/><stop offset="1" stop-color="#175045"/></linearGradient>
+ <linearGradient id="nightStone" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#526398"/><stop offset=".48" stop-color="#242c5a"/><stop offset="1" stop-color="#101735"/></linearGradient>
+ <linearGradient id="temple" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fffdf4"/><stop offset=".35" stop-color="#eef4e8"/><stop offset=".8" stop-color="#a8d2d7"/><stop offset="1" stop-color="#7cb0c2"/></linearGradient>
+ <linearGradient id="copper" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff5d2"/><stop offset=".35" stop-color="#f0d69b"/><stop offset="1" stop-color="#ac996d"/></linearGradient>
+ <radialGradient id="aura"><stop stop-color="#e9ffff" stop-opacity=".55"/><stop offset=".4" stop-color="#75e8dd" stop-opacity=".22"/><stop offset="1" stop-color="#50a9d9" stop-opacity="0"/></radialGradient>
+ <radialGradient id="moon"><stop stop-color="#f9ffbf" stop-opacity=".60"/><stop offset=".40" stop-color="#9cffcd" stop-opacity=".2"/><stop offset="1" stop-color="#82dbaa" stop-opacity="0"/></radialGradient>
+ <radialGradient id="heaven"><stop stop-color="#fffbe5" stop-opacity=".95"/><stop offset=".35" stop-color="#fff9d6" stop-opacity=".46"/><stop offset="1" stop-color="#fff9d6" stop-opacity="0"/></radialGradient>
+ <linearGradient id="neonPink"><stop stop-color="#ffbdff"/><stop offset=".58" stop-color="#dc52d7"/><stop offset="1" stop-color="#7b5dd1"/></linearGradient>
+ <linearGradient id="neonCyan"><stop stop-color="#ceffff"/><stop offset=".48" stop-color="#59e9ed"/><stop offset="1" stop-color="#267ab9"/></linearGradient>
+ <filter id="glow" x="-65%" y="-65%" width="230%" height="230%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+ <filter id="blur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="11"/></filter>
+</defs>
+ <circle cx="405" cy="197" r="197" fill="url(#heaven)" opacity=".7"/>
+ <g opacity=".87"><g><rect x="175" y="270" width="30" height="229" rx="3" fill="url(#mA)" stroke="url(#gold)" stroke-width="2"/><path d="M171 487H209M168 279H212" stroke="#d5e9c8" stroke-width="9"/><path d="M183 286V482M197 286V482" stroke="#d6f6e6" stroke-width="2" opacity=".6"/></g><g><rect x="595" y="270" width="30" height="229" rx="3" fill="url(#mA)" stroke="url(#gold)" stroke-width="2"/><path d="M591 487H629M588 279H632" stroke="#d5e9c8" stroke-width="9"/><path d="M603 286V482M617 286V482" stroke="#d6f6e6" stroke-width="2" opacity=".6"/></g>
+ <path d="M180 313Q405 87 620 313" fill="none" stroke="#faf5e4" stroke-width="50"/>
+ <path d="M186 300Q407 112 615 303" fill="none" stroke="url(#copper)" stroke-width="6"/>
+ <path d="M229.0 499V337.72Q399 148.27999999999997 569.0 337.72V499H507.8V350.52Q399 253.24 290.2 350.52V499Z" fill="url(#temple)" stroke="url(#copper)" stroke-width="5"/>
+ <path d="M399 235V169M367 194H432" stroke="#e3c78e" stroke-width="8"/>
+ <path d="M400 222V168M367 194H432" stroke="#fffdf2" stroke-width="2"/>
+ <path d="M190 498H613" stroke="#fff7dd" stroke-width="13"/>
+ </g><path d="M133.0 473Q150.6 448.2 179.4 453.8Q203.4 417.8 232.2 449.0Q283.4 433.8 307.4 473Z" fill="#fffdf5" opacity=".58"/><path d="M490.0 467Q507.6 442.2 536.4 447.8Q560.4 411.8 589.2 443.0Q640.4 427.8 664.4 467Z" fill="#fffdf5" opacity=".58"/>
+ </svg>

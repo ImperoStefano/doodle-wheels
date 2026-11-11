@@ -288,4 +288,63 @@
 <path d="M1350 400q18 -17 30 0q-17 18 -30 0Z" fill="#b8d978" opacity=".65"/><path d="M1358 394q8 8 3 14" fill="none" stroke="#e4f5b4" stroke-width="2"/>
 <path d="M1900 420q18 -17 30 0q-17 18 -30 0Z" fill="#b8d978" opacity=".65"/><path d="M1908 414q8 8 3 14" fill="none" stroke="#e4f5b4" stroke-width="2"/>
 <path d="M2210 380q18 -17 30 0q-17 18 -30 0Z" fill="#b8d978" opacity=".65"/><path d="M2218 374q8 8 3 14" fill="none" stroke="#e4f5b4" stroke-width="2"/>
+<g opacity=".94">
+   <!-- village walkway only in background, at canopy level -->
+   <path d="M1490 301Q1720 366 1940 301" fill="none" stroke="#a8d9b2" stroke-width="4"/>
+   <path d="M1490 319Q1720 385 1940 319" fill="none" stroke="#4a423e" stroke-width="20"/>
+   <path d="M1490 319Q1720 385 1940 319" fill="none" stroke="#ba9271" stroke-width="4" stroke-dasharray="10 25"/>
+   <path d="M1520 299V321M1610 317V347M1710 327V361M1810 320V349M1920 297V323" stroke="#c8d8ad" stroke-width="3"/>
+   <!-- tiny hanging glowing lanterns add rhythm without an all-over pattern -->
+   <path d="M1620 334V411M1840 336V409" stroke="#c6c391" stroke-width="3"/>
+   <rect x="1611" y="410" width="18" height="28" rx="7" fill="#ffdfa4" stroke="#8bcf9b" stroke-width="4"/>
+   <rect x="1831" y="409" width="18" height="28" rx="7" fill="#ffdfa4" stroke="#8bcf9b" stroke-width="4"/>
+   <ellipse cx="1200" cy="691" rx="240" ry="21" fill="#c6f3aa" opacity=".12"/>
+   <!-- carved oracle rune in the ancient trunk -->
+   <circle cx="1130" cy="465" r="53" fill="none" stroke="#d6e4aa" stroke-width="4" opacity=".38"/>
+   <path d="M1112 472L1130 426L1148 472L1130 488Z" fill="none" stroke="#f2dcaf" stroke-width="5" opacity=".64"/>
+   </g>
+<!-- v7 focal-landmark art direction -->
+<defs>
+ <radialGradient id="f7halo"><stop stop-color="#c6ffa5" stop-opacity=".35"/><stop offset="1" stop-color="#96ffc0" stop-opacity="0"/></radialGradient>
+ <linearGradient id="f7bark" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#294f48"/><stop offset=".5" stop-color="#193a3e"/><stop offset="1" stop-color="#102932"/></linearGradient>
+</defs>
+<!-- Living tree cathedral: curling branches, hollow and gentle faerie light -->
+<g transform="translate(1150 565)" opacity=".83">
+ <ellipse cx="0" cy="-145" rx="245" ry="230" fill="url(#f7halo)"/>
+ <path d="M-103 14Q-72-103 -81-185Q-110-237 -168-255Q-208-272 -205-313Q-143-282 -122-309Q-72-288 -53-215Q-22-318 -82-374Q-15-340 10-293Q31-336 93-351Q49-296 54-245Q87-311 176-304Q113-271 92-220Q65-160 88 13Z" fill="url(#f7bark)" stroke="#5b9b84" stroke-width="9"/>
+ <path d="M-64 0Q-38-80 -54-172Q-65-242 -35-291M68 5Q47-87 58-155Q70-234 127-267M-14 1Q5-108 8-236" fill="none" stroke="#a0d994" stroke-width="5" opacity=".47"/>
+ <!-- The hollow glows: a doorway made of a tree trunk, not stone -->
+ <path d="M-38 5V-67Q0-120 38-67V5Z" fill="#082e35" stroke="#9fce89" stroke-width="7"/>
+ <path d="M-23 5V-63Q0-94 23-63V5Z" fill="#b1f4a9" fill-opacity=".16"/>
+ <path d="M-22 -28Q0-54 22-28" fill="none" stroke="#eaffaa" stroke-width="3"/>
+ <circle cx="0" cy="-72" r="10" fill="#fff6ad" opacity=".9"/>
+ <!-- Lantern seeds hanging in the boughs -->
+ <path d="M-134-257V-201M152-283V-225M-25-320V-263" stroke="#a2ce93" stroke-width="3"/>
+ <g fill="#faf1b0" stroke="#75ae91" stroke-width="5">
+ <ellipse cx="-134" cy="-186" rx="13" ry="18"/>
+ <ellipse cx="152" cy="-210" rx="11" ry="16"/>
+ <ellipse cx="-25" cy="-249" rx="12" ry="17"/>
+ </g>
+ </g>
+<g transform="translate(370 210) rotate(-14) scale(1.15)" opacity=".67">
+ <path d="M0 0Q-53-52 -68 0Q-54 30 -4 13Q-32 50-12 56L0 20Q11 53 34 44L7 12Q57 29 63-2Q55-45 0 0Z" fill="#a2eec1" fill-opacity=".32" stroke="#d5efa3" stroke-width="4"/>
+ <path d="M0 -8V25" stroke="#ffefb4" stroke-width="5"/>
+ <circle cy="-13" r="6" fill="#fff6bd"/>
+ </g><g transform="translate(575 155) rotate(15) scale(0.8)" opacity=".67">
+ <path d="M0 0Q-53-52 -68 0Q-54 30 -4 13Q-32 50-12 56L0 20Q11 53 34 44L7 12Q57 29 63-2Q55-45 0 0Z" fill="#a2eec1" fill-opacity=".32" stroke="#d5efa3" stroke-width="4"/>
+ <path d="M0 -8V25" stroke="#ffefb4" stroke-width="5"/>
+ <circle cy="-13" r="6" fill="#fff6bd"/>
+ </g><g transform="translate(1850 220) rotate(-12) scale(0.95)" opacity=".67">
+ <path d="M0 0Q-53-52 -68 0Q-54 30 -4 13Q-32 50-12 56L0 20Q11 53 34 44L7 12Q57 29 63-2Q55-45 0 0Z" fill="#a2eec1" fill-opacity=".32" stroke="#d5efa3" stroke-width="4"/>
+ <path d="M0 -8V25" stroke="#ffefb4" stroke-width="5"/>
+ <circle cy="-13" r="6" fill="#fff6bd"/>
+ </g><g transform="translate(2120 320) rotate(25) scale(1)" opacity=".67">
+ <path d="M0 0Q-53-52 -68 0Q-54 30 -4 13Q-32 50-12 56L0 20Q11 53 34 44L7 12Q57 29 63-2Q55-45 0 0Z" fill="#a2eec1" fill-opacity=".32" stroke="#d5efa3" stroke-width="4"/>
+ <path d="M0 -8V25" stroke="#ffefb4" stroke-width="5"/>
+ <circle cy="-13" r="6" fill="#fff6bd"/>
+ </g><g opacity=".65" stroke-linecap="round" fill="none">
+ <path d="M1705 325Q1844 415 1972 318" stroke="#537f67" stroke-width="27"/>
+ <path d="M1717 320Q1844 411 1958 318" stroke="#bcd990" stroke-width="5"/>
+ <path d="M1750 327V300M1815 365V333M1876 370V331M1933 337V305" stroke="#7cad7b" stroke-width="6"/>
+ </g>
 </svg>
