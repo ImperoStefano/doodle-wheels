@@ -664,3 +664,8 @@ input[type="text"]:focus { border-color: var(--teal); }
 @media (orientation:portrait) and (max-width:700px) {
   .emote-dock { top:calc(96px + env(safe-area-inset-top,0px)); }
 }
+
+/* V14: icone estratte dall’illustrazione approvata; selettore essenziale. */
+.emote-option img {width:39px;height:39px;}
+@media (max-width:700px) and (pointer:coarse){.emote-option img {width:35px;height:35px;}}
+@media (max-height:420px) and (orientation:landscape){.emote-option img {width:31px;height:31px;}}

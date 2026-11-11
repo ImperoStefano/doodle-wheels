@@ -269,10 +269,10 @@
 
   // ---- Emote illustrate ORIGINALI: 1-5 / selettore touch. Senza dipendenze da sticker esterni. ----
   const EMOTE_IDS = ['clap', 'laugh', 'shock', 'fire', 'thumb'];
-  const EMOTES = Object.freeze({ clap:'Bravo', laugh:'Ahaha', shock:'Oddio', fire:'Dai', thumb:'GG' });
+  const EMOTES = Object.freeze({ clap:'Sorpresa', laugh:'Amore', shock:'Rabbia', fire:'Cool', thumb:'Vittoria' });
   const emoteArt = Object.create(null);
   EMOTE_IDS.forEach(code => {
-    const pic = new Image(); pic.decoding = 'async'; pic.src = `img/emotes/${code}.png`;
+    const pic = new Image(); pic.decoding = 'async'; pic.src = `img/emotes/${code}.png?v=14`;
     emoteArt[code] = pic;
   });
   const EMOTE_COOLDOWN = 2400, EMOTE_DURATION = 2250;
