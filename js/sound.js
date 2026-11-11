@@ -244,6 +244,25 @@ const Sfx = (() => {
   function duck(d, hold, rel) { if (!ctx || !musDuck) return; const t = ctx.currentTime; musDuck.gain.cancelScheduledValues(t); musDuck.gain.setTargetAtTime(d, t, 0.03); musDuck.gain.setTargetAtTime(1, t + hold, rel / 3); }
   function muffle(on) { if (on === wetNow || !ctx || !musFilt) return; wetNow = on; musFilt.frequency.setTargetAtTime(on ? 750 : 18000, ctx.currentTime, on ? 0.1 : 0.25); }
 
+  // Firma sonora originale (Web Audio, nessun sample esterno) all'ingresso dei mondi.
+  // Evento raro: non si aggiorna ogni frame e non altera il carico di rendering.
+  const WORLD_NOTES = {
+    paradise: [72, 79, 84], inferno: [44, 47, 50],
+    atlantis: [57, 64, 69], enchanted: [65, 72, 77], neon: [62, 69, 74]
+  };
+  let lastWorldToneAt = -1e9;
+  function biome(world) {
+    const n = now();
+    if (!WORLD_NOTES[world] || n - lastWorldToneAt < 4500 || !ok()) return;
+    lastWorldToneAt = n;
+    const notes = WORLD_NOTES[world];
+    // Sequenza di tre note brevissime, originale e molto discreta sotto la musica.
+    notes.forEach((m,i) => pluck(hz(m), 0.31 + i * 0.09, 0.043, i * 0.11));
+    if (world === 'inferno') puff('lowpass', 350, 0.8, 0.45, 0.025, 0.04, 110);
+    else if (world === 'atlantis') puff('bandpass', 780, 0.65, 0.36, 0.018, 0.04, 340);
+    else if (world === 'neon') tone(330, 0.14, 'sine', 0.04, 0.12, 490);
+  }
+
   // ---- modalità audio: 'all' (musica + effetti) → 'fx' (solo effetti) → 'off' (muto) ---------------------------
   function paintBtn() { const b = document.getElementById('btn-sound'); if (!b) return; b.classList.toggle('muted', mode === 'off'); b.classList.toggle('fx', mode === 'fx'); b.setAttribute('aria-pressed', mode === 'off' ? 'true' : 'false'); b.dataset.mode = mode; }
   function setMode(m) {
@@ -263,5 +282,5 @@ const Sfx = (() => {
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('button, .btn'); if (t && t.id !== 'btn-sound') { unlock(); click(); } }, true);
     document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) ctx.suspend(); else if (!muted) { ctx.resume(); if (mode === 'all') musicStart(); } });
   }
-  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, jump, sizzle, giant, thud, portal, portalOut, update, silence, setMuted, mood, raceStart, get muted() { return muted; }, get mode() { return mode; } };
+  return { init, unlock, click, beep, swoosh, finish, land, bump, splash, redraw, jump, sizzle, giant, thud, portal, portalOut, update, silence, setMuted, mood, raceStart, biome, get muted() { return muted; }, get mode() { return mode; } };
 })();

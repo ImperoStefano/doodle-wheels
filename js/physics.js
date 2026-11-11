@@ -35,7 +35,7 @@ const Sim = (() => {
   //  hold/holdMin/hopV/antiHop : vicino al suolo (fra holdMin e hold px: a contatto no, altrimenti si frena il rotolamento sullo spigolo) la velocità che si allontana dalla strada (<hopV px/tick) viene smorzata
   //  airDamp  : smorzamento del giro delle ruote in aria; slipMax : (0 = spento) tetto di giro rispetto all'avanzamento a terra —
   //  provato e scartato: anche a 2.0 rallenta troppo le partenze e le salite
-  const TUNE = { downAcc: 0.6, airGap: 4, hold: 16, holdMin: 1.5, hopV: 12, antiHop: 0.8, airDamp: 1, slipMax: 0, slipVmin: 2.5, speed: 1, sprint: 1.55, rampDown: -0.19, rampPitch: 0.9, flyCtl: 1, ctlK: 0.008, ctlD: 0.3, ctlMax: 0.02, ctlUp: 0.8, ctlDownMax: 0.15, ctlNear: 26, pop: 3.0 };
+  const TUNE = { downAcc: 0.6, airGap: 4, hold: 16, holdMin: 1.5, hopV: 12, antiHop: 0.8, airDamp: 1, slipMax: 0, slipVmin: 2.5, speed: 1, sprint: 1.55, rampDown: -0.19, rampDownSmall: -0.04, rampPitch: 0.9, flyCtl: 1, ctlK: 0.008, ctlD: 0.3, ctlMax: 0.02, ctlUp: 0.8, ctlDownMax: 0.15, ctlNear: 26, pop: 3.0 };
   const WHEEL_STATIC = 0.5;    // static friction (Matter takes the max of the two bodies)
   const GROUND_STATIC = 0.5;
   const AXLE_STIFFNESS = 1;
@@ -287,7 +287,7 @@ const Sim = (() => {
     racers[id] = {
       chassis, fw, rw, axF, axR, color, name,
       finished: false, finishTime: null,
-      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
+      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
     meltInit(racers[id], id, vertices);
@@ -597,13 +597,15 @@ const Sim = (() => {
   // una bici lunga 160 px che esce da un labbro con la gravità normale cadrebbe di muso mentre la ruota dietro è ancora sulla rampa; così invece parte intera. Misurato: ~22/50/80 px di aria libera per le tre taglie (ruote tonde).
   function assist(r, H) {
     H = H || Terrain.height;
-    const kk = r.rampFly > 0;   // volo dopo una rampa vera: gravità extra ridotta e niente freno ai rimbalzi finché le ruote non toccano
+    const kk = r.rampFly > 0;   // nessun freno artificiale quando una rampa ha provocato il decollo
+    const launchGravity = r.rampSmall ? TUNE.rampDownSmall : TUNE.rampDown;
     for (const w of [r.fw, r.rw]) {
       const g = w.gapNow; if (g === undefined) continue;
       const v = w.velocity;
       if (g > TUNE.airGap) {
-        Matter.Body.setVelocity(w, { x: v.x, y: v.y + (kk ? TUNE.rampDown : TUNE.downAcc) });
-      } else if (g < TUNE.hold && g > TUNE.holdMin && !kk) {
+        Matter.Body.setVelocity(w, { x: v.x, y: v.y + (kk ? launchGravity : TUNE.downAcc) });
+      } else if (g < TUNE.hold && g > TUNE.holdMin && !kk && !(Terrain.onRamp && Terrain.onRamp(w.position.x))) {
+        // Nei piccoli kicker le ruote possono saltellare e ruotare naturalmente: non incollarle al piano.
         const x = w.position.x, s = (H(x + 3) - H(x - 3)) / 6;           // pendenza della strada (y verso il basso: la normale va in su e indietro)
         const l = Math.hypot(s, 1), nx = s / l, ny = -1 / l;
         const vn = v.x * nx + v.y * ny;
@@ -611,9 +613,9 @@ const Sim = (() => {
       }
     }
     // telaio: se tutte e due le ruote sono in aria cade con la stessa gravità extra
-    if (kk && TUNE.flyCtl) flightPitch(r);
+    if (kk && TUNE.flyCtl && !r.rampSmall) flightPitch(r); // niente blocco dell'assetto sui kicker piccoli
     else if (kk && r.rw.gapNow <= TUNE.airGap && TUNE.rampPitch < 1) Matter.Body.setAngularVelocity(r.chassis, Matter.Body.getAngularVelocity(r.chassis) * TUNE.rampPitch);   // il pilota tiene il muso: finché la ruota dietro è ancora sulla rampa la bici non si pianta di muso
-    if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + (kk ? TUNE.rampDown : TUNE.downAcc) });
+    if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + (kk ? launchGravity : TUNE.downAcc) });
   }
 
   // Safety net: the terrain profile is known exactly, so if a wheel corner ever ends up more
@@ -1042,6 +1044,17 @@ const Sim = (() => {
 
   // Burrone (patch 'ravine'): chi cade nel vuoto e resta sul fondo oltre RAVINE_RESCUE_MS viene riportato sul bordo opposto (in retromarcia, prima della rampa)
   const RAVINE_RESCUE_MS = 1500, RAMP_STUCK_MS = 1600, RAMP_ASSIST_V = 3.4;
+  // La difficoltà delle rampe grandi era la velocità insufficiente prima del labbro.
+  // Accompagniamo la moto progressivamente solo sulla salita, senza teletrasporti o spinte invisibili in aria.
+  // Il limite è applicato al solo tratto in rampa: sul resto del percorso vale ancora il motore normale.
+  const RAMP_LAUNCH_SPEED = { medium: 8.6, high: 9.8, gap: 10.0 }; // px/tick a 60 Hz
+  const RAMP_LAUNCH_ACCEL = 0.27; // aumento massimo di velocità per step: niente scatti
+  const rampTarget = (p, r) => {
+    const big = p.kind === 'gapland' || p.kind === 'pipe' || p.tier >= 1;
+    if (!big) return RAMP_ASSIST_V; // i piccoli trampolini conservano l'inerzia naturale
+    const base = p.kind === 'gapland' || p.kind === 'pipe' ? RAMP_LAUNCH_SPEED.gap : p.tier >= 2 ? RAMP_LAUNCH_SPEED.high : RAMP_LAUNCH_SPEED.medium;
+    return base * Math.pow(Math.max(0.65, r.sc || 1), 0.18) + (r.spOn ? 0.8 : 0);
+  };
   function ravineStep(r, elapsed) {
     const p = Terrain.ravineAt ? Terrain.ravineAt(r.chassis.position.x) : null;
     if (!p) { r.pitAt = -1; return; }
@@ -1067,8 +1080,16 @@ const Sim = (() => {
       const cx0 = r.rw.position.x, rp1 = Terrain.rampAt(cx0, 330, 0);   // si guarda la ruota dietro: finché sta sul piano inclinato la bici va accompagnata, anche con il muso già oltre il labbro
       if (rp1) {
         const sl = (Terrain.height(cx0 + 40) - Terrain.height(cx0 - 40)) / 80;
-        if (sl > 0.17 && r.rw.gapNow <= TUNE.airGap && r.chassis.velocity.x < RAMP_ASSIST_V) {
-          for (const q of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(q, { x: q.velocity.x + (RAMP_ASSIST_V - q.velocity.x) * 0.3, y: q.velocity.y + (-RAMP_ASSIST_V * sl - q.velocity.y) * 0.3 });
+        const target = rampTarget(rp1, r), major = target > RAMP_ASSIST_V;
+        const grounded = r.rw.gapNow !== undefined && r.rw.gapNow <= (major ? 12 : TUNE.airGap);
+        if (sl > (major ? 0.09 : 0.17) && grounded && r.chassis.velocity.x < target) {
+          const delta = major ? Math.min(RAMP_LAUNCH_ACCEL, Math.max(0, (target - r.chassis.velocity.x) * 0.12)) : Math.max(0, (RAMP_ASSIST_V - r.chassis.velocity.x) * 0.3);
+          for (const q of [r.chassis, r.fw, r.rw]) {
+            const vx = q.velocity.x + delta;
+            // Graduale orientamento del moto lungo la salita; le ruote e il telaio restano liberi di ruotare.
+            const vy = q.velocity.y + (-Math.max(0, vx) * sl - q.velocity.y) * (major ? 0.12 : 0.3);
+            Matter.Body.setVelocity(q, { x: vx, y: vy });
+          }
         }
       }
     }
@@ -1092,9 +1113,14 @@ const Sim = (() => {
     const p = Terrain.rampAt ? Terrain.rampAt(fx, 60, 60) : null; if (!p || (p.kind !== 'kicker' && p.kind !== 'pipe' && p.kind !== 'gapland')) return;
     const lip = p.a + p.u1;
     if (!(px < lip && fx >= lip)) return;
-    r.rampFly = 1; r.rfT = 0; r.airJ = 1; r.jumpAt = elapsed; r.flyW = 0;
-    // più velocità = salto più grande: a gravità fissa l'arco cresce col quadrato della velocità, quindi il calcio del labbro è proporzionale alla velocità di uscita
-    if (TUNE.pop) { const k = TUNE.pop * (p.kind === 'kicker' ? (p.tier === 0 ? 0.75 : 1) : 1) * Math.max(0.7, Math.min(1.5, r.chassis.velocity.x / 6)); for (const q of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(q, { x: q.velocity.x, y: q.velocity.y - k }); }   // il labbro "molla": un piccolo calcio verso l'alto, come il precarico di una moto cross
+    const major = p.kind !== 'kicker' || p.tier >= 1;
+    r.rampFly = 1; r.rampSmall = !major; r.rfT = 0; r.airJ = 1; r.jumpAt = elapsed; r.flyW = 0;
+    r.ln = (r.ln || 0) + 1; r.ls = major ? 2 : 1; // evento di decollo per l'animazione di tutti i kicker
+    const floor = major ? Math.min(10.1, rampTarget(p, r)) : 0;
+    const push = major ? Math.min(0.95, Math.max(0, floor - r.chassis.velocity.x) * 0.25) : 0;
+    // Le rampe alte restituiscono velocità accumulata sulla salita; le piccole restano giocose e libere.
+    const k = TUNE.pop * (p.kind === 'kicker' ? (p.tier === 0 ? 0.8 : p.tier >= 2 ? 1.24 : 1.10) : 1.25) * Math.max(0.72, Math.min(1.55, r.chassis.velocity.x / 6));
+    for (const q of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(q, { x: q.velocity.x + push, y: q.velocity.y - k });
   }
 
   // Correnti del Paradiso e geyser dell'Inferno: vengono applicati solo dall'host,
@@ -1255,7 +1281,7 @@ const Sim = (() => {
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
       finished: r.finished, finishTime: r.finishTime,
-      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
+      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, ln: r.ln || 0, ls: r.ls || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
   }
 

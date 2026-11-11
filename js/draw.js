@@ -1,12 +1,21 @@
 const createWheelDrawer = (canvasEl) => {
-  let canvas = canvasEl, ctx = canvas.getContext('2d'), drawing = false, points = [];
-  const MIN_POINTS = 12, MIN_AREA = 500; 
+  const canvas = canvasEl, ctx = canvas.getContext('2d');
+  let drawing = false, points = [], pointerId = null, redrawQueued = false, onChanged = null;
+  const MIN_POINTS = 12, MIN_AREA = 500;
+  const POINT_LIMIT = 1600, MIN_POINT_DIST2 = 2.2 * 2.2;
 
   function init() {
-    canvas.addEventListener('pointerdown', start); canvas.addEventListener('pointermove', move); window.addEventListener('pointerup', end);
+    // Il pointer capture impedisce di perdere il tratto se il dito esce momentaneamente
+    // dalla superficie. I punti coalesced preservano i dettagli dei pennini veloci.
+    canvas.addEventListener('pointerdown', start);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', cancel);
+    canvas.addEventListener('lostpointercapture', end);
     clear();
   }
-  function clear() { points = []; redraw(); }
+  function changed() { if (onChanged) onChanged(isValid(), getProfile()); }
+  function clear() { drawing = false; pointerId = null; points = []; redraw(); changed(); }
   function drawGuide() {
     ctx.save(); ctx.strokeStyle = 'rgba(16,42,67,0.15)'; ctx.setLineDash([8, 12]);
     ctx.lineWidth = 3; ctx.beginPath();
@@ -15,21 +24,78 @@ const createWheelDrawer = (canvasEl) => {
   }
   function localPos(e) {
     const r = canvas.getBoundingClientRect();
-    return { x: (e.clientX - r.left) * (canvas.width / r.width), y: (e.clientY - r.top) * (canvas.height / r.height) };
+    const w = r.width || canvas.width, h = r.height || canvas.height;
+    return { x: Math.max(0, Math.min(canvas.width, (e.clientX - r.left) * canvas.width / w)),
+             y: Math.max(0, Math.min(canvas.height, (e.clientY - r.top) * canvas.height / h)) };
   }
-  function start(e) { drawing = true; points = [localPos(e)]; redraw(); }
-  function move(e) { if (!drawing) return; points.push(localPos(e)); redraw(); }
-  function end() { if (!drawing) return; drawing = false; redraw(); }
+  function addPoint(p) {
+    if (points.length >= POINT_LIMIT) return;
+    const last = points[points.length - 1];
+    if (!last || (p.x-last.x)**2 + (p.y-last.y)**2 >= MIN_POINT_DIST2) points.push(p);
+  }
+  function requestRedraw() {
+    if (redrawQueued) return;
+    redrawQueued = true;
+    requestAnimationFrame(() => { redrawQueued = false; redraw(); });
+  }
+  function start(e) {
+    if (drawing || e.isPrimary === false || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    e.preventDefault(); drawing = true; pointerId = e.pointerId;
+    points = [localPos(e)];
+    if (canvas.setPointerCapture) try { canvas.setPointerCapture(pointerId); } catch (_) {}
+    changed(); requestRedraw();
+  }
+  function move(e) {
+    if (!drawing || e.pointerId !== pointerId) return;
+    e.preventDefault();
+    const batch = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : null;
+    if (batch && batch.length) { for (const sample of batch) addPoint(localPos(sample)); }
+    else addPoint(localPos(e));
+    requestRedraw();
+  }
+  function end(e) {
+    if (!drawing || e.pointerId !== pointerId) return;
+    addPoint(localPos(e)); drawing = false; pointerId = null;
+    if (canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId)) {
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+    redraw(); changed();
+  }
+  function cancel(e) {
+    if (!drawing || e.pointerId !== pointerId) return;
+    drawing = false; pointerId = null;
+    redraw(); changed();
+  }
   function redraw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height); drawGuide();
     if (points.length < 2) return;
     ctx.strokeStyle = '#102a43'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(points[0].x, points[0].y);
-    for (const p of points.slice(1)) ctx.lineTo(p.x, p.y);
+    for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
     if (!drawing && points.length > 2) ctx.closePath();
     ctx.stroke();
     if (!drawing && points.length > 2) { ctx.fillStyle = 'rgba(38,128,235,0.15)'; ctx.fill(); }
   }
+  // Indicatori geometrici: descrivono il disegno e NON fingono di predire in modo
+  // esatto la velocità (dipende dalla collisione col terreno e dalla fisica Matter).
+  function getProfile() {
+    if (drawing || points.length < MIN_POINTS) return null;
+    const pts = outline(points);
+    if (pts.length < 3 || polygonArea(pts) <= MIN_AREA) return null;
+    let per = 0, mx = 0, my = 0;
+    for (let i=0; i<pts.length; i++) {
+      const a=pts[i], b=pts[(i+1)%pts.length];
+      per += Math.hypot(a.x-b.x,a.y-b.y); mx+=a.x; my+=a.y;
+    }
+    mx /= pts.length; my /= pts.length;
+    const area = polygonArea(pts), roundness = Math.max(0,Math.min(1,4*Math.PI*area/(per*per)));
+    const radii = pts.map(pt=>Math.hypot(pt.x-mx, pt.y-my));
+    const mean = radii.reduce((v,x)=>v+x,0)/radii.length;
+    const variance = radii.reduce((v,x)=>v+(x-mean)**2,0)/radii.length;
+    const balance = Math.max(0,Math.min(1,1-Math.sqrt(variance)/(mean||1)*2));
+    return {roundness:Math.round(roundness*100), balance:Math.round(balance*100), complexity:Math.round((1-roundness)*100), points:pts.length};
+  }
+  function setOnChange(cb) { onChanged = cb; changed(); }
   function polygonArea(pts) {
     let a = 0;
     for (let i = 0; i < pts.length; i++) {
@@ -154,5 +220,5 @@ const createWheelDrawer = (canvasEl) => {
   function fallbackCircle() {
     const pts = []; for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; pts.push({ x: Math.cos(a) * 100, y: Math.sin(a) * 100 }); } return pts;
   }
-  return { init, clear, isValid, getNormalizedVertices, normalize, fallbackCircle };
+  return { init, clear, isValid, getNormalizedVertices, normalize, fallbackCircle, getProfile, setOnChange };
 }; //fine draw.js

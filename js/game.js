@@ -21,10 +21,25 @@
     btnJump: document.getElementById('btn-jump'), btnSprint: document.getElementById('btn-sprint'), slowHint: document.getElementById('slow-hint'), ctrlHint: document.getElementById('ctrl-hint'),
     resultsList: document.getElementById('results-list'), btnRematch: document.getElementById('btn-rematch'),
     btnBackMenu: document.getElementById('btn-back-menu'),
+    emoteDock: document.getElementById('emote-dock'), emotePicker: document.getElementById('emote-picker'),
+    btnEmote: document.getElementById('btn-emote'),
   };
 
   const preRaceDrawer = createWheelDrawer(els.drawCanvas); preRaceDrawer.init();
   const inRaceDrawer = createWheelDrawer(els.redrawCanvas); inRaceDrawer.init();
+  const wheelProfile = document.getElementById('wheel-profile'), pitProfile = document.getElementById('pit-profile');
+  function showWheelProfile(el, valid, p) {
+    if (!el) return;
+    const en = I18n.lang === 'en';
+    if (!valid || !p) { el.textContent = en ? 'Draw a closed wheel to inspect its shape.' : 'Disegna una ruota chiusa per vedere la sua forma.'; return; }
+    // Indici geometrici, non velocità inventate. I valori derivano dal poligono effettivo.
+    const label = p.roundness > 77 ? (en ? 'regular' : 'regolare') :
+      p.roundness > 49 ? (en ? 'mixed' : 'mista') : (en ? 'irregular' : 'irregolare');
+    el.textContent = (en ? `Shape: ${label} · Roundness ${p.roundness}% · Balance ${p.balance}%` :
+      `Forma ${label} · Rotondità ${p.roundness}% · Equilibrio ${p.balance}%`);
+  }
+  preRaceDrawer.setOnChange((valid, p) => { els.btnSubmitWheel.disabled = !valid; showWheelProfile(wheelProfile, valid, p); });
+  inRaceDrawer.setOnChange((valid, p) => { els.btnSubmitRedraw.disabled = !valid; showWheelProfile(pitProfile, valid, p); });
 
   // Misure di fluidità (solo con ?perf=1 nell'indirizzo): fps, fotogrammi lunghi, costo del passo fisico, età degli snapshot.
   // Esporta anche window.__perf per gli script di prova. Spento: un solo controllo per fotogramma.
@@ -229,19 +244,19 @@
     fmtHintTxt(); if (document.body.dataset.screen === 'results' && lastCh) { try { renderChamp(lastCh); } catch (e) {} }
     els.lenHint.textContent = I18n.t('len.hint.' + trackLen); els.modeHint.textContent = I18n.t('mode.hint.' + (crazy ? 'crazy' : 'normal'));
     if (els.btnRedrawTrigger && els.btnRedrawTrigger.textContent) els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft });
+    showWheelProfile(wheelProfile, preRaceDrawer.isValid(), preRaceDrawer.getProfile());
+    showWheelProfile(pitProfile, inRaceDrawer.isValid(), inRaceDrawer.getProfile());
     if (lastCallEnd) updateLastCall();
     try { if (els.lobby.classList.contains('screen--active')) renderPlayerList(); } catch (e) {}
   });
 
   els.btnStartRace.addEventListener('click', () => { if (Net.isHost) { wheels = {}; startChamp(); Net.broadcast({ type: 'goToDraw', champ: champPublic() }); enterDrawPhase(); } });
   els.btnClear.addEventListener('click', () => preRaceDrawer.clear());
-  els.drawCanvas.addEventListener('pointerup', () => els.btnSubmitWheel.disabled = !preRaceDrawer.isValid());
   els.btnSubmitWheel.addEventListener('click', () => submitWheel());
 
   els.btnRedrawTrigger.addEventListener('click', () => {
     if (myRedrawsLeft > 0) { inRaceDrawer.clear(); els.btnSubmitRedraw.disabled = true; els.redrawModal.style.display = 'flex'; }
   });
-  els.redrawCanvas.addEventListener('pointerup', () => els.btnSubmitRedraw.disabled = !inRaceDrawer.isValid());
   els.btnCancelRedraw.addEventListener('click', () => els.redrawModal.style.display = 'none');
   els.btnSubmitRedraw.addEventListener('click', () => {
     if (!inRaceDrawer.isValid()) return;
@@ -251,6 +266,80 @@
     if (Net.isHost) { Sim.updateRacerWheel(Net.myId, v); raceMeta[Net.myId].vertices = v; clearMelt(raceMeta[Net.myId]); Net.broadcast({ type: 'wheelUpdated', id: Net.myId, vertices: v }); }
     else { Net.send({ type: 'wheelUpdate', vertices: v }); }
   });
+
+  // ---- Emote illustrate ORIGINALI: 1-5 / selettore touch. Senza dipendenze da sticker esterni. ----
+  const EMOTE_IDS = ['clap', 'laugh', 'shock', 'fire', 'thumb'];
+  const EMOTES = Object.freeze({ clap:'Bravo', laugh:'Ahaha', shock:'Oddio', fire:'Dai', thumb:'GG' });
+  const emoteArt = Object.create(null);
+  EMOTE_IDS.forEach(code => {
+    const pic = new Image(); pic.decoding = 'async'; pic.src = `img/emotes/${code}.png`;
+    emoteArt[code] = pic;
+  });
+  const EMOTE_COOLDOWN = 2400, EMOTE_DURATION = 2250;
+  const activeEmotes = Object.create(null), lastEmoteById = Object.create(null);
+  let lastMyEmote = -1e9;
+  function closeEmotePicker() {
+    if (els.emotePicker) els.emotePicker.hidden = true;
+    if (els.btnEmote) els.btnEmote.setAttribute('aria-expanded', 'false');
+  }
+  function showEmote(id, code) {
+    if (!Object.hasOwn(EMOTES, code) || !raceMeta[id]) return;
+    activeEmotes[id] = { code, at: performance.now() };
+  }
+  function tryEmote(code) {
+    if (!Object.hasOwn(EMOTES, code) || document.body.dataset.screen !== 'race' || !raceLoopHandle || els.redrawModal.style.display === 'flex') return;
+    const now = performance.now();
+    if (now - lastMyEmote < EMOTE_COOLDOWN) return;
+    lastMyEmote = now;
+    closeEmotePicker();
+    showEmote(Net.myId, code);
+    if (Net.isHost) Net.broadcast({ type: 'emote', id: Net.myId, code });
+    else Net.send({ type: 'emote', code });
+  }
+  if (els.btnEmote) {
+    els.btnEmote.addEventListener('pointerdown', e => e.stopPropagation());
+    els.btnEmote.addEventListener('click', e => {
+      e.stopPropagation();
+      const open = !!els.emotePicker.hidden;
+      els.emotePicker.hidden = !open;
+      els.btnEmote.setAttribute('aria-expanded', String(open));
+    });
+    for (const b of els.emotePicker.querySelectorAll('[data-emote]')) {
+      b.addEventListener('pointerdown', e => e.stopPropagation());
+      b.addEventListener('click', e => { e.stopPropagation(); tryEmote(b.dataset.emote); });
+    }
+  }
+  window.addEventListener('keydown', e => {
+    if (e.repeat || document.body.dataset.screen !== 'race') return;
+    const tg=e.target;
+    if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable)) return;
+    const k=/^(?:Digit|Numpad)([1-5])$/.exec(e.code);
+    if (k) { e.preventDefault(); tryEmote(EMOTE_IDS[Number(k[1])-1]); }
+    else if (e.code === 'Escape') closeEmotePicker();
+  });
+  function drawEmoteBubble(id, x, y, color, ts) {
+    const e = activeEmotes[id]; if (!e) return;
+    const age = ts - e.at;
+    if (age >= EMOTE_DURATION || age < 0) { delete activeEmotes[id]; return; }
+    const k = Math.max(0, Math.min(1, (EMOTE_DURATION - age) / 440));
+    const dx = Math.round(x), dy = Math.round(y - 98 - Math.min(age / 85, 18));
+    ctx2d.save(); ctx2d.globalAlpha = k;
+    ctx2d.translate(dx,dy);
+    ctx2d.fillStyle = 'rgba(255,252,243,.97)';
+    ctx2d.strokeStyle = color || '#24505e'; ctx2d.lineWidth = 2.2;
+    ctx2d.beginPath();
+    ctx2d.moveTo(-23,-22);ctx2d.lineTo(23,-22);ctx2d.quadraticCurveTo(30,-22,30,-15);
+    ctx2d.lineTo(30,15);ctx2d.quadraticCurveTo(30,22,23,22);
+    ctx2d.lineTo(5,22);ctx2d.lineTo(0,30);ctx2d.lineTo(-5,22);
+    ctx2d.lineTo(-23,22);ctx2d.quadraticCurveTo(-30,22,-30,15);
+    ctx2d.lineTo(-30,-15);ctx2d.quadraticCurveTo(-30,-22,-23,-22);ctx2d.closePath();
+    ctx2d.fill();ctx2d.stroke();
+    ctx2d.textAlign='center';ctx2d.textBaseline='middle';
+    const pic = emoteArt[e.code];
+    if (pic && pic.complete && pic.naturalWidth > 0) ctx2d.drawImage(pic, -23, -24, 46, 46);
+    else { ctx2d.fillStyle = '#264756';ctx2d.font = 'bold 12px system-ui,sans-serif'; ctx2d.fillText(EMOTES[e.code],0,1); }
+    ctx2d.restore();
+  }
 
   // ---- Salto: Spazio / ↑ / W, tocco o clic sulla pista, pulsante a schermo (ottimizzato per desktop e telefono) ----
   // L'host decide (a terra, con una pausa fra un salto e l'altro): qui si manda subito la richiesta (anti-rimbalzo 45 ms).
@@ -293,17 +382,47 @@
   if (els.btnJump) els.btnJump.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); els.btnJump.classList.add('press'); tryJump(); });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => { if (els.btnJump) els.btnJump.addEventListener(ev, () => els.btnJump.classList.remove('press')); });
 
+  // Messaggi host-only: i client non possono imporre gara, classifica o snapshot.
+  const HOST_EVENTS = new Set(['goToDraw','allReady','snap','results','lastCall','restartToDraw','wheelUpdated','melt']);
+  function validWheelVertices(v) {
+    return Array.isArray(v) && v.length >= 3 && v.length <= 256 && v.every(pt => pt &&
+      Number.isFinite(pt.x) && Number.isFinite(pt.y) && Math.abs(pt.x) <= 250 && Math.abs(pt.y) <= 250);
+  }
+  const hostRedrawCount = Object.create(null), hostRedrawAt = Object.create(null);
   Net.on('data', ({ from, data }) => {
+    if (!data || typeof data.type !== 'string') return;
+    if (Net.isHost && HOST_EVENTS.has(data.type)) return;
     if (data.type === 'goToDraw') { champ = data.champ || null; enterDrawPhase(); }
-    if (data.type === 'wheel' && Net.isHost) receiveWheel(from, data.vertices);
+    if (data.type === 'wheel' && Net.isHost && Net.players[from] && validWheelVertices(data.vertices)) receiveWheel(from, data.vertices);
     if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
     if (data.type === 'snap') { if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); }
     if (data.type === 'results') showResults(data.standings, data.champ);
     if (data.type === 'lastCall') showLastCall(data.ms);
     if (data.type === 'restartToDraw') { champ = data.champ || null; enterDrawPhase(); }
-    if (data.type === 'wheelUpdate' && Net.isHost && raceMeta[from]) { Sim.updateRacerWheel(from, data.vertices); raceMeta[from].vertices = data.vertices; clearMelt(raceMeta[from]); Net.broadcast({ type: 'wheelUpdated', id: from, vertices: data.vertices }); }
+    if (data.type === 'wheelUpdate' && Net.isHost && raceMeta[from] && validWheelVertices(data.vertices)) {
+      const now = performance.now();
+      if (raceT0 && now - raceT0 > 2500 && (hostRedrawCount[from] || 0) > 0 && now - (hostRedrawAt[from] || -1e9) >= 1500) {
+        hostRedrawAt[from] = now; hostRedrawCount[from]--;
+        Sim.updateRacerWheel(from, data.vertices); raceMeta[from].vertices = data.vertices; clearMelt(raceMeta[from]);
+        Net.broadcast({ type: 'wheelUpdated', id: from, vertices: data.vertices });
+      }
+    }
     if (data.type === 'jump' && Net.isHost) Sim.jump(from);
     if (data.type === 'sprint' && Net.isHost) Sim.sprint(from);
+    if (data.type === 'emote') {
+      if (Net.isHost) {
+        // L'host attribuisce il messaggio al mittente autentico, mai a un ID fornito dal client.
+        const now = performance.now();
+        if (Net.players[from] && raceLoopHandle && Object.hasOwn(EMOTES, data.code) &&
+            now - (lastEmoteById[from] ?? -1e9) >= EMOTE_COOLDOWN) {
+          lastEmoteById[from] = now;
+          showEmote(from, data.code);
+          Net.broadcast({ type: 'emote', id: from, code: data.code });
+        }
+      } else if (from === 'host' && Net.players[data.id] && Object.hasOwn(EMOTES, data.code)) {
+        if (data.id !== Net.myId) showEmote(data.id, data.code);
+      }
+    }
     if (data.type === 'wheelUpdated') { if (raceMeta[data.id]) { raceMeta[data.id].vertices = data.vertices; clearMelt(raceMeta[data.id]); } }
     if (data.type === 'melt' && !Net.isHost) applyMelt(data.id, data.f, data.r);
   });
@@ -375,7 +494,7 @@
   // Durante il conto alla rovescia le bici stanno ferme in griglia (stesse posizioni di partenza
   // della fisica), così si vede già il mondo e chi c'è in gara; il primo snapshot le sostituisce.
   function placeGrid() {
-    latestRacers = {}; snapBuf.length = 0; snapOff = null;
+    latestRacers = {}; snapBuf.length = 0; snapOff = null; lastRemoteSnapTs = -Infinity;
     Object.keys(raceMeta).forEach((id, i) => {
       const x = 60, y = Sim.GROUND_Y - Terrain.height(x) - 70;   // stesso punto di partenza per tutti (come nella fisica)
       latestRacers[id] = { id, x, y, angle: 0, fwX: x + 90, fwY: y, fwAngle: 0, rwX: x - 90, rwY: y, rwAngle: 0, vx: 0, finished: false, finishTime: null };
@@ -387,8 +506,16 @@
 
   function startCountdown(startTime) {
     showScreen('race'); if (typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'flex';
-    if (els.btnJump) els.btnJump.style.display = 'flex'; if (els.btnSprint) { els.btnSprint.style.display = 'flex'; els.btnSprint.style.setProperty('--p', 1); els.btnSprint.classList.add('ready'); els.btnSprint.classList.remove('on', 'cool'); } resetSlow(); for (const k in jnSeen) delete jnSeen[k]; for (const k in jaSeen) delete jaSeen[k];
+    if (els.btnJump) els.btnJump.style.display = 'flex'; if (els.btnSprint) { els.btnSprint.style.display = 'flex'; els.btnSprint.style.setProperty('--p', 1); els.btnSprint.classList.add('ready'); els.btnSprint.classList.remove('on', 'cool'); } resetSlow(); for (const k in jnSeen) delete jnSeen[k]; for (const k in jaSeen) delete jaSeen[k]; for (const k in lnSeen) delete lnSeen[k];
+    for (const id in activeEmotes) delete activeEmotes[id];
+    for (const id in lastEmoteById) delete lastEmoteById[id];
+    lastMyEmote = -1e9;
+    closeEmotePicker();
     raceMeta = {}; Object.values(Net.players).forEach(p => raceMeta[p.id] = { color: p.color, name: p.name, vertices: wheels[p.id] || preRaceDrawer.fallbackCircle() });
+    // Per ogni giocatore l'host verifica anche il budget dei pit-stop.
+    for (const key in hostRedrawCount) delete hostRedrawCount[key];
+    for (const key in hostRedrawAt) delete hostRedrawAt[key];
+    Object.keys(raceMeta).forEach(id => { hostRedrawCount[id] = myRedrawsLeft; hostRedrawAt[id] = -1e9; });
     // l'host tara in anticipo ogni ruota (a fette, durante l'intro): così su terreno normale vanno tutte alla pari
     if (Net.isHost) { Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {})); Sim.prepareAsync(); }   // mondo fisico costruito a fette durante l'intro
     hideLastCall(); lastCallSent = false;
@@ -399,7 +526,7 @@
     const me = latestRacers[Net.myId]; smoothCamX = me ? me.x - viewW * 0.34 : 0; particles = []; cam.dy = 0; cam.vx = 0; cam.lead = 0.34; lastCamTs = 0;
     startRenderLoop();
 
-    showSeasonTag(); resetPortals(); resetTrails(); let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false; aud.ang = undefined;
+    showSeasonTag(); resetPortals(); resetTrails(); let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false; aud.ang = undefined; aud.world = 'classic';
     const tick = setInterval(() => {
       const left = startTime - Date.now();
       const cd = left > 3000 ? -1 : left > 2000 ? 3 : left > 1000 ? 2 : left > 0 ? 1 : 0;
@@ -446,8 +573,14 @@
   // con l'istante di ARRIVO fa muovere le bici a scatti anche se l'host li ha prodotti a ritmo costante. L'host li timbra
   // (ts, il suo orologio) e il client li colloca sul proprio orologio con lo scarto minimo osservato (latenza minima),
   // che risale piano per seguire la deriva degli orologi: lo spaziamento resta quello dell'host.
-  let snapOff = null;
+  let snapOff = null, lastRemoteSnapTs = -Infinity;
   function applySnapshot(racers, ts) {
+    if (!Array.isArray(racers) || racers.length > MAX_PLAYERS || racers.length < 1) return;
+    if (!Net.isHost) {
+      if (!Number.isFinite(ts) || ts <= lastRemoteSnapTs) return; // pacchetto vecchio: non riavvolgere i veicoli
+      if (racers.some(r => !r || !raceMeta[r.id] || !Number.isFinite(r.x) || !Number.isFinite(r.y) || !Number.isFinite(r.angle))) return;
+      lastRemoteSnapTs = ts;
+    }
     const m = {}; racers.forEach(r => { m[r.id] = r; latestRacers[r.id] = r; }); updateSprintUi(m[Net.myId]);
     const arr = performance.now(); let t = arr;
     if (!Net.isHost && typeof ts === 'number') {
@@ -475,7 +608,7 @@
           for (const id in b.m) {
             const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
-            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
           }
           return;
@@ -489,7 +622,7 @@
       if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }   // portale (teletrasporto) o nuovo arrivato o salto (rimessa in pista): niente scivolata
       latestRacers[id] = {
         id, finished: rb.finished, finishTime: rb.finishTime,
-        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
         fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
         rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
       };
@@ -610,10 +743,16 @@
   }
 
   // ---- suoni della propria bici: rotolamento per superficie, atterraggi, schizzi (nessun dato in più sulla rete) ----
-  const aud = { air: false, vy: 0, y: null, t: 0, fin: false, wet: false };
+  const aud = { air: false, vy: 0, y: null, t: 0, fin: false, wet: false, world: 'classic' };
   function wheelR(meta) { if (!meta) return 20; if (meta.R) return meta.R; let m = 20; try { m = Math.max(...meta.vertices.map(v => Array.isArray(v) ? Math.hypot(v[0], v[1]) : Math.hypot(v.x, v.y))); } catch (e) {} return meta.R = Math.max(14, Math.min(60, m)); }
   function raceAudio(r, meta, now) {
     if (r.finished) { if (!aud.fin) { aud.fin = true; Sfx.silence(); let pl = 1; for (const id in latestRacers) { const o = latestRacers[id]; if (id !== r.id && o.finished && o.finishTime <= r.finishTime) pl++; } Sfx.finish(pl); } return; }
+    const seg = Terrain.WORLD_SEGMENT;
+    const activeWorld = seg && r.x >= seg.start && r.x < seg.end ? seg.world : 'classic';
+    if (activeWorld !== aud.world) {
+      aud.world = activeWorld;
+      if (activeWorld !== 'classic' && typeof Sfx.biome === 'function') Sfx.biome(activeWorld);
+    }
     const dt = aud.t ? Math.max(1, now - aud.t) : 16; aud.t = now;
     const R = wheelR(meta) * (r.sc || 1), gr = Sim.GROUND_Y - Terrain.height(r.rwX) - r.rwY, gf = Sim.GROUND_Y - Terrain.height(r.fwX) - r.fwY;
     const air = Math.min(gr, gf) - R > 12, vy = aud.y === null ? 0 : (r.y - aud.y) / (dt / 16.67);
@@ -1040,7 +1179,7 @@
   // px/tick (60 Hz): con il motore al massimo si sta sopra 5; sotto 2.4 si arranca (fango, salita, forma sbagliata). Isteresi per non sfarfallare.
   const SLOW_ON = 2.4, SLOW_OFF = 3.6, SLOW_HOLD_MS = 1500, SLOW_FREE_MS = 12000;   // nei primi 12 s dal VIA mai: all inizio si parte da fermi e non ha senso consigliare un'altra ruota
   let raceT0 = 0, slowOn = false, slowSince = 0, fastSince = 0, ctrlHintT = 0;
-  const jnSeen = {}, jaSeen = {};
+  const jnSeen = {}, jaSeen = {}, lnSeen = {};
   function setSlow(on) {
     if (on === slowOn) return; slowOn = on;
     els.btnRedrawTrigger.classList.toggle('blink', on);
@@ -1102,6 +1241,20 @@
       for (let q = 0; q < 5 && particles.length < 190; q++) particles.push({ x: wx + (Math.random() - 0.5) * 50, y: wy + 46, vx: (Math.random() - 0.5) * 3.2, vy: -Math.random() * 1.6, g: -0.01, dl: 0.03, life: 0.9, size: 7 + Math.random() * 11, col: DUST });
     }
     if (id === Net.myId && typeof Sfx !== 'undefined' && Sfx.jump) { try { Sfx.jump(); } catch (e) {} }
+  }
+
+  // Ogni rampa, inclusi i kicker piccoli, manda un evento all'animazione della gara.
+  // Piccolo = sbuffo leggero e rotazione libera; grande = scia più ampia. Tutto locale e a costo limitato.
+  function rampLaunchFx(id, r) {
+    const n = r.ln || 0, old = lnSeen[id]; lnSeen[id] = n;
+    if (old === undefined || !n || n === old) return;
+    const big = (r.ls || 1) > 1, count = big ? 12 : 6;
+    for (let i = 0; i < count && particles.length < 190; i++) {
+      const wx = i % 2 ? r.fwX : r.rwX, wy = i % 2 ? r.fwY : r.rwY;
+      particles.push({ x: wx + (Math.random() - 0.5) * 22, y: wy + 37,
+        vx: -0.5 - Math.random() * (big ? 4.2 : 2.0), vy: -1.0 - Math.random() * (big ? 3.2 : 1.5),
+        g: 0.04, dl: big ? 0.027 : 0.045, life: 0.85, size: big ? 5 + Math.random() * 7 : 3 + Math.random() * 4, col: DUST });
+    }
   }
 
   // Un errore di disegno in un singolo fotogramma non deve MAI fermare la gara: il ciclo si riprende da solo al fotogramma dopo
@@ -1169,6 +1322,7 @@
       const meta = raceMeta[id]; if (!meta) return;
       const cy = (y) => y - Sim.GROUND_Y + groundY, cx = r.x - camX;
       jumpFx(id, r);
+      rampLaunchFx(id, r);
       if (cx < -250 || cx > w + 250) return;
       const blink = slowOn && id === Net.myId; if (blink) { ctx2d.save(); ctx2d.globalAlpha = 0.38 + 0.62 * (0.5 + 0.5 * Math.sin(t0 / 85)); }
       let sc = 1; const ar = arrAt[id];
@@ -1191,6 +1345,7 @@
       if (r.im > 0) drawGlow(ctx2d, cx, cy(r.y), meta.color, r.im, t0, true);
       if (sc !== 1) ctx2d.restore();
       if (blink) ctx2d.restore();
+      drawEmoteBubble(id, cx, cy(r.y), meta.color, t0);
 
       const zk = Terrain.zoneKeyAt(r.x);
       const wet = zk === 'water' && Terrain.isWater(r.x);
@@ -1410,7 +1565,7 @@
     });
   }
 
-  function stopRaceLoops() { if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
+  function stopRaceLoops() { closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
   I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
   function showResults(st, ch) { lastStandings = st; lastCh = ch || null; stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st, true); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>${ch ? `<span class="results-gain">+${ch.gains[s.id] || 0}</span>` : ''}`; els.resultsList.appendChild(li); }); renderChamp(ch); showScreen('results'); }

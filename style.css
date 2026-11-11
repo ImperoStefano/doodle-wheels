@@ -606,3 +606,61 @@ input[type="text"]:focus { border-color: var(--teal); }
   .sprint-tip { left: calc(20px + 80px + 12px + 58px + 16px + env(safe-area-inset-left, 0px)); bottom: calc(20px + 11px + 29px - 17px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (min-width: 769px) { .ctrl-hint { max-width: min(420px, calc(100vw - 600px)); } }   /* sui desktop il fumetto dei comandi va a capo invece di toccare il pannello */
+
+/* Emote multiplayer: piccolo pannello distinto dai comandi salto/sprint. */
+.emote-dock {
+  position:absolute; z-index:1015; left:calc(16px + env(safe-area-inset-left,0px));
+  bottom:calc(19px + env(safe-area-inset-bottom,0px));
+  display:flex; flex-direction:column; align-items:flex-start; gap:8px;
+  pointer-events:auto;
+}
+.emote-picker[hidden] {display:none!important;}
+.emote-picker {display:flex;gap:6px;padding:7px;background:rgba(248,246,238,.96);
+  border-radius:18px;box-shadow:0 4px 0 rgba(45,62,72,.20);max-width:calc(100vw - 30px);}
+.emote-toggle,.emote-option {
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  cursor:pointer;border:0;color:#25404b;background:#faf3dd;
+  display:grid;place-items:center;font-size:24px;line-height:1;border-radius:14px;
+  height:44px;min-width:44px;position:relative;
+  box-shadow:0 3px 0 rgba(45,62,72,.18);
+}
+.emote-toggle {border-radius:50%;background:#f4b64e;font-size:28px;font-weight:800;}
+.emote-option small {font:700 10px/1 system-ui,sans-serif; position:absolute;right:3px;bottom:2px;color:#36546a;opacity:.78;}
+.emote-toggle:focus-visible,.emote-option:focus-visible {outline:3px solid #197d89;outline-offset:3px;}
+.emote-toggle:active,.emote-option:active {transform:translateY(2px);box-shadow:0 1px 0 rgba(45,62,72,.18);}
+@media (max-width:700px) and (pointer:coarse) {
+  .emote-dock {left:calc(8px + env(safe-area-inset-left,0px));bottom:calc(10px + env(safe-area-inset-bottom,0px));}
+  .emote-picker {gap:3px;padding:5px;border-radius:13px;}
+  .emote-option,.emote-toggle {min-width:38px;height:38px;font-size:21px;border-radius:11px;}
+  .emote-toggle {border-radius:50%;}
+}
+@media (max-height:420px) and (orientation:landscape) {
+  .emote-toggle {width:34px;min-width:34px;height:34px;font-size:21px;}
+  .emote-picker {gap:2px;padding:4px;}
+  .emote-option {min-width:33px;height:34px;font-size:19px;}
+}
+
+/* V11: emote illustrate originali. L'area touch non occupa i pulsanti salto/sprint. */
+.emote-dock {left:auto;right:calc(12px + env(safe-area-inset-right,0px));
+  bottom:auto;top:calc(66px + env(safe-area-inset-top,0px));align-items:flex-end;}
+.emote-option img,.emote-toggle img {display:block; width:35px;height:35px;object-fit:contain;pointer-events:none;}
+.emote-toggle {background:#fff8e7;border:2px solid rgba(36,66,77,.20);}
+.emote-toggle img {width:32px;height:32px;}
+@media (max-width:700px) and (pointer:coarse) {
+  .emote-dock {left:auto;bottom:auto;top:calc(45px + env(safe-area-inset-top,0px));right:calc(8px + env(safe-area-inset-right,0px));}
+  .emote-option img {width:30px;height:30px;}
+  .emote-toggle img {width:29px;height:29px;}
+}
+@media (max-height:420px) and (orientation:landscape) {
+  .emote-dock {top:calc(32px + env(safe-area-inset-top,0px));}
+  .emote-option img,.emote-toggle img {width:27px;height:27px;}
+}
+.wheel-profile {font:700 12px/1.45 'Space Grotesk',system-ui,sans-serif;color:#31556a;
+  background:rgba(238,249,247,.80);border:1px solid rgba(50,103,110,.16);
+  padding:8px 12px;border-radius:12px;margin:8px auto 10px;max-width:480px;text-align:center;}
+.wheel-profile b {color:#1a5b65;}
+
+/* Merge V10.1 + V11: in verticale il selettore non copre il pannello giocatori. */
+@media (orientation:portrait) and (max-width:700px) {
+  .emote-dock { top:calc(96px + env(safe-area-inset-top,0px)); }
+}
