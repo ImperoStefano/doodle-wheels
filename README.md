@@ -442,3 +442,18 @@ Dallo zip `doodle-wheels-modificati` sono stati fusi nella versione corrente (se
 - I layout e gli eventi di gameplay sono generati in modo deterministico in `js/terrain.js`; la fisica autorevole resta in `js/physics.js`.
 - Le illustrazioni panoramiche di Atlantide, Bosco Incantato e Città Neon sono in `img/worlds/`; `js/scenery.js` carica un fondale e un livello trasparente di primo piano per ciascun mondo e li disegna con parallasse differenziata. Pesci e meduse, lucciole e foglie, traffico volante e scie luminose sono animati via Canvas.
 - Se un asset non è disponibile, il motore mantiene un fondale Canvas di riserva.
+
+## Firma minimal (v20261111)
+La firma nel menu è ora una sola riga: «IDEATO E SVILUPPATO DA · STEFANO KOLTA» con un puntino arancio al centro (su telefono stretto resta su una riga con carattere più piccolo). Versione dei file portata a `?v=20261111` per forzare l'aggiornamento della cache.
+
+## Mondi speciali: effetti e dettagli (v20261111)
+- Nuovo file `js/worldfx.js`: dettagli sul terreno (dietro alle ruote) e particelle/luci in primo piano, con dissolvenza ai bordi del tratto speciale.
+  - Atlantide: bolle con riflesso, neve marina, banchi di pesci, meduse luminose, alghe, stelle marine, conchiglie con perla, anemoni, coralli, piante bioluminescenti, sagome di alghe in primo piano.
+  - Bosco Incantato: lucciole, foglie e petali che cadono, fasci di luce dalla chioma, nebbia al suolo, rampicanti con boccioli, funghi luminosi, campanule, felci, cerchio di fate, sassi con rune, fiori-lanterna.
+  - Città Neon: pioggia inclinata con schizzi, pozzanghere con riflessi, vapore dai tombini, ologrammi, frecce al neon, bitte lampeggianti, droni, riflettori, flussi di dati, sfarfallio dei neon, pali in primo piano.
+  - Paradiso: scintille dorate e uccelli lontani. Inferno: braci che salgono e alone di calore.
+- Qualità grafica: qualità 1 dimezza le particelle, qualità 2 le spegne. Tutto è deterministico rispetto alla pista.
+- Correzione in `scenery.js`: dentro il tratto speciale ora anche terreno, superficie, colline in primo piano, acqua e primo piano usano la tavolozza del mondo (prima restavano classici); la mezza zona finale torna classica dopo la fine del tratto. Il primo piano classico (canne/erba arancioni) è sostituito da sagome scure a tema.
+
+### Ostacoli "skin" nei mondi speciali
+Dentro il tratto speciale ostacoli (dossi, rampe, tronchi, buche…), rampe di zona e ponti vengono ridipinti con la tavolozza del mondo (stessa forma e stessa fisica): corallo e perla in Atlantide, muschio e viola in Bosco Incantato, tubi al neon in Città Neon. Inoltre ogni ostacolo ha una linea di bordo a tema, decorazioni lungo il profilo e due "portali" (corallo, lanterna, palo al neon) all'inizio e alla fine, riconoscibili da lontano. Il codice è in `worldfx.js` (`skinX`, `skinOff`, `trim`), agganciato in `props.js`.

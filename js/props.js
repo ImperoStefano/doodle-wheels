@@ -18,8 +18,10 @@ const Props = (() => {
     for (let i = 0; i < bs.length; i++) {
       const b = bs[i];
       if (b.end - camX < -80 || b.start - camX > w + 80) continue;
+      WorldFX.skinX(ctx, (b.start + b.end) / 2);
       if (b.kind === 'rope') ropeBridge(ctx, b, camX, gy, S); else archBridge(ctx, b, camX, gy, S);
     }
+    WorldFX.skinOff(ctx);
   }
 
   function samples(b, camX, gy, N) {
@@ -125,12 +127,14 @@ const Props = (() => {
         const wx = sx + camX, u = wx - z.start - lead;
         if (u < 0 || wx > z.end - 200) continue;
         const ph = u % period; if (ph >= rise - 8) continue;
+        WorldFX.skinX(ctx, wx);
         const y = gy - Terrain.height(wx), sl = (Terrain.height(wx + 7) - Terrain.height(wx - 7)) / 14, a = Math.atan(sl);
         ctx.save(); ctx.translate(sx, y - 1.5); ctx.rotate(-a);
         ctx.fillStyle = (Math.floor(u / 14) % 2) ? '#a8723a' : '#94622f'; ctx.fillRect(-6.5, -3, 13, 6);
         ctx.strokeStyle = 'rgba(60,32,10,0.55)'; ctx.lineWidth = 1; ctx.strokeRect(-6.5, -3, 13, 6);
         ctx.restore();
       }
+      WorldFX.skinOff(ctx);
     }
   }
 
@@ -166,7 +170,7 @@ const Props = (() => {
       const x0 = Math.max(p.a, camX - 40), x1 = Math.min(p.b, camX + w + 40);
       const H = x => gy - Terrain.height(x);
       const sub = (step, fn) => { ctx.beginPath(); let first = true; for (let x = x0; x <= x1 + 0.1; x += step) { const px = x - camX, py = fn(x); if (first) { ctx.moveTo(px, py); first = false; } else ctx.lineTo(px, py); } };
-      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round'; WorldFX.skinX(ctx, (p.a + p.b) / 2);
       if (p.kind === 'arch') archRoad(ctx, p, camX, x0, x1, H, sub);
       else if (p.kind === 'stairs') stairsRock(ctx, p, camX, x0, x1, H, sub);
       else if (p.kind === 'holes') holesPits(ctx, p, camX, x0, x1, H, sub, gy, t);
@@ -181,6 +185,7 @@ const Props = (() => {
       else if (p.kind === 'bowl') bowlDip(ctx, p, camX, x0, x1, H, sub, t);
       else if (p.kind === 'jump' || p.kind === 'ravine' || p.kind === 'kicker' || p.kind === 'pipe' || p.kind === 'gapland') rampDraw(ctx, p, camX, x0, x1, H, t);
       else if (p.kind === 'drop') inkDrop(ctx, p, camX, x0, x1, H, sub, t);
+      WorldFX.skinOff(ctx); WorldFX.trim(ctx, p, camX, gy, x0, x1, t);
     }
   }
   // ---- utilità comuni dei terreni: strati spessi con gradiente ed estremità che si assottigliano --------------

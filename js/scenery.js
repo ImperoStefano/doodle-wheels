@@ -104,9 +104,9 @@ const Scenery = (() => {
     const palettes = {
       paradise: { skyT: '#78bce5', skyB: '#fff8e8', sun: '#fff1bd', ridge: ['#fffdf7', '#e8f3f0', '#c8dfdf', '#8fbcc9'], soil: '#d9edf0', surf: '#fff7df', water: '#73d9ed', part: 'meadow', fg: 1, dens: 0.24, flora: [[FL.ROUND, 5], [FL.BUSH, 3], [FL.PINE, 1]] },
       inferno: { skyT: '#171827', skyB: '#783447', sun: '#6d354a', ridge: ['#5a3447', '#3c293b', '#292333', '#171722'], soil: '#14151d', surf: '#302a35', water: '#ff5734', part: 'ember', fg: 6, dens: 0.18, flora: [[FL.DEAD, 7], [FL.BUSH, 1]] },
-      atlantis: { skyT: '#062d49', skyB: '#0e7185', sun: '#c7fff3', ridge: ['#8bd8cf', '#397f89', '#1c596c', '#10384f'], soil: '#0b4052', surf: '#a9e8dc', water: '#087a93', part: 'water', fg: 4, dens: 0.18, flora: [[FL.PALM, 2], [FL.BUSH, 5], [FL.ROUND, 1]] },
-      enchanted: { skyT: '#091b2b', skyB: '#173f3d', sun: '#d5ffd0', ridge: ['#8dbb83', '#4e8b68', '#245944', '#12372f'], soil: '#102d27', surf: '#8acb82', water: '#246b70', part: 'magic', fg: 5, dens: 0.38, flora: [[FL.ROUND, 3], [FL.PINE, 2], [FL.BUSH, 5]] },
-      neon: { skyT: '#080d24', skyB: '#28134b', sun: '#ff62d4', ridge: ['#5a4c91', '#36326c', '#211f4d', '#11152e'], soil: '#10142a', surf: '#6d83e9', water: '#12bfc9', part: 'neon', fg: 6, dens: 0.08, flora: [[FL.DEAD, 1], [FL.BUSH, 1]] }
+      atlantis: { skyT: '#062d49', skyB: '#0e7185', sun: '#c7fff3', ridge: ['#8bd8cf', '#397f89', '#1c596c', '#10384f'], soil: '#0b4052', surf: '#a9e8dc', water: '#087a93', part: 'water', fg: 1, dens: 0.18, flora: [[FL.PALM, 2], [FL.BUSH, 5], [FL.ROUND, 1]] },
+      enchanted: { skyT: '#091b2b', skyB: '#173f3d', sun: '#d5ffd0', ridge: ['#8dbb83', '#4e8b68', '#245944', '#12372f'], soil: '#102d27', surf: '#8acb82', water: '#246b70', part: 'magic', fg: 1, dens: 0.38, flora: [[FL.ROUND, 3], [FL.PINE, 2], [FL.BUSH, 5]] },
+      neon: { skyT: '#080d24', skyB: '#28134b', sun: '#ff62d4', ridge: ['#5a4c91', '#36326c', '#211f4d', '#11152e'], soil: '#10142a', surf: '#6d83e9', water: '#12bfc9', part: 'neon', fg: 1, dens: 0.08, flora: [[FL.DEAD, 1], [FL.BUSH, 1]] }
     };
     const colors = palettes[world] || palettes.inferno;
     const themed = BIOMES.map(b => Object.assign({}, b, {
@@ -379,6 +379,16 @@ const Scenery = (() => {
     bakedPr = pr; dirty = false;
   }
 
+  // Bioma di una zona vista dal punto x: dentro il tratto speciale (e solo fino alla sua fine) usa la tavolozza del mondo locale,
+  // così terreno, superficie, acqua e primo piano cambiano insieme allo sfondo e non restano "classici".
+  const SEG_B = {};
+  const segBiomes = wd => SEG_B[wd] || (SEG_B[wd] = makeWorldBiomes(wd));
+  function bioAt(z, x) {
+    const sw = z.specialWorld;
+    if (!sw || !S.segment || sw !== S.segment.world || x > S.segment.end) return ACTIVE_BIOMES[z.biome];
+    return segBiomes(sw)[z.biome];
+  }
+
   // ---------- pista -------------------------------------------------------------------------
   function setTrack(zones, fx, world = 'classic', worldSegment = null) {
     Z.length = 0; finishX = fx;
@@ -576,7 +586,9 @@ const Scenery = (() => {
     let ib = z.biome, t = 0;
     if (u < SB / 2 && zi > 0) { ib = Z[zi - 1].biome; t = smooth(0.5 - u / SB); }
     else if (len - u < SB / 2 && zi < Z.length - 1) { ib = Z[zi + 1].biome; t = smooth(0.5 - (len - u) / SB); }
-    S.A = ACTIVE_BIOMES[z.biome]; S.B = ACTIVE_BIOMES[ib]; S.t = t;
+    S.A = bioAt(z, bx);
+    const zn = (u < SB / 2 && zi > 0) ? Z[zi - 1] : (len - u < SB / 2 && zi < Z.length - 1) ? Z[zi + 1] : null;
+    S.B = zn ? bioAt(zn, zn === Z[zi - 1] ? zn.end - 1 : zn.start) : S.A; S.t = t;
     let z0 = S.zi0;
     while (z0 > 0 && Z[z0].start > camX) z0--;
     while (z0 < Z.length - 1 && Z[z0].end <= camX) z0++;
@@ -2096,12 +2108,19 @@ const Scenery = (() => {
   // ---------- disegno: terreno --------------------------------------------------------------
   // gradiente orizzontale con un colore per zona (sfumato ai confini): un'unica fill per tutto lo schermo
   function zoneGrad(ctx, pick) {
-    const w = S.w, camX = S.camX, g = ctx.createLinearGradient(0, 0, w, 0);
+    const w = S.w, camX = S.camX, g = ctx.createLinearGradient(0, 0, w, 0), sg = S.segment;
     let last = 0;
-    for (let i = S.zi0; i < Z.length && Z[i].start < camX + w; i++) {
-      const a = clamp((Z[i].start - camX + 110) / w, 0, 1), b = clamp((Z[i].end - camX - 110) / w, 0, 1);
-      const aa = Math.max(a, last), bb = Math.max(b, aa), c = rgb(pick(Z[i]));
+    const stop = (zs, ze, zz) => {
+      const a = clamp((zs - camX + 110) / w, 0, 1), b = clamp((ze - camX - 110) / w, 0, 1);
+      const aa = Math.max(a, last), bb = Math.max(b, aa), c = rgb(pick(zz));
       g.addColorStop(aa, c); g.addColorStop(bb, c); last = bb;
+    };
+    for (let i = S.zi0; i < Z.length && Z[i].start < camX + w; i++) {
+      const z = Z[i];
+      // l'ultima zona del tratto speciale è "mezza": oltre la fine del tratto il terreno torna classico
+      if (sg && z.specialWorld === sg.world && z.start < sg.end && z.end > sg.end) {
+        stop(z.start, sg.end, z); stop(sg.end, z.end, Object.assign({}, z, { specialWorld: null }));
+      } else stop(z.start, z.end, z);
     }
     return g;
   }
@@ -2155,7 +2174,7 @@ const Scenery = (() => {
     ctx.beginPath(); ctx.moveTo(0, h + 6);
     for (let i = 0; i < n; i++) ctx.lineTo(i * step, gy - surf[i]);
     ctx.lineTo(xLast, h + 6); ctx.closePath();
-    ctx.fillStyle = zoneGrad(ctx, z => tod(ACTIVE_BIOMES[z.biome].soil, 0.25, 0.5)); ctx.fill();
+    ctx.fillStyle = zoneGrad(ctx, z => tod(bioAt(z, z.start).soil, 0.25, 0.5)); ctx.fill();
     if (!POSTER) {
       const dk = mix(S.A.soil, [12, 8, 20], 0.78), vg = ctx.createLinearGradient(0, gy - 90, 0, h);
       vg.addColorStop(0, rgba(dk, 0)); vg.addColorStop(1, rgba(dk, 0.62));
@@ -2166,20 +2185,22 @@ const Scenery = (() => {
     if (LAND && quality < 2) {
       // colline in primo piano a fasce ondulate: terreno → ocra → ruggine → marrone → blu notte (mescolate al colore del bioma)
       ctx.save(); ctx.clip();
-      const BANDS = S.world === 'paradise'
+      const bandsFor = wd => wd === 'paradise'
         ? [[34, [222, 242, 244], 0.38, 0.010], [100, [177, 213, 230], 0.48, 0.0075], [178, [125, 169, 202], 0.60, 0.0062], [270, [79, 119, 161], 0.78, 0.005]]
-        : S.world === 'atlantis'
+        : wd === 'atlantis'
           ? [[34, [57, 171, 160], 0.32, 0.010], [100, [15, 105, 126], 0.48, 0.0075], [178, [7, 62, 88], 0.66, 0.0062], [270, [3, 29, 50], 0.82, 0.005]]
-        : S.world === 'enchanted'
+        : wd === 'enchanted'
           ? [[34, [113, 160, 91], 0.30, 0.010], [100, [51, 102, 71], 0.48, 0.0075], [178, [28, 63, 51], 0.68, 0.0062], [270, [12, 31, 39], 0.84, 0.005]]
-        : S.world === 'neon'
+        : wd === 'neon'
           ? [[34, [85, 88, 160], 0.28, 0.010], [100, [53, 47, 108], 0.5, 0.0075], [178, [29, 29, 70], 0.68, 0.0062], [270, [8, 14, 34], 0.86, 0.005]]
         : [[34, [236, 189, 111], 0.42, 0.010], [100, [206, 98, 56], 0.5, 0.0075], [178, [112, 56, 44], 0.62, 0.0062], [270, [29, 37, 64], 0.82, 0.005]];
+      let BANDS = bandsFor(S.world);
+      if (S.segment && S.segmentBlend > 0.001) { const B1 = bandsFor(S.segment.world), sb = S.segmentBlend; BANDS = BANDS.map((b, i) => [b[0], mix(b[1], B1[i][1], sb), b[2] + (B1[i][2] - b[2]) * sb, b[3]]); }
       BANDS.forEach(([off, tc, k, fq], bi) => {
         ctx.beginPath();
         for (let i = 0; i < n; i++) { const x = i * step, y = gy - surf[i] + off + 12 * Math.sin((x + camX) * fq + bi * 1.9) + 5 * Math.sin((x + camX) * fq * 2.7 + bi); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
         ctx.lineTo(xLast, h + 6); ctx.lineTo(0, h + 6); ctx.closePath();
-        ctx.fillStyle = zoneGrad(ctx, z => tod(mix(ACTIVE_BIOMES[z.biome].soil, tc, k), 0.25, 0.5)); ctx.fill();
+        ctx.fillStyle = zoneGrad(ctx, z => tod(mix(bioAt(z, z.start).soil, tc, k), 0.25, 0.5)); ctx.fill();
       });
       ctx.restore();
     } else if (POSTER && quality < 2) {
@@ -2219,7 +2240,7 @@ const Scenery = (() => {
     for (let i = 0; i < n; i++) { const y = gy - surf[i]; if (i === 0) line.moveTo(0, y); else line.lineTo(i * step, y); }
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     if (!POSTER) { ctx.strokeStyle = 'rgba(15,23,42,0.55)'; ctx.lineWidth = 13; ctx.stroke(line); }
-    ctx.strokeStyle = zoneGrad(ctx, z => tod(ACTIVE_BIOMES[z.biome].surf, 0.25, 0.5)); ctx.lineWidth = POSTER ? 20 : 9; ctx.stroke(line);
+    ctx.strokeStyle = zoneGrad(ctx, z => tod(bioAt(z, z.start).surf, 0.25, 0.5)); ctx.lineWidth = POSTER ? 20 : 9; ctx.stroke(line);
 
     // Dettagli di superficie dedicati: piccoli segni leggibili ma mai sopra la ruota.
     if (quality < 2 && (S.world === 'atlantis' || S.world === 'enchanted' || S.world === 'neon')) {
@@ -2400,7 +2421,7 @@ const Scenery = (() => {
     let any = false;
     for (let zi = S.zi0; zi < Z.length && Z[zi].start < camX + w; zi++) if (Z[zi].key === 'water') { any = true; break; }
     if (!any) return;
-    const wc = tod(ACTIVE_BIOMES[4].water, 0.35, 0.55), deep = mix(wc, [10, 40, 90], 0.55);
+    const wc = tod((S.segment && S.segmentBlend > 0.5 ? segBiomes(S.segment.world) : ACTIVE_BIOMES)[4].water, 0.35, 0.55), deep = mix(wc, [10, 40, 90], 0.55);
     let i = 0;
     while (i < n) {
       const wl0 = Terrain.waterLevel(camX + i * step);

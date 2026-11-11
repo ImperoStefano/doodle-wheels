@@ -1099,6 +1099,7 @@
     for (let i = 0; i < n; i++) surfBuf[i] = Terrain.naturalHeight(camX + i * SURF_STEP);
     Scenery.drawGround(ctx2d, surfBuf, n, SURF_STEP);
     Scenery.drawWorldEffects(ctx2d, camX, w, groundY, Math.max(0, t0 - raceT0));
+    WorldFX.drawGround(ctx2d, camX, w, groundY, t0);
 
     Props.drawPatches(ctx2d, camX, w, groundY, SC);
     Props.drawRamps(ctx2d, camX, w, groundY);
@@ -1158,6 +1159,7 @@
     if (me && typeof Sfx !== 'undefined') raceAudio(me, raceMeta[Net.myId], t0);
     Scenery.drawWater(ctx2d, surfBuf, n, SURF_STEP);
     Scenery.drawFront(ctx2d);
+    WorldFX.drawFore(ctx2d, camX, w, groundY, t0, h);
 
     if (mirrored) ctx2d.restore();
     if (t0 - hudAt > 120) { hudAt = t0; updateHud(); updateLastCall(); }
