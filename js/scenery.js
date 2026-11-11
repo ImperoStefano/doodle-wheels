@@ -57,24 +57,19 @@ const Scenery = (() => {
     enchanted: 'img/worlds/enchanted-front.png',
     neon: 'img/worlds/neon-front.png',
   };
-  function preloadWorldArt() {
-    if (typeof Image === 'undefined') return;
-    for (const name of Object.keys(WORLD_ART_PATHS)) {
-      if (!WORLD_ART[name]) {
-        const img = new Image();
-        img.decoding = 'async';
-        img.src = WORLD_ART_PATHS[name];
-        WORLD_ART[name] = img;
-      }
-      if (!WORLD_FRONT_ART[name]) {
-        const front = new Image();
-        front.decoding = 'async';
-        front.src = WORLD_FRONT_ART_PATHS[name];
-        WORLD_FRONT_ART[name] = front;
-      }
+  // Carichiamo solo le texture usate dalla gara: evita il download/decoding di 5 mondi
+  // e la creazione di Image con src undefined per i mondi senza primo piano.
+  function preloadWorldArt(world) {
+    if (typeof Image === 'undefined' || !WORLD_ART_PATHS[world]) return;
+    if (!WORLD_ART[world]) {
+      const img = new Image(); img.decoding = 'async';
+      img.src = WORLD_ART_PATHS[world]; WORLD_ART[world] = img;
+    }
+    if (WORLD_FRONT_ART_PATHS[world] && !WORLD_FRONT_ART[world]) {
+      const front = new Image(); front.decoding = 'async';
+      front.src = WORLD_FRONT_ART_PATHS[world]; WORLD_FRONT_ART[world] = front;
     }
   }
-  preloadWorldArt();
 
   // Stile "paesaggio" (illustrazione vettoriale a strati): cieli sfumati dal rosso-arancio al pesca o dal verde salvia al menta, sole grande e pallido,
   // montagne a più piani con una faccia chiara e una in ombra, colline a fasce, chiome morbide a lobi e cipressi color melanzana.
@@ -412,7 +407,10 @@ const Scenery = (() => {
       ? { world: worldSegment.world, start: worldSegment.start, end: worldSegment.end, length: worldSegment.length }
       : null;
     S.segmentBlend = 0; S.segmentActive = false;
-    if (S.segment) preloadWorldLandmarks(S.segment.world); // avvia il caricamento prima dell'ingresso nel mondo
+    if (S.segment) {
+      preloadWorldArt(S.segment.world);
+      preloadWorldLandmarks(S.segment.world); // solo le 3 immagini del mondo selezionato
+    } else preloadWorldArt(validWorld);
     S.world = S.segment ? 'classic' : validWorld;
     S.bannerWorld = null;
     ACTIVE_BIOMES = makeWorldBiomes(S.world);
@@ -425,7 +423,7 @@ const Scenery = (() => {
     const npr = clamp(d * vs, 0.8, 2);
     if (Math.abs(npr - pr) > 0.15 || !atlas.trees) { pr = npr; dirty = true; }
   }
-  function warmup() { if (dirty || !atlas.trees) bakeAll(); preloadWorldArt(); }
+  function warmup() { if (dirty || !atlas.trees) bakeAll(); preloadWorldArt(S.segment ? S.segment.world : S.world); }
   function bannerText() {
     if (S.bannerName === '@world') return I18n.t('world.tag.' + (S.bannerWorld || S.world));
     const i = BIOMES.findIndex(b => b.name === S.bannerName); return i >= 0 ? I18n.t('biome.' + i) : S.bannerName;
@@ -1287,7 +1285,7 @@ const Scenery = (() => {
   // completa, con landmark grandi e distanziati, così il giocatore capisce subito dove si trova.
   function drawDedicatedWorldBackdrop(ctx) {
     const w = S.w, h = S.h, gy = S.gy, now = S.now / 1000;
-    preloadWorldArt();
+    preloadWorldArt(S.world);
     const img = WORLD_ART[S.world];
     if (img && img.complete && img.naturalWidth > 0) {
       // Il panorama si muove più lentamente della pista: i landmark restano leggibili

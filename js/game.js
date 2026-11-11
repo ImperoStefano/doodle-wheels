@@ -393,6 +393,7 @@
     if (Net.isHost) { Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {})); Sim.prepareAsync(); }   // mondo fisico costruito a fette durante l'intro
     hideLastCall(); lastCallSent = false;
     Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X, Terrain.WORLD, Terrain.WORLD_SEGMENT); Flora.setTrack(); Scenery.setQuality(0); Flora.setQuality(0); qSlow = 0;
+    minimapBaseDirty = true; lastHudOrder = '';
     Scenery.warmup();
     placeGrid();
     const me = latestRacers[Net.myId]; smoothCamX = me ? me.x - viewW * 0.34 : 0; particles = []; cam.dy = 0; cam.vx = 0; cam.lead = 0.34; lastCamTs = 0;
@@ -502,10 +503,15 @@
   // rispetto a REF_W, altezza rispetto a REF_H) e zooma di conseguenza, qualunque sia
   // l'orientamento. Sopra entrambe le soglie resta 1 = nessun cambiamento rispetto a desktop.
   const REF_W = 760, REF_H = 900, MIN_VIEW_SCALE = 0.42;
+  // Solo le posizioni giocatori e il loro progresso cambiano ogni frame.
+  // La mappa dei biomi rimane in una texture offscreen finché non cambia la pista o la dimensione.
+  let minimapBase = null, minimapBaseDirty = true, lastHudOrder = '';
 
   function resizeCanvas() {
-    const dpr = window.devicePixelRatio || 1;
     const cssW = window.innerWidth, cssH = window.innerHeight;
+    // Su Retina 3x il Canvas richiederebbe 9 volte i pixel di uno schermo 1x.
+    // Limitiamo solo la risoluzione interna; CSS, fisica e area visibile non cambiano.
+    const dpr = Math.min(window.devicePixelRatio || 1, Math.min(cssW, cssH) < 650 ? 1.5 : 2);
 
     baseVS = viewScale = Math.min(1, Math.max(MIN_VIEW_SCALE, Math.min(cssW / REF_W, cssH / REF_H)));
     cssWv = cssW; cssHv = cssH; dprV = dpr; viewScale = baseVS * gzoom;
@@ -524,19 +530,25 @@
 
     resizeMinimap();
   }
-  window.addEventListener('resize', resizeCanvas);
+  let resizePending = false;
+  window.addEventListener('resize', () => {
+    if (resizePending) return;
+    resizePending = true;
+    requestAnimationFrame(() => { resizePending = false; resizeCanvas(); });
+  });
 
   // Stessa correzione DPR per la minimappa: legge la sua dimensione CSS reale (qualunque essa
   // sia) e adatta la risoluzione interna, invece di restare sfocata sugli schermi retina.
   function resizeMinimap() {
     if (!minimapCtx) return;
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     const rect = els.minimap.getBoundingClientRect();
     if (!rect.width || !rect.height) return; // non ancora visibile/layoutato
     els.minimap.width = Math.round(rect.width * dpr);
     els.minimap.height = Math.round(rect.height * dpr);
     minimapMetrics = { w: rect.width, h: rect.height };
     minimapCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    minimapBaseDirty = true;
   }
 
   // Altezza visiva del terreno campionata ogni SURF_STEP px di schermo: la calcolo UNA volta per
@@ -1302,13 +1314,19 @@
   }
 
   function updateHud() {
-    const me = latestRacers[Net.myId]; if (me) els.hudFill.style.width = Math.max(0, Math.min(100, (me.x / Terrain.FINISH_X) * 100)) + '%';
+    const me = latestRacers[Net.myId];
+    if (me) els.hudFill.style.width = Math.max(0, Math.min(100, (me.x / Terrain.FINISH_X) * 100)) + '%';
     const rkd = Object.entries(latestRacers).map(([id, r]) => ({ id, x: r.x, meta: raceMeta[id] })).filter(r => r.meta).sort((a, b) => b.x - a.x);
-    els.hudBoard.innerHTML = ''; rkd.forEach((r, i) => {
+    const order = rkd.map(r => r.id).join('|');
+    if (order === lastHudOrder) return; // niente DOM churn 8 volte/s se la classifica è invariata
+    lastHudOrder = order;
+    const frag = document.createDocumentFragment();
+    rkd.forEach((r, i) => {
       const li = document.createElement('li'); if (r.id === Net.myId) li.classList.add('is-me');
       li.innerHTML = `<span class="rank-num">${i + 1}</span><span class="color-dot" style="background:${r.meta.color}"></span><span>${escapeHtml(r.meta.name)}</span>`;
-      els.hudBoard.appendChild(li);
+      frag.appendChild(li);
     });
+    els.hudBoard.replaceChildren(frag);
   }
 
   // minimappa a illustrazione: barra piatta a pastiglia con i biomi in colori pieni, laghi, ponti ad arco, bandierina e i giocatori come pallini col bordino crema
@@ -1317,17 +1335,30 @@
     const w = minimapMetrics.w, h = minimapMetrics.h, tL = Terrain.FINISH_X, m = minimapCtx; m.clearRect(0, 0, w, h);
     const pad = 10, bh = Math.max(9, Math.min(15, h * 0.34)), by = h * 0.64 - bh / 2, toPx = x => pad + Math.max(0, Math.min(1, x / tL)) * (w - pad * 2);
     const me = latestRacers[Net.myId];
-    // pastiglia di fondo e biomi (ritagliati nella pastiglia)
-    rrect(m, pad - 3, by - 3, w - pad * 2 + 6, bh + 6, (bh + 6) / 2); m.fillStyle = '#e4deb6'; m.fill();
-    m.save(); rrect(m, pad, by, w - pad * 2, bh, bh / 2); m.clip();
-    Terrain.ZONES.forEach(z => {
-      const zS = Math.max(0, z.start), zE = Math.min(tL, z.end); if (zE <= zS) return;
-      m.fillStyle = MM_PAL[z.key] || '#94a3b8'; m.fillRect(toPx(zS), by, Math.max(1, toPx(zE) - toPx(zS)), bh);
-      if (z.gap && (z.key === 'water' || z.key === 'lava')) { m.fillStyle = z.key === 'lava' ? '#fb5f35' : '#5bb5b0'; m.fillRect(toPx(z.gap.g0), by, toPx(z.gap.g1) - toPx(z.gap.g0), bh); m.fillStyle = z.key === 'lava' ? '#f5e594' : '#bfe3ea'; m.fillRect(toPx(z.gap.g0), by, toPx(z.gap.g1) - toPx(z.gap.g0), 2.4); }
-    });
-    // strada già fatta da te: un velo scuro
-    if (me) { m.fillStyle = 'rgba(45,62,72,0.2)'; m.fillRect(pad, by, toPx(me.x) - pad, bh); }
-    m.restore();
+    // Parte statica cache: la geometria della pista non cambia durante la gara.
+    if (!minimapBase || minimapBaseDirty) {
+      const raster = Math.min(window.devicePixelRatio || 1, 1.5);
+      minimapBase = document.createElement('canvas');
+      minimapBase.width = Math.max(1, Math.round(w * raster));
+      minimapBase.height = Math.max(1, Math.round(h * raster));
+      const b = minimapBase.getContext('2d');
+      b.setTransform(raster, 0, 0, raster, 0, 0);
+      rrect(b, pad - 3, by - 3, w - pad * 2 + 6, bh + 6, (bh + 6) / 2); b.fillStyle = '#e4deb6'; b.fill();
+      b.save(); rrect(b, pad, by, w - pad * 2, bh, bh / 2); b.clip();
+      Terrain.ZONES.forEach(z => {
+        const zS = Math.max(0, z.start), zE = Math.min(tL, z.end); if (zE <= zS) return;
+        b.fillStyle = MM_PAL[z.key] || '#94a3b8'; b.fillRect(toPx(zS), by, Math.max(1, toPx(zE) - toPx(zS)), bh);
+        if (z.gap && (z.key === 'water' || z.key === 'lava')) {
+          b.fillStyle = z.key === 'lava' ? '#fb5f35' : '#5bb5b0'; b.fillRect(toPx(z.gap.g0), by, toPx(z.gap.g1) - toPx(z.gap.g0), bh);
+          b.fillStyle = z.key === 'lava' ? '#f5e594' : '#bfe3ea'; b.fillRect(toPx(z.gap.g0), by, toPx(z.gap.g1) - toPx(z.gap.g0), 2.4);
+        }
+      });
+      b.restore(); minimapBaseDirty = false;
+    }
+    m.drawImage(minimapBase, 0, 0, w, h);
+    // barra del progresso: stessi colori e coordinate originali.
+    if (me) { m.save(); rrect(m, pad, by, w - pad * 2, bh, bh / 2); m.clip();
+      m.fillStyle = 'rgba(45,62,72,0.2)'; m.fillRect(pad, by, toPx(me.x) - pad, bh); m.restore(); }
     // ponti: piccoli archi d'ardesia sopra la barra
     m.strokeStyle = SLATE; m.lineWidth = 2.4; m.lineCap = 'round';
     Terrain.BRIDGES.forEach(b => { const a = toPx(b.start), c = toPx(b.end); m.beginPath(); m.moveTo(a, by + 1); m.quadraticCurveTo((a + c) / 2, by - bh * 0.9, c, by + 1); m.stroke(); });
