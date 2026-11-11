@@ -669,3 +669,41 @@ input[type="text"]:focus { border-color: var(--teal); }
 .emote-option img {width:39px;height:39px;}
 @media (max-width:700px) and (pointer:coarse){.emote-option img {width:35px;height:35px;}}
 @media (max-height:420px) and (orientation:landscape){.emote-option img {width:31px;height:31px;}}
+
+/* V15: lightweight onboarding and personal progress. Keeps the race unobstructed. */
+.draw-first-tip {display:flex;align-items:center;gap:12px;margin:8px 0;padding:10px 12px;
+  border:1px solid rgba(25,95,104,.26);border-radius:12px;background:#edf6ef;
+  color:#315760;font-size:13px;line-height:1.4;text-align:left}
+.draw-first-tip[hidden],.personal-best[hidden] {display:none!important}
+.draw-first-tip button {margin-left:auto;border:none;border-radius:9px;min-width:36px;min-height:36px;
+  background:#fff;color:#315760;font-size:23px;cursor:pointer;flex-shrink:0}
+.personal-best {text-align:center;border:2px solid #e7b64c;background:#fff3cf;color:#55441c;
+  padding:11px;border-radius:14px;font-weight:800;margin:12px 0}
+@media (pointer:coarse) {
+  .emote-option {min-width:49px;min-height:49px}
+  .emote-toggle {min-width:53px;min-height:53px}
+}
+@media (prefers-reduced-motion:reduce) {
+  .emote-toggle,.emote-option,.sprint-btn.ready {animation:none!important;transition:none!important}
+}
+
+/* V16: emote chiaramente più grandi nel selettore, senza sacrificare i tocchi su mobile. */
+.emote-picker { gap: 7px; padding: 8px; }
+.emote-option { width: 60px; min-width: 60px; height: 60px; border-radius: 16px; }
+.emote-option img { width: 54px; height: 54px; }
+.emote-toggle { width: 60px; min-width: 60px; height: 60px; }
+.emote-toggle img { width: 51px; height: 51px; }
+@media (max-width:700px) and (pointer:coarse) {
+  .emote-picker { gap: 3px; padding: 6px; }
+  .emote-option { width: 53px; min-width: 53px; height: 55px; min-height: 55px; }
+  .emote-option img { width: 49px; height: 49px; }
+  .emote-toggle { width: 56px; min-width: 56px; height: 56px; min-height: 56px; }
+  .emote-toggle img { width: 49px; height: 49px; }
+}
+@media (max-height:420px) and (orientation:landscape) {
+  .emote-picker { gap: 3px; padding: 4px; }
+  .emote-option { width: 50px; min-width: 50px; height: 51px; min-height: 51px; }
+  .emote-option img { width: 45px; height: 45px; }
+  .emote-toggle { width: 52px; min-width: 52px; height: 52px; min-height: 52px; }
+  .emote-toggle img { width: 45px; height: 45px; }
+}

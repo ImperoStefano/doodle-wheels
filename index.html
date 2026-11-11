@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Pacifico&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="img/icon-192.png">
-<link rel="stylesheet" href="style.css?v=20261111-v13-wheel">
+<link rel="stylesheet" href="style.css?v=20261111-v16-emotes-grandi">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><filter id="dw-ink" x="-20%" y="-40%" width="140%" height="180%"><feTurbulence type="fractalNoise" baseFrequency="0.07 0.1" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5"/></filter></svg>
@@ -103,6 +103,7 @@
       </div>
       <p class="champ-banner" id="champ-banner" style="display:none"></p>
       <p class="hint" data-i18n="draw.hint">Traccia una linea chiusa. Tonda per la velocità, irregolare per far presa su ostacoli difficili.</p>
+      <p id="draw-first-tip" class="draw-first-tip" hidden><span data-i18n="draw.firstTip">Disegna un anello con un solo gesto e chiudilo vicino al punto di partenza. Una ruota irregolare può superare ostacoli che una tonda fatica ad affrontare.</span><button type="button" id="draw-first-tip-close" aria-label="Chiudi suggerimento">×</button></p>
       <canvas id="draw-canvas" width="480" height="480" class="draw-canvas"></canvas>
       <div id="wheel-profile" class="wheel-profile" aria-live="polite">Disegna una ruota per vedere le caratteristiche della forma.</div>
       <div class="draw-actions">
@@ -137,13 +138,13 @@
       <!-- EMOTE: comunicazione rapida, non interferisce con la fisica -->
       <div id="emote-dock" class="emote-dock">
         <div id="emote-picker" class="emote-picker" role="group" aria-label="Emote rapide" hidden>
-          <button type="button" class="emote-option" data-emote="clap" aria-label="Sorpresa, tasto 1" title="Sorpresa · 1"><img src="img/emotes/clap.png?v=14" width="39" height="39" alt="" decoding="async"></button>
-          <button type="button" class="emote-option" data-emote="laugh" aria-label="Amore, tasto 2" title="Amore · 2"><img src="img/emotes/laugh.png?v=14" width="39" height="39" alt="" decoding="async"></button>
-          <button type="button" class="emote-option" data-emote="shock" aria-label="Rabbia, tasto 3" title="Rabbia · 3"><img src="img/emotes/shock.png?v=14" width="39" height="39" alt="" decoding="async"></button>
-          <button type="button" class="emote-option" data-emote="fire" aria-label="Cool, tasto 4" title="Cool · 4"><img src="img/emotes/fire.png?v=14" width="39" height="39" alt="" decoding="async"></button>
-          <button type="button" class="emote-option" data-emote="thumb" aria-label="Vittoria, tasto 5" title="Vittoria · 5"><img src="img/emotes/thumb.png?v=14" width="39" height="39" alt="" decoding="async"></button>
+          <button type="button" class="emote-option" data-emote="clap" aria-label="Sorpresa, tasto 1" title="Sorpresa · 1"><img src="img/emotes/clap.png?v=16" width="54" height="54" alt="" decoding="async"></button>
+          <button type="button" class="emote-option" data-emote="laugh" aria-label="Amore, tasto 2" title="Amore · 2"><img src="img/emotes/laugh.png?v=16" width="54" height="54" alt="" decoding="async"></button>
+          <button type="button" class="emote-option" data-emote="shock" aria-label="Rabbia, tasto 3" title="Rabbia · 3"><img src="img/emotes/shock.png?v=16" width="54" height="54" alt="" decoding="async"></button>
+          <button type="button" class="emote-option" data-emote="fire" aria-label="Cool, tasto 4" title="Cool · 4"><img src="img/emotes/fire.png?v=16" width="54" height="54" alt="" decoding="async"></button>
+          <button type="button" class="emote-option" data-emote="thumb" aria-label="Vittoria, tasto 5" title="Vittoria · 5"><img src="img/emotes/thumb.png?v=16" width="54" height="54" alt="" decoding="async"></button>
         </div>
-        <button type="button" id="btn-emote" class="emote-toggle" aria-label="Apri emote" aria-expanded="false" aria-controls="emote-picker" title="Emote (1–5)"><img src="img/emotes/clap.png?v=14" width="34" height="34" alt="" decoding="async"></button>
+        <button type="button" id="btn-emote" class="emote-toggle" aria-label="Apri emote" aria-expanded="false" aria-controls="emote-picker" title="Emote (1–5)"><img src="img/emotes/clap.png?v=16" width="51" height="51" alt="" decoding="async"></button>
       </div>
 
       <!-- BOTTONE PIT-STOP -->
@@ -184,6 +185,7 @@
     <div class="card">
       <h2 class="section-title" data-i18n="res.title">Traguardo</h2>
       <ol id="results-list" class="results-list"></ol>
+      <p id="personal-best" class="personal-best" hidden></p>
       <div id="champ-box" class="champ-box" style="display:none"><h3 class="champ-title" id="champ-title"></h3><ol id="champ-table" class="results-list champ-table"></ol></div>
       <div class="trace-wrap"><canvas id="results-trace" class="results-trace" width="660" height="330" style="display:none" aria-label="Tracciato"></canvas><div id="ft-hl" class="ft-hl" hidden></div><div id="ft-tip" class="ft-tip" hidden role="status"></div></div>
       <div class="draw-actions">
@@ -198,16 +200,16 @@
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
-<script src="js/i18n.js?v=20261111-v13-wheel"></script>
-<script src="js/peer.js?v=20261111-v13-wheel"></script>
-<script src="js/draw.js?v=20261111-v13-wheel"></script>
-<script src="js/terrain.js?v=20261111-v13-wheel"></script>
-<script src="js/scenery.js?v=20261111-v13-wheel"></script>
-<script src="js/flora.js?v=20261111-v13-wheel"></script>
-<script src="js/props.js?v=20261111-v13-wheel"></script>
-<script src="js/worldfx.js?v=20261111-v13-wheel"></script>
-<script src="js/physics.js?v=20261111-v13-wheel"></script>
-<script src="js/sound.js?v=20261111-v13-wheel"></script>
-  <script src="js/game.js?v=20261111-v13-wheel"></script>
+<script src="js/i18n.js?v=20261111-v16-emotes-grandi"></script>
+<script src="js/peer.js?v=20261111-v16-emotes-grandi"></script>
+<script src="js/draw.js?v=20261111-v16-emotes-grandi"></script>
+<script src="js/terrain.js?v=20261111-v16-emotes-grandi"></script>
+<script src="js/scenery.js?v=20261111-v16-emotes-grandi"></script>
+<script src="js/flora.js?v=20261111-v16-emotes-grandi"></script>
+<script src="js/props.js?v=20261111-v16-emotes-grandi"></script>
+<script src="js/worldfx.js?v=20261111-v16-emotes-grandi"></script>
+<script src="js/physics.js?v=20261111-v16-emotes-grandi"></script>
+<script src="js/sound.js?v=20261111-v16-emotes-grandi"></script>
+  <script src="js/game.js?v=20261111-v16-emotes-grandi"></script>
 </body>
 </html>

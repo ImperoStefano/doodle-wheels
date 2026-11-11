@@ -53,6 +53,7 @@ const Sim = (() => {
   const IMMUNE_MS = 2500;   // dopo un salto (o l'uscita dallo specchio) la bici non attiva portali per un po': chi è in testa non viene rimbalzato di continuo
   let portalUsed = {};   // portali già attraversati da qualcuno: spariscono per tutti (chi arriva per primo li consuma)
   let engine, world, racers = {}, running = false, timedOut = false, startedAt = 0, accumulator = 0, firstFinishAt = null, timeoutMs = 180000;
+  const racerOrder = []; let raceStepNo = 0;
   // ONE shared negative group for every racer: bikes pass through each other (ghost racing) but all
   // collide with the ground (group 0). With a group per racer the grid spacing (200px) is smaller
   // than a bike + its wheels, so neighbouring wheels spawned overlapping and were violently ejected.
@@ -72,7 +73,7 @@ const Sim = (() => {
     racerGroup = Matter.Body.nextGroup(true);
   }
   function resetRaceState() {
-    racers = {}; portalUsed = {};
+    racers = {}; racerOrder.length = 0; raceStepNo = 0; portalUsed = {};
     running = false;
     timedOut = false;
     accumulator = 0;
@@ -111,11 +112,18 @@ const Sim = (() => {
   // (Rotated rectangles offset vertically leave small steps at the joints between segments
   // with different slopes; a triangle's corner catches on those steps and digs in.)
   function buildGround(xa, xb) {
-    const segW = 20;
     const bodies = [];
     if (xa === undefined) { xa = Terrain.TRACK_START; xb = Terrain.TRACK_END; }
-    for (let x = xa; x < xb; x += segW) {
-      const x2 = x + segW;
+    for (let x = xa; x < xb;) {
+      // A wider segment on straight terrain halves most collision geometry;
+      // tight ramps, island edges and small obstacles retain 20 px resolution.
+      const h0 = Terrain.height(x), hm = Terrain.height(x + 20), h1 = Terrain.height(x + 40);
+      const curve = Math.abs(h0 - 2 * hm + h1);
+      // At very sharp lips (steep ravines / launch edges), use 10 px to avoid
+      // the coarse collision surface cutting across a curved cliff face.
+      const fine10 = Math.abs(hm - h0) > 29 || curve > 22;
+      const fine = curve > 2.2 || Math.abs(h1 - h0) > 25 || x + 40 > xb;
+      const x2 = Math.min(x + (fine10 ? 10 : fine ? 20 : 40), xb);
       const y1 = GROUND_Y - Terrain.height(x);
       const y2 = GROUND_Y - Terrain.height(x2);
       const quad = [
@@ -137,6 +145,7 @@ const Sim = (() => {
       seg.friction = segFriction;
       seg.restitution = 0.05;
       bodies.push(seg);
+      x = x2;
     }
     return bodies;
   }
@@ -291,6 +300,7 @@ const Sim = (() => {
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
     meltInit(racers[id], id, vertices);
+    racerOrder.push(racers[id]);
   }
 
   function updateRacerWheel(id, vertices) {
@@ -1019,7 +1029,25 @@ const Sim = (() => {
     r.rampFly = 0;   // un salto prende il comando: da qui in poi vale la gravità normale
     // da terra: spinta sopra la velocità verticale attuale; in aria (doppio salto): la velocità verso l'alto diventa almeno v, SENZA sommarsi a quella che c'è
     // già (sommate, un secondo tocco ravvicinato lanciava la bici altissima, soprattutto con le ruote giganti)
-    for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.setVelocity(b, { x: b.velocity.x, y: air ? Math.min(b.velocity.y, -v) : Math.max(-(v + JUMP_RISE_CAP), Math.min(b.velocity.y, 0) - v) });
+    // Rovi tesi dell'Inferno: una fionda VISIBILE e a comando, non una raffica invisibile.
+    // Il salto dalla prima riva raggiunge l'isolotto; quello sull'isolotto arriva alla riva opposta.
+    // Chi non salta continua invece ad attraversare il lago dal basso, nella lava.
+    let thorn = null;
+    if (!air && (r.dir || 1) === 1) {
+      const z = Terrain.zoneAt(r.chassis.position.x);
+      if (z && z.gap && z.gap.damned && z.thorns) {
+        for (const pad of [z.thorns.left, z.thorns.midR]) {
+          const distance = Math.abs(r.chassis.position.x - pad.x);
+          if (distance < pad.width * 0.5 + 27) { thorn = pad; break; }
+        }
+      }
+    }
+    for (const b of [r.chassis, r.fw, r.rw]) {
+      let vx = b.velocity.x, vy = air ? Math.min(b.velocity.y, -v) : Math.max(-(v + JUMP_RISE_CAP), Math.min(b.velocity.y, 0) - v);
+      if (thorn) { vx = Math.max(vx, 16.0); vy = Math.min(vy, -29.0); }
+      Matter.Body.setVelocity(b, { x: vx, y: vy });
+    }
+    if (thorn) { r.ln = (r.ln || 0) + 1; r.ls = 2; } // stessa animazione di un grande lancio
     r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = air ? 2 : 1; if (air) r.ja = (r.ja || 0) + 1;
     return 1;
   }
@@ -1256,15 +1284,16 @@ const Sim = (() => {
     let steps = 0;
     while (accumulator >= FIXED_DT) {
       if (++steps > 3) { accumulator = 0; break; }
-      const order = Object.values(racers); for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const tmp = order[i]; order[i] = order[j]; order[j] = tmp; }   // ordine casuale: se due bici toccano un portale nello stesso passo, non vince sempre la stessa
-      for (const r of order) {
+      // Same fairness as rotating turns, without allocating/shuffling an array each step.
+      const n = racerOrder.length, offset = n ? (raceStepNo++ % n) : 0;
+      for (let i = 0; i < n; i++) {
+        const r = racerOrder[(i + offset) % n];
         stepRacer(r, elapsed);
         if (!r.finished) assist(r);
       }
-      for (let i = 0; i < SUBSTEPS; i++) {
+      for (let sub = 0; sub < SUBSTEPS; sub++) {
         Matter.Engine.update(engine, FIXED_DT / SUBSTEPS);
-        // right after the solver: correct any corner that just hit hard, before it's ever rendered
-        for (const r of Object.values(racers)) { antiSink(r.fw); antiSink(r.rw); }
+        for (let i = 0; i < n; i++) { const r = racerOrder[i]; antiSink(r.fw); antiSink(r.rw); }
       }
       accumulator -= FIXED_DT;
 

@@ -272,7 +272,7 @@
   const EMOTES = Object.freeze({ clap:'Sorpresa', laugh:'Amore', shock:'Rabbia', fire:'Cool', thumb:'Vittoria' });
   const emoteArt = Object.create(null);
   EMOTE_IDS.forEach(code => {
-    const pic = new Image(); pic.decoding = 'async'; pic.src = `img/emotes/${code}.png?v=14`;
+    const pic = new Image(); pic.decoding = 'async'; pic.src = `img/emotes/${code}.png?v=16`;
     emoteArt[code] = pic;
   });
   const EMOTE_COOLDOWN = 2400, EMOTE_DURATION = 2250;
@@ -317,27 +317,63 @@
     if (k) { e.preventDefault(); tryEmote(EMOTE_IDS[Number(k[1])-1]); }
     else if (e.code === 'Escape') closeEmotePicker();
   });
+  // V16: emote grandi e leggibili, espresse in pixel SCHERMO anziché in unità del mondo.
+  // In questo gioco lo zoom della camera è circa 0.42–1 sui telefoni: prima le emote
+  // si riducevano insieme alle ruote e diventavano minuscole proprio sul mobile.
   function drawEmoteBubble(id, x, y, color, ts) {
     const e = activeEmotes[id]; if (!e) return;
     const age = ts - e.at;
     if (age >= EMOTE_DURATION || age < 0) { delete activeEmotes[id]; return; }
-    const k = Math.max(0, Math.min(1, (EMOTE_DURATION - age) / 440));
-    const dx = Math.round(x), dy = Math.round(y - 98 - Math.min(age / 85, 18));
-    ctx2d.save(); ctx2d.globalAlpha = k;
-    ctx2d.translate(dx,dy);
+    const compact = Math.min(cssWv, cssHv) < 520;
+    const u = 1 / Math.max(0.28, viewScale); // un pixel CSS nel sistema di coordinate canvas
+    const icon = (compact ? 72 : 84) * u;     // prima: 46 unità mondo (= ~20–46 px)
+    const hw = icon / 2 + 10 * u, hh = icon / 2 + 8 * u;
+    const tail = 12 * u;
+    const drift = Math.min(age / 90, 18) * u;
+    const lift = (compact ? 52 : 83) * u + drift;
+    const dx = Math.max(hw + 3 * u, Math.min(viewW - hw - 3 * u, x));
+    // La punta del fumetto rimane sopra il pilota, senza sparire fuori dallo schermo.
+    const dy = Math.max(hh + 4 * u, y - lift - tail - hh);
+    const fadeOut = Math.max(0, Math.min(1, (EMOTE_DURATION - age) / 440));
+    const fadeIn = Math.min(1, age / 110);
+    const pop = 0.88 + 0.12 * Math.min(1, age / 180);
+    ctx2d.save();
+    ctx2d.globalAlpha = fadeIn * fadeOut;
+    ctx2d.translate(dx, dy);
+    ctx2d.scale(pop, pop);
+    // Ombra morbida per aumentare il contrasto del fumetto sullo sfondo.
+    ctx2d.shadowColor = 'rgba(20,41,53,.16)';
+    ctx2d.shadowBlur = 8 * u;
+    ctx2d.shadowOffsetY = 3 * u;
     ctx2d.fillStyle = 'rgba(255,252,243,.97)';
-    ctx2d.strokeStyle = color || '#24505e'; ctx2d.lineWidth = 2.2;
+    ctx2d.strokeStyle = color || '#24505e';
+    ctx2d.lineWidth = 2.4 * u;
+    const radius = 12 * u;
     ctx2d.beginPath();
-    ctx2d.moveTo(-23,-22);ctx2d.lineTo(23,-22);ctx2d.quadraticCurveTo(30,-22,30,-15);
-    ctx2d.lineTo(30,15);ctx2d.quadraticCurveTo(30,22,23,22);
-    ctx2d.lineTo(5,22);ctx2d.lineTo(0,30);ctx2d.lineTo(-5,22);
-    ctx2d.lineTo(-23,22);ctx2d.quadraticCurveTo(-30,22,-30,15);
-    ctx2d.lineTo(-30,-15);ctx2d.quadraticCurveTo(-30,-22,-23,-22);ctx2d.closePath();
-    ctx2d.fill();ctx2d.stroke();
-    ctx2d.textAlign='center';ctx2d.textBaseline='middle';
+    ctx2d.moveTo(-hw + radius, -hh);
+    ctx2d.lineTo(hw - radius, -hh);
+    ctx2d.quadraticCurveTo(hw, -hh, hw, -hh + radius);
+    ctx2d.lineTo(hw, hh - radius);
+    ctx2d.quadraticCurveTo(hw, hh, hw - radius, hh);
+    ctx2d.lineTo(5 * u, hh);
+    ctx2d.lineTo(0, hh + tail);
+    ctx2d.lineTo(-5 * u, hh);
+    ctx2d.lineTo(-hw + radius, hh);
+    ctx2d.quadraticCurveTo(-hw, hh, -hw, hh - radius);
+    ctx2d.lineTo(-hw, -hh + radius);
+    ctx2d.quadraticCurveTo(-hw, -hh, -hw + radius, -hh);
+    ctx2d.closePath();
+    ctx2d.fill(); ctx2d.stroke();
+    ctx2d.shadowColor = 'transparent'; ctx2d.shadowBlur = 0; ctx2d.shadowOffsetY = 0;
     const pic = emoteArt[e.code];
-    if (pic && pic.complete && pic.naturalWidth > 0) ctx2d.drawImage(pic, -23, -24, 46, 46);
-    else { ctx2d.fillStyle = '#264756';ctx2d.font = 'bold 12px system-ui,sans-serif'; ctx2d.fillText(EMOTES[e.code],0,1); }
+    if (pic && pic.complete && pic.naturalWidth > 0) {
+      ctx2d.drawImage(pic, -icon / 2, -icon / 2, icon, icon);
+    } else {
+      ctx2d.fillStyle = '#264756';
+      ctx2d.font = `bold ${13 * u}px system-ui,sans-serif`;
+      ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+      ctx2d.fillText(EMOTES[e.code], 0, 0);
+    }
     ctx2d.restore();
   }
 
@@ -451,7 +487,14 @@
     }
   });
 
+  const firstTip = document.getElementById('draw-first-tip');
+  if (document.getElementById('draw-first-tip-close')) document.getElementById('draw-first-tip-close').addEventListener('click', () => {
+    if (firstTip) firstTip.hidden = true;
+    try { localStorage.setItem('dw_draw_tip_seen', '1'); } catch (_) {}
+  });
   function enterDrawPhase() {
+    if (firstTip) { try { firstTip.hidden = localStorage.getItem('dw_draw_tip_seen') === '1'; }
+      catch (_) { firstTip.hidden = false; } }
     requestWakeLock();
     stopRaceLoops(); raceStarting = false; preRaceDrawer.clear(); myVertices = null; els.btnSubmitWheel.disabled = true; els.drawWait.textContent = ''; updateChampBanner(); showScreen('draw');
     let t = 30; els.drawTimer.textContent = t; clearInterval(drawTimerHandle);
@@ -495,6 +538,7 @@
   // della fisica), così si vede già il mondo e chi c'è in gara; il primo snapshot le sostituisce.
   function placeGrid() {
     latestRacers = {}; snapBuf.length = 0; snapOff = null; lastRemoteSnapTs = -Infinity;
+    snapPrevArrival = 0; snapIntervalMean = 50; snapJitter = 0; interpClientMs = INTERP_CLIENT_MS;
     Object.keys(raceMeta).forEach((id, i) => {
       const x = 60, y = Sim.GROUND_Y - Terrain.height(x) - 70;   // stesso punto di partenza per tutti (come nella fisica)
       latestRacers[id] = { id, x, y, angle: 0, fwX: x + 90, fwY: y, fwAngle: 0, rwX: x - 90, rwY: y, rwAngle: 0, vx: 0, finished: false, finishTime: null };
@@ -574,11 +618,14 @@
   // (ts, il suo orologio) e il client li colloca sul proprio orologio con lo scarto minimo osservato (latenza minima),
   // che risale piano per seguire la deriva degli orologi: lo spaziamento resta quello dell'host.
   let snapOff = null, lastRemoteSnapTs = -Infinity;
+  let snapPrevArrival = 0, snapIntervalMean = 50, snapJitter = 0, interpClientMs = 130;
   function applySnapshot(racers, ts) {
     if (!Array.isArray(racers) || racers.length > MAX_PLAYERS || racers.length < 1) return;
     if (!Net.isHost) {
       if (!Number.isFinite(ts) || ts <= lastRemoteSnapTs) return; // pacchetto vecchio: non riavvolgere i veicoli
-      if (racers.some(r => !r || !raceMeta[r.id] || !Number.isFinite(r.x) || !Number.isFinite(r.y) || !Number.isFinite(r.angle))) return;
+      if (racers.some(r => !r || !raceMeta[r.id] || !Number.isFinite(r.x) || !Number.isFinite(r.y) || !Number.isFinite(r.angle) ||
+        !Number.isFinite(r.fwX) || !Number.isFinite(r.fwY) || !Number.isFinite(r.rwX) || !Number.isFinite(r.rwY) ||
+        !Number.isFinite(r.fwAngle) || !Number.isFinite(r.rwAngle) || Math.abs(r.x) > Terrain.TRACK_END + 800)) return;
       lastRemoteSnapTs = ts;
     }
     const m = {}; racers.forEach(r => { m[r.id] = r; latestRacers[r.id] = r; }); updateSprintUi(m[Net.myId]);
@@ -590,13 +637,26 @@
       const last = snapBuf.length ? snapBuf[snapBuf.length - 1].t : -1e9;
       if (t <= last) t = last + 1;                      // ordine garantito
     }
+    if (!Net.isHost) {
+      if (snapPrevArrival) {
+        const gap = arr - snapPrevArrival;
+        if (gap > 0 && gap < 600) {
+          // A delayed packet should not abruptly shift the interpolation time line.
+          snapIntervalMean += (gap - snapIntervalMean) * 0.08;
+          snapJitter += (Math.abs(gap - snapIntervalMean) - snapJitter) * 0.1;
+          const target = Math.max(100, Math.min(205, 105 + snapJitter * 1.8));
+          interpClientMs += (target - interpClientMs) * (target > interpClientMs ? 0.18 : 0.025);
+        }
+      }
+      snapPrevArrival = arr;
+    }
     if (Perf.on && !Net.isHost) Perf.snap(arr);
     snapBuf.push({ t, m }); if (snapBuf.length > 16) snapBuf.shift();
   }
   const angLerp = (a, b, k) => { let d = b - a; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return a + d * k; };
   function interpolateRacers(now) {
     const n = snapBuf.length; if (!n) return;
-    const rt = now - (Net.isHost ? INTERP_HOST_MS : INTERP_CLIENT_MS);
+    const rt = now - (Net.isHost ? INTERP_HOST_MS : interpClientMs);
     let a = snapBuf[0], b = snapBuf[0];
     if (rt >= snapBuf[n - 1].t) {
       a = b = snapBuf[n - 1];
@@ -757,7 +817,25 @@
     const R = wheelR(meta) * (r.sc || 1), gr = Sim.GROUND_Y - Terrain.height(r.rwX) - r.rwY, gf = Sim.GROUND_Y - Terrain.height(r.fwX) - r.fwY;
     const air = Math.min(gr, gf) - R > 12, vy = aud.y === null ? 0 : (r.y - aud.y) / (dt / 16.67);
     aud.y = r.y;
-    if (aud.air && !air) { Sfx.land(Math.max(aud.vy, vy)); if ((r.sc || 1) > 1.4) giantLand(r, Math.max(aud.vy, vy)); }
+    if (aud.air && !air) {
+      const impact = Math.max(0, aud.vy, vy);
+      Sfx.land(impact);
+      if ((r.sc || 1) > 1.4) giantLand(r, impact);
+      // A small controlled impact puff; no particle storm or camera motion on tiny hops.
+      if (impact > 3.5 && particles.length < 88) {
+        const zone = Terrain.zoneKeyAt(r.rwX);
+        const col = zone === 'ice' ? 'rgba(228,246,255,' : zone === 'lava' ? 'rgba(234,95,163,' :
+          zone === 'water' ? 'rgba(104,204,238,' : zone === 'gravel' ? 'rgba(170,155,161,' : 'rgba(207,182,128,';
+        const amount = Math.min(9, Math.floor(impact * 0.8));
+        for (let i = 0; i < amount; i++) particles.push({
+          x: r.rwX + (Math.random() - .5) * 46, y: r.rwY + 35,
+          vx: (Math.random() - .5) * Math.min(5, impact * .5),
+          vy: -1.0 - Math.random() * Math.min(3.6, impact * .4),
+          life: 0.68, size: 2 + Math.random() * 3, col
+        });
+        shake = Math.max(shake, Math.min(1.65, (impact - 3.5) * .18));
+      }
+    }
     if (Sfx.giant) Sfx.giant((r.sc || 1) > 1.15 ? Math.min(1, ((r.sc || 1) - 1) / 1.2) : 0, Math.min(1, Math.abs(r.vx) / 8), air);
     aud.air = air; aud.vy = vy;
     const zk = Terrain.zoneKeyAt(r.rwX), wet = zk === 'water' && Terrain.isWater(r.rwX);
@@ -1568,7 +1646,29 @@
   function stopRaceLoops() { closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
   I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
-  function showResults(st, ch) { lastStandings = st; lastCh = ch || null; stopRaceLoops(); releaseWakeLock(); if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0); try { drawFinalTrace(st, true); } catch (e) { console.warn(e); } els.resultsList.innerHTML = ''; st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>${ch ? `<span class="results-gain">+${ch.gains[s.id] || 0}</span>` : ''}`; els.resultsList.appendChild(li); }); renderChamp(ch); showScreen('results'); }
+  function showResults(st, ch) {
+    lastStandings = st; lastCh = ch || null; stopRaceLoops(); releaseWakeLock();
+    if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0);
+    try { drawFinalTrace(st, true); } catch (e) { console.warn(e); }
+    els.resultsList.innerHTML = '';
+    st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>${ch ? `<span class="results-gain">+${ch.gains[s.id] || 0}</span>` : ''}`; els.resultsList.appendChild(li); });
+    // Personal best for the *same track* only. No account, no scoreboard manipulation.
+    const best = document.getElementById('personal-best'), mine = st.find(s => s.id === Net.myId);
+    if (best) {
+      best.hidden = true;
+      if (mine && mine.finished && Number.isFinite(mine.finishTime)) {
+        const key = 'dw_best_' + (currentWorld || 'classic') + '_' + (currentLayout || []).join('-');
+        const ms = mine.finishTime;
+        try {
+          const prev = Number(localStorage.getItem(key));
+          if (!prev || ms < prev) { localStorage.setItem(key, String(ms)); best.textContent = I18n.t('res.newBest') + ' · ' + (ms / 1000).toFixed(2) + ' s'; }
+          else best.textContent = I18n.t('res.best') + ' · ' + (prev / 1000).toFixed(2) + ' s';
+          best.hidden = false;
+        } catch (_) { /* private mode: skip persistence */ }
+      }
+    }
+    renderChamp(ch); showScreen('results');
+  }
   // classifica del campionato sotto i risultati della gara + pulsanti coerenti (solo l'host lancia la prossima)
   function renderChamp(ch) {
     const box = document.getElementById('champ-box'), tb = document.getElementById('champ-table'), tt = document.getElementById('champ-title');

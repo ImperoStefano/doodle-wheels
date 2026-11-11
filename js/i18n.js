@@ -3,6 +3,7 @@
 const I18n = (() => {
   const D = {
     it: {
+      'draw.firstTip': 'Disegna un anello con un solo gesto e chiudilo vicino al punto di partenza. Le forme irregolari hanno vantaggi su alcuni ostacoli.', 'res.newBest': 'Nuovo record personale', 'res.best': 'Il tuo record su questa pista', 
       'menu.credit': 'Ideato e sviluppato da', 'menu.sub': 'Disegna la tua ruota e affronta ostacoli dinamici.<br>Sfida fino a 4 amici in tempo reale (5 giocatori in tutto).',
       'menu.name': 'Il tuo nome', 'menu.name.ph': 'Inserisci il nome...', 'menu.host': 'Crea Nuova Gara', 'share.btn': 'Invita', 'sound.all': 'Musica ed effetti', 'sound.fx': 'Solo effetti (musica spenta)', 'sound.off': 'Audio spento', 'full.title': 'Schermo intero', 'share.label': 'Invita gli amici: copia il link e mandalo in chat', 'share.labelRoom': 'Link d\'invito: si apre già col codice', 'share.copy': 'Copia', 'share.copied': 'Copiato ✓', 'share.toastGame': 'Link copiato! Incollalo in chat per invitare i tuoi amici.', 'share.toastRoom': 'Invito copiato! Chi lo apre trova già il codice della gara.', 'share.text': 'Vieni a giocare a Doodle Wheels con me!', 'share.codeText': 'Vieni a correre con me a Doodle Wheels! Codice gara:', 'share.fromLink': 'Codice dal link: aggiungi il tuo nome e premi Unisciti.',
       'menu.code.ph': 'CODICE', 'menu.join': 'Unisciti',
@@ -28,6 +29,7 @@ const I18n = (() => {
       'doc.title': 'Doodle Wheels — corsa online',
     },
     en: {
+      'draw.firstTip': 'Draw a loop in one stroke, closing it near the starting point. Irregular wheels can help over certain obstacles.', 'res.newBest': 'New personal best', 'res.best': 'Your best on this track', 
       'menu.credit': 'Designed & built by', 'menu.sub': 'Draw your wheel and take on dynamic obstacles.<br>Challenge up to 4 friends in real time (5 players in total).',
       'menu.name': 'Your name', 'menu.name.ph': 'Enter your name...', 'menu.host': 'Create New Race', 'share.btn': 'Invite', 'sound.all': 'Music and effects', 'sound.fx': 'Effects only (music off)', 'sound.off': 'Sound off', 'full.title': 'Full screen', 'share.label': 'Invite friends: copy the link and send it in a chat', 'share.labelRoom': 'Invite link: opens with the code filled in', 'share.copy': 'Copy', 'share.copied': 'Copied ✓', 'share.toastGame': 'Link copied! Paste it in a chat to invite your friends.', 'share.toastRoom': 'Invite copied! Whoever opens it finds the race code already filled in.', 'share.text': 'Come play Doodle Wheels with me!', 'share.codeText': 'Come race me in Doodle Wheels! Race code:', 'share.fromLink': 'Code from the link: add your name and press Join.',
       'menu.code.ph': 'CODE', 'menu.join': 'Join',

@@ -260,6 +260,8 @@ const Sfx = (() => {
     notes.forEach((m,i) => pluck(hz(m), 0.31 + i * 0.09, 0.043, i * 0.11));
     if (world === 'inferno') puff('lowpass', 350, 0.8, 0.45, 0.025, 0.04, 110);
     else if (world === 'atlantis') puff('bandpass', 780, 0.65, 0.36, 0.018, 0.04, 340);
+    else if (world === 'enchanted') { pluck(523.25, 0.4, 0.025, 0.22); puff('bandpass', 1200, 0.9, 0.25, 0.012, 0.09, 760); }
+    else if (world === 'paradise') { pluck(783.99, 0.45, 0.022, 0.25); }
     else if (world === 'neon') tone(330, 0.14, 'sine', 0.04, 0.12, 490);
   }
 
