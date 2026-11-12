@@ -1,6 +1,18 @@
 # 🖊️ Doodle Wheels
 
-Corsa online per 2–5 giocatori: **disegni a mano libera la forma della tua ruota**, poi la fisica fa il resto. Una forma tonda rotola liscia, una spigolosa fa saltare tutto. Ispirato al meccanismo di gioco tipo "Pocket Champs".
+**Versione documentata: V22 — 12 novembre 2026** · Gioco web multiplayer per GitHub Pages.
+
+### Novità della V22 in breve
+
+- **Ostacoli fisici dinamici e interattivi:** rulli, pendoli, pistoni e oggetti mobili; massi spingibili, pedane basculanti, passerelle cedevoli che si ripristinano e superfici elastiche.
+- **Aspetto diverso in ciascun mondo:** varianti di materiali e animazioni per biomi normali, Paradiso, Inferno, Atlantide, Bosco Incantato e Città Neon. Le sagome solide sono dimensionate per risultare visibili rispetto alle biciclette.
+- **Paradiso ridisegnato:** architetture celesti, rosoni, luce, pedane e nubi elastiche. Rimossi i precedenti anelli boost e i segnali di pericolo «!».
+- **Emote visibili anche a distanza:** emote grande sopra le bici presenti nell’inquadratura; emote ridotta, con nome e direzione, sul bordo dello schermo quando l’avversario è fuori campo.
+- **Fisica autoritativa dell’host:** i client ricevono gli stati degli ostacoli e ne interpolano la posizione per il rendering.
+
+> **Stato delle verifiche:** sintassi, generazione dei tracciati, posizionamento e integrità del pacchetto controllati con test automatici. Il bilanciamento su ruote irregolari, la fluidità su smartphone e le partite multiplayer con dispositivi reali richiedono ancora collaudi manuali.
+
+Corsa online per 1–5 giocatori (anche in solitaria): **disegni a mano libera la forma della tua ruota**, poi la fisica fa il resto. Una forma tonda rotola liscia, una spigolosa fa saltare tutto. Ispirato al meccanismo di gioco tipo "Pocket Champs".
 
 Nessun server da mantenere: è tutto statico (HTML/CSS/JS), pensato per girare su **GitHub Pages**, con la rete peer-to-peer gestita da [PeerJS](https://peerjs.com/) (broker pubblico gratuito) e la fisica da [Matter.js](https://brm.io/matter-js/).
 
@@ -30,7 +42,7 @@ A ogni nuova pista l'host sorteggia un mondo: i mondi speciali sono eventi casua
 | **Bosco Incantato** | **8%** | Foresta notturna, albero antico con portale, funghi luminosi e piattaforme elastiche. |
 | **Città Neon** | **8%** | Metropoli futuristica, torri luminose, maglev e varchi di accelerazione. |
 
-I tre mondi aggiunti hanno fondali panoramici dedicati in `img/worlds/`: non riutilizzano le montagne generiche del Classico. Ogni mondo usa ora due SVG locali: un fondale lontano e un livello trasparente di primo piano, con parallasse differenziata; alghe/coralli, felci/rami e dettagli urbani incorniciano la scena senza coprire terreno o corridori. Particelle ambientali leggere completano l’atmosfera; non sono richiesti servizi esterni. Terreno, ostacoli e meccaniche restano disegnati dal motore di gioco.
+I tre mondi aggiunti hanno fondali panoramici dedicati in `img/worlds/`: non riutilizzano le montagne generiche del Classico. Per Atlantide, Bosco Incantato e Città Neon sono presenti fondali e livelli di primo piano locali rasterizzati in PNG, con parallasse differenziata; alghe/coralli, felci/rami e dettagli urbani incorniciano la scena senza coprire terreno o corridori. Particelle ambientali leggere completano l’atmosfera; non sono richiesti servizi esterni. Terreno, ostacoli e meccaniche restano disegnati dal motore di gioco.
 
 Il sorteggio avviene una sola volta per ogni nuova pista e viene comunicato dall'host ai client insieme al tracciato. Il replay conserva lo stesso mondo; una nuova gara estrae di nuovo. Le posizioni degli eventi ambientali dipendono dal layout, così i giocatori vedono le stesse condizioni.
 
@@ -40,14 +52,14 @@ Il sorteggio avviene una sola volta per ogni nuova pista e viene comunicato dall
 2. Gli altri (fino a 4: il massimo è 5 giocatori in tutto) lo inseriscono per unirsi.
 3. Tutti disegnano la propria ruota entro 30 secondi, dentro il cerchio guida.
 4. Countdown 3-2-1, via! Le ruote rotolano con un motore costante — solo la forma determina chi va più veloce.
-   - **Salto**: Spazio, ↑ o W (tastiera), tocco/clic sulla pista o il pulsante *Salta* a schermo (telefono). Si salta solo con una ruota vicino al suolo e con una pausa di ~0,65 s fra un salto e l'altro; l'host decide (`Sim.jump` in `js/physics.js`), il client manda solo `{type:'jump'}`.
+   - **Salto e doppio salto**: Spazio, ↑ o W (tastiera), tocco/clic sulla pista o pulsante *Salta* su telefono. Sono disponibili il doppio salto, un breve *jump buffer* e una tolleranza (*coyote time*) vicino al bordo delle rampe. La simulazione è decisa dall'host (`js/physics.js`).
    - **Sei lento?** Se la tua bici resta sotto ~2,4 px/tick per più di un secondo (e hai ancora cambi forma), la bici lampeggia, il pulsante *Cambia Forma* pulsa e compare il suggerimento (`updateSlow` in `js/game.js`).
 5. Classifica finale, si può rigiocare con le stesse persone.
 
 ## Architettura in breve
 
 - **Rete a stella**: l'host è l'unico che parla con tutti (`js/peer.js`). I client non comunicano mai tra loro direttamente — più semplice e robusto di una mesh completa per 5 giocatori.
-- **Host autoritativo**: solo l'host esegue la simulazione fisica (`js/physics.js`, Matter.js) e trasmette ~20 volte al secondo la posizione di tutti (`{type:'snap', racers:[...]}`). I client si limitano a renderizzare l'ultimo stato ricevuto — niente calcoli di fisica duplicati, niente rischio di desync.
+- **Host autoritativo**: solo l'host esegue la simulazione fisica (`js/physics.js`, Matter.js) e trasmette ~20 volte al secondo la posizione di tutti (`{type:'snap', racers:[...]}`). I client interpolano gli snapshot ricevuti, includendo le posizioni degli ostacoli interattivi; ciò riduce le divergenze visive, senza eliminare ogni possibile problema di latenza.
 - **Normalizzazione della ruota**: ogni forma disegnata viene ricentrata sul baricentro e scalata così che il punto più lontano dal centro sia sempre alla stessa distanza (`js/draw.js → getNormalizedVertices`). Questo impedisce di vincere disegnando semplicemente un cerchio enorme: conta solo quanto è **rotonda**, non quanto è **grande**.
 - **Forme concave**: le ruote disegnate a mano quasi sempre hanno rientranze. `poly-decomp.js` le scompone in parti convesse per Matter.js, altrimenti verrebbero "riempite" perdendo i dettagli del disegno.
 
@@ -69,32 +81,44 @@ git push -u origin main
 
 Poi su GitHub: **Settings → Pages → Source: `main` branch, cartella `/ (root)`**. Dopo un minuto il gioco è online su `https://<tuo-utente>.github.io/doodle-wheels/`.
 
-## Idee per estenderlo (TODO)
+## Prossimi controlli e idee (TODO aggiornato alla V22)
 
-- **Boost a tocco**: invece del motore costante, far pedalare più forte tappando ritmicamente (tipo QWOP).
-- **Terreno con dossi**: al momento il rettilineo è piatto; una sequenza di piccole colline renderebbe le ruote spigolose ancora più rischiose.
-- **Sincronizzazione più precisa**: il countdown parte in locale su ogni client, con qualche centinaio di ms di scarto dovuto alla latenza — per una gara "esport" servirebbe un vero lockstep con timestamp condiviso.
-- **Riconnessione**: se un client perde la connessione a metà gara, al momento non c'è un modo per rientrare.
-- **Tuning fisico**: il motore imposta la velocità angolare in modo "rigido" ad ogni istante, invece di applicare una coppia realistica — funziona, ma su rampe/colline ripide potrebbe servire un aggiustamento dopo qualche prova sul campo (ampiezza delle zone in `js/terrain.js`, `MOTOR_SPEED` in `js/physics.js`).
-- **Tracciati diversi**: `js/terrain.js` è puro e deterministico apposta — basta cambiare le `ZONES` (o aggiungere un seed casuale trasmesso dall'host) per avere percorsi diversi ogni gara.
-- **i18n IT/EN**: stesso pattern già usato in Tris Svanente, qui non ancora implementato.
-- **Suoni**: Web Audio API per il rumore delle ruote spigolose che sbattono (come in Probability Casino).
-- **Spettatori**: chi arriva a gara già iniziata potrebbe entrare in sola visione.
+- **Collaudo reale con 2–5 giocatori** su più dispositivi: stabilità PeerJS, riconnessioni, ritardi e sincronizzazione degli ostacoli interattivi.
+- **Bilanciamento per forme irregolari** (tonda, triangolo, quadrato, stella, ovale, forme libere): completare gare con ogni tipo di ostacolo, verificando incastri, recuperi e vantaggi indebiti.
+- **Prestazioni mobile**: monitorare FPS e costo del rendering in Paradiso e negli altri mondi con molte particelle.
+- **Accessibilità degli ostacoli**: controllare che siano riconoscibili senza indicatori «!», che la loro sagoma coincida con il collider e che rimangano superabili o sfruttabili.
+- **Modalità spettatore e riconnessione**: da sviluppare o verificare separatamente prima di descriverle come funzionalità consolidate.
 
-## Struttura del progetto
+## Struttura principale del progetto (V22)
 
-```
+```text
 doodle-wheels/
-├── index.html          schermate (menu, lobby, disegno, gara, risultati)
-├── style.css            estetica "quaderno a quadretti / pennarello"
+├── index.html                 menu, lobby, disegno, gara, risultati
+├── style.css                 interfaccia responsive e stile illustrato
+├── audio/musica.mp3          colonna sonora
+├── img/                      avatar, emote e fondali dei mondi
 ├── js/
-│   ├── peer.js          rete PeerJS, host autoritativo
-│   ├── draw.js           canvas di disegno → poligono normalizzato
-│   ├── terrain.js        tracciato deterministico (zone, altezza, attrito)
-│   ├── physics.js        simulazione Matter.js (solo host)
-│   └── game.js           macchina a stati, rendering, HUD
-└── README.md
+│   ├── peer.js               connessione PeerJS
+│   ├── draw.js               ruote disegnate e normalizzazione
+│   ├── terrain.js            piste, biomi ed eventi deterministici
+│   ├── physics.js            simulazione Matter.js dell'host
+│   ├── game.js               stato di gioco, camera, UI e rete
+│   ├── obstacles.js          ostacoli fisici mobili
+│   ├── interactive-obstacles.js  ostacoli interattivi V22
+│   ├── emote-layout.js       emote inquadrate e fuori campo
+│   ├── scenery.js            paesaggi e livelli di profondità
+│   ├── world-art-v19.js      art direction dei mondi speciali
+│   ├── worldfx.js            effetti e dettagli ambientali
+│   ├── props.js              ponti e altri elementi della pista
+│   ├── flora.js              flora animata
+│   ├── sound.js              musica ed effetti sonori
+│   ├── i18n.js               interfaccia italiano/inglese
+│   └── calworker.js          taratura delle ruote in worker
+├── preview-ostacoli.html    tavola tecnica di preview
+└── V22-Anteprima-Interattiva.html  galleria autonoma V22
 ```
+
+**Nota:** la distribuzione V22 contiene anche i documenti di rilascio `V19-README.txt`–`V22-README.txt`. Le dipendenze Matter.js, PeerJS e poly-decomp sono caricate da CDN pubbliche. La galleria HTML è una **anteprima visiva**, non una gara simulata.
 
 ## Novità: percorso lungo, biomi, ponti, fiori vivi
 
@@ -102,7 +126,7 @@ doodle-wheels/
 - **Biomi** (`js/scenery.js`): prato fiorito, colline, ghiacciaio, canyon, laguna, bosco d'autunno, traguardo. Sole che percorre il cielo da alba a tramonto, nuvole, uccelli, lucciole, farfalle, neve e foglie.
 - **Ponti** (`js/props.js`): ponte di pietra ad arco sulla laguna, ponte di corda sul canyon; almeno uno per gara, di media 2–4 nelle piste lunghe.
 - **Fiori** (`js/terrain.js` + `js/flora.js`): posizione e specie derivano solo dalla coordinata x e dal bioma (uguali per tutti i giocatori, nessun dato in rete). Margherite, tulipani, rose, girasoli (campi da 4), bucaneve, cristalli di ghiaccio, funghi, cactus. Fanno piccoli dossi fisici; l'animazione è solo visiva: ondeggiano col vento, si piegano al passaggio, sbocciano di giorno e si chiudono di notte, i girasoli seguono il sole, le api volano attorno.
-- Cache: gli script in `index.html` hanno `?v=20261021`; se il sito pubblicato sembra vecchio, ricarica forzando (Ctrl+Shift+R) e verifica che anche `style.css` sia stato caricato.
+- Cache: gli script in `index.html` hanno `?v=20261112-v22-interactive-release`; se il sito pubblicato sembra vecchio, ricarica forzando (Ctrl+Shift+R) e verifica che anche `style.css` sia stato caricato.
 
 ## Intro: l'avatar che spennella la gara
 `js/intro.js` + `img/av1-3.png` (avatar, 3 frame) e `img/br1-3.png` (pennello, 3 frame, ricavati dai tuoi file con sfondo rosa tolto). Sul foglio a quadretti della prima schermata (con il titolo "Doodle Wheels" solo se il font Kalam è caricato, mai sottotitoli) arriva l'avatar: cammina (gambe tagliate dal tuo disegno e fatte ondeggiare attorno al bacino) e spennella a tre passate; dove passa il pennello resta inchiostro nero a setole che si asciuga a strisce e compare la gara con le bici in griglia. Dura 4,75 s e il VIA è spostato di conseguenza (`Intro.DUR`, in `checkAllWheelsIn`); il 3-2-1 parte solo a intro finita. Un tocco la salta. Per spegnerla: `localStorage.setItem('dw_intro','off')`. È solo grafica locale.
@@ -443,7 +467,7 @@ Dallo zip `doodle-wheels-modificati` sono stati fusi nella versione corrente (se
 - Le illustrazioni panoramiche di Atlantide, Bosco Incantato e Città Neon sono in `img/worlds/`; `js/scenery.js` carica un fondale e un livello trasparente di primo piano per ciascun mondo e li disegna con parallasse differenziata. Pesci e meduse, lucciole e foglie, traffico volante e scie luminose sono animati via Canvas.
 - Se un asset non è disponibile, il motore mantiene un fondale Canvas di riserva.
 
-## Firma minimal (v20261111)
+## Firma minimal (storico: v20261111)
 La firma nel menu è ora una sola riga: «IDEATO E SVILUPPATO DA · STEFANO KOLTA» con un puntino arancio al centro (su telefono stretto resta su una riga con carattere più piccolo). Versione dei file portata a `?v=20261111` per forzare l'aggiornamento della cache.
 
 ## Mondi speciali: effetti e dettagli (v20261111)
@@ -457,3 +481,62 @@ La firma nel menu è ora una sola riga: «IDEATO E SVILUPPATO DA · STEFANO KOLT
 
 ### Ostacoli "skin" nei mondi speciali
 Dentro il tratto speciale ostacoli (dossi, rampe, tronchi, buche…), rampe di zona e ponti vengono ridipinti con la tavolozza del mondo (stessa forma e stessa fisica): corallo e perla in Atlantide, muschio e viola in Bosco Incantato, tubi al neon in Città Neon. Inoltre ogni ostacolo ha una linea di bordo a tema, decorazioni lungo il profilo e due "portali" (corallo, lanterna, palo al neon) all'inizio e alla fine, riconoscibili da lontano. Il codice è in `worldfx.js` (`skinX`, `skinOff`, `trim`), agganciato in `props.js`.
+
+## Aggiornamenti V19–V22 (12 novembre 2026)
+
+Le sezioni precedenti registrano l'evoluzione storica del progetto; quando descrivono comportamenti o versioni ormai superati, fanno fede le note qui sotto e il codice della V22.
+
+### V19 — Art direction dei mondi
+
+- Modulo `js/world-art-v19.js` integrato in `js/scenery.js`.
+- **Paradiso:** rosone e fasci di luce; **Inferno:** tempesta e saette; **Atlantide:** manta gigante e rifrazioni; **Bosco Incantato:** cervo-guardiano e archi di liane; **Città Neon:** insegne olografiche e pannelli luminosi.
+- Effetti disegnati dietro al terreno e ridotti nelle modalità grafiche leggere. Nessuna nuova meccanica fisica in questa versione.
+
+### V20 — Ostacoli solidi ed emote fuori campo
+
+- Modulo `js/obstacles.js`: corpi mobili e collisioni Matter.js (rulli, blocchi di ghiaccio, assi, tronchi oscillanti, pendoli, meteoriti, conchiglie e pistoni), con forme ispirate ai mondi in cui compaiono.
+- Generazione legata al layout, protezione di partenza/traguardo e delle zone incompatibili con la presenza di ostacoli.
+- **Emote multiplayer:** emote grande sopra la propria bici e gli avversari visibili; emote piccola sul bordo corretto dello schermo con nome e freccia quando un avversario che la invia è fuori inquadratura. Il layout evita, per quanto possibile, minimappa e pulsanti touch (`js/emote-layout.js`).
+
+### V21 — Bilanciamento degli ostacoli dinamici
+
+- Migliorati gli spazi di reazione; collocazione più prudente vicino a rampe, ponti, voragini e rilievi forti.
+- Movimenti più moderati e fisicamente coerenti, con velocità dei collider aggiornate nella simulazione. Superfici come ghiaccio e conchiglie hanno proprietà differenti.
+- Questa versione aveva introdotto indicatori di attenzione progressivi: **la V22 rimuove gli indicatori «!»**, sostituendoli con segnali affidati alla forma e al movimento degli oggetti.
+
+### V22 — Ostacoli interattivi e rework del Paradiso
+
+**Obiettivo di design:** gli ostacoli non devono limitarsi a fermare la bici; devono poter essere **saltati, aggirati quando possibile o usati a proprio vantaggio**. La sagoma visibile deve essere coerente con il collider e chiarire l'interazione, anche sugli schermi piccoli.
+
+**Nuovo modulo `js/interactive-obstacles.js`:**
+
+| Ostacolo | Dimensioni di riferimento | Interazione |
+|---|---:|---|
+| **Massa / masso spingibile** (`boulder`) | raggio 49 unità | Corpo fisico mobile, può essere urtato e spinto oppure superato con un salto. |
+| **Pedana basculante** (`tilt`) | 282 × 22 unità | Piattaforma che cambia inclinazione sotto il peso e può influenzare un atterraggio. |
+| **Passerella cedevole** (`drop`) | 272 × 20 unità | Si abbassa in risposta al passaggio, quindi torna progressivamente disponibile. |
+| **Trampolino elastico** (`spring`) | 152 × 22 unità | La superficie reagisce al contatto e imprime una spinta utile al salto. |
+
+**Personalizzazione dei biomi:** le stesse famiglie di ostacoli assumono un aspetto riconoscibile e coerente con l'ambiente, evitando elementi grafici piccoli e scollegati dalla collisione. Nei tratti normali prevalgono legno, pietra, fieno o ghiaccio; nel Paradiso marmo, oro e nubi; nell'Inferno basalto, magma e catene; ad Atlantide perle, coralli e conchiglie; nel Bosco Incantato legno vivo, radici e funghi; nella Città Neon metallo, meccanismi e illuminazione tecnologica. Anche gli ostacoli mobili introdotti nella V20 hanno proporzioni e rappresentazioni migliorate.
+
+**Paradiso riprogettato:**
+
+- Più carattere architettonico: colonnati, rosoni, strutture celesti, luce avorio e oro, isole sospese.
+- Nuove superfici interattive coerenti con il mondo, in particolare bilance celesti, passerelle e nubi elastiche.
+- **Anelli boost rimossi:** non sono più usati come meccanica o segnaletica del Paradiso.
+- **Indicatori con «!» rimossi** nel rework: la leggibilità si basa sulla dimensione, il contorno e l'animazione degli ostacoli.
+
+**Multiplayer e sincronizzazione:**
+
+- L'host resta autorevole per la fisica degli ostacoli e degli urti.
+- Lo stato degli ostacoli interattivi è incluso nei messaggi di snapshot e i client ne interpolano posizione/stato per il disegno; la logica fisica non viene eseguita indipendentemente sui client.
+- Le emote locali e fuori campo della V20 sono conservate.
+
+**Anteprime incluse nel pacchetto:**
+
+- `V22-Anteprima-Interattiva.html`: galleria per confrontare i design dei sei biomi e le famiglie di ostacoli, anche senza avviare una gara.
+- `preview-ostacoli.html`: tavola di riferimento degli ostacoli dinamici.
+
+**Verifica e limiti:** controlli automatici di sintassi, integrità del pacchetto, generazione e posizionamento degli ostacoli. Le simulazioni non dimostrano da sole che ogni forma di ruota possa affrontare tutti gli urti senza incastrarsi. Restano da svolgere collaudi multiplayer su 2–5 dispositivi reali e prove di FPS/bilanciamento su smartphone prima di considerare chiusa la fase di tuning.
+
+**Distribuzione:** per GitHub Pages mantenere `index.html` nella radice del repository insieme alle cartelle `js/`, `img/` e `audio/`. Gli script V22 utilizzano il parametro cache `?v=20261112-v22-interactive-release`.

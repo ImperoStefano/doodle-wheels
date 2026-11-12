@@ -59,6 +59,43 @@ const WorldArtV19 = (() => {
     }
     c.strokeStyle='#fff6d5';c.lineWidth=5;line(c,[0,-r*.29,0,r*.27]);line(c,[-r*.2,-r*.08,r*.2,-r*.08]);
     c.restore();
+    // V22 rework: deep cobalt stained-glass windows, warm marble arcades,
+    // distinct ivory/gold/azure palette. These are background shapes only.
+    // Leave the riding strip unobstructed; no artificial warning icons.
+    c.save();
+    const drift=mod(cam*.035,300);
+    for(let i=-1;i<6;i++){
+      const x=i*300+145-drift,top=gy*.40;
+      c.globalAlpha=.42;
+      c.fillStyle='#fcf2dc';c.strokeStyle='#ceaa71';c.lineWidth=4.2;
+      c.beginPath();c.moveTo(x-71,top+103);c.lineTo(x-71,top+17);
+      c.quadraticCurveTo(x,top-96,x+71,top+17);
+      c.lineTo(x+71,top+103);c.closePath();c.fill();c.stroke();
+      c.globalAlpha=.55;
+      const pg=c.createLinearGradient(x,top-68,x,top+104);
+      pg.addColorStop(0,'#d1edf0');pg.addColorStop(.54,'#5f9fae');pg.addColorStop(1,'#476d93');
+      c.fillStyle=pg;c.beginPath();c.moveTo(x-46,top+96);c.lineTo(x-46,top+19);
+      c.quadraticCurveTo(x,top-55,x+46,top+19);c.lineTo(x+46,top+96);c.closePath();c.fill();
+      c.lineWidth=3;c.strokeStyle='#ffe1a1';
+      line(c,[x,top-48,x,top+95]);line(c,[x-45,top+36,x+45,top+36]);
+      c.fillStyle='rgba(242,194,113,.7)';circle(c,x,top+32,7,true);
+      c.globalAlpha=.68;
+      c.fillStyle='#fff9e8';c.fillRect(x-87,top+100,19,gy*.14);
+      c.fillRect(x+68,top+100,19,gy*.14);
+      c.fillStyle='#d6b982';c.fillRect(x-93,top+94,30,8);c.fillRect(x+63,top+94,30,8);
+      c.strokeStyle='rgba(111,145,170,.48)';c.lineWidth=2;
+      line(c,[x-69,top+119,x-69,top+gy*.14+98]);
+    }
+    c.globalAlpha=1;c.restore();
+    // Vertical rays: light comes from the cathedral rosette, not from random
+    // translucent gradients that wash out the obstacles.
+    c.save(); c.globalAlpha=q===2?.09:.18;
+    for(let k=0;k<7;k++){
+      c.fillStyle=k%2?'rgba(255,241,171,.55)':'rgba(255,255,245,.75)';
+      const x=cx+(k-3)*24;
+      c.beginPath();c.moveTo(cx,cy+r*.36);c.lineTo(x-17,gy*.87);c.lineTo(x+17,gy*.87);c.closePath();c.fill();
+    }
+    c.restore();
     // Floating votive lights drifting gently through the upper sky.
     const N=q<2?9:4;
     for(let i=0;i<N;i++) {
@@ -66,6 +103,23 @@ const WorldArtV19 = (() => {
       const y=gy*(.07 + (i%4)*.095)+Math.sin(t*.6+i*2.1)*6;
       c.fillStyle='rgba(255,248,204,.18)';circle(c,x,y,9,true);
       c.fillStyle='rgba(255,247,197,.85)';circle(c,x,y,2.2,true);
+    }
+    // Floating sanctuaries and arches: the Paradise segment now feels architectural,
+    // not just decorative. They stay high above the terrain silhouette.
+    for(let i=0;i<3;i++) {
+      const bx=mod(w*(0.18+i*0.27)-cam*(0.022+i*0.004),w+340)-120;
+      const by=gy*(0.30 + (i%2)*0.07)+Math.sin(t*0.23+i*1.7)*6;
+      c.save(); c.translate(bx,by);
+      c.fillStyle='rgba(255,249,235,.72)';
+      c.strokeStyle='rgba(240,220,164,.92)'; c.lineWidth=3;
+      c.beginPath(); c.moveTo(-84,0); c.lineTo(-84,44); c.lineTo(-62,44); c.lineTo(-62,8);
+      c.quadraticCurveTo(0,-48,62,8); c.lineTo(62,44); c.lineTo(84,44); c.lineTo(84,0);
+      c.quadraticCurveTo(0,-63,-84,0); c.closePath(); c.fill(); c.stroke();
+      c.fillStyle='rgba(255,255,255,.92)';
+      for (const dx of [-52,0,52]) { c.fillRect(dx-7, 10, 14, 34); c.beginPath(); c.arc(dx,8,10,Math.PI,0); c.fill(); }
+      c.strokeStyle='rgba(183,220,241,.9)'; c.lineWidth=2;
+      c.beginPath(); c.moveTo(-70,-2); c.lineTo(70,-2); c.stroke();
+      c.restore();
     }
   }
   function inferno(c,w,gy,cam,t,s,q) {

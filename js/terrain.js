@@ -12,7 +12,7 @@
  */
 const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
-  let SEASON = null, PACE = "classica", WORLD = 'classic', WORLD_SEGMENT = null, ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], INFERNO_ISLANDS = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [], HALO_RINGS = [], ASH_GUSTS = [], TIDAL_CURRENTS = [], ROOT_RIDGES = [], NEON_GATES = [], DYNAMIC_OBSTACLES = [];
+  let SEASON = null, PACE = "classica", WORLD = 'classic', WORLD_SEGMENT = null, ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], INFERNO_ISLANDS = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [], HALO_RINGS = [], ASH_GUSTS = [], TIDAL_CURRENTS = [], ROOT_RIDGES = [], NEON_GATES = [], DYNAMIC_OBSTACLES = [], INTERACTIVE_OBSTACLES = [];
   const WORLD_KEYS = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'];
   const SEGMENT_WORLDS = ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon'];
   const isSegmentWorld = world => SEGMENT_WORLDS.includes(world);
@@ -602,16 +602,8 @@ const Terrain = (() => {
           if (x !== null) UPDRAFTS.push({ id: UPDRAFTS.length, x, width: 260, height: 225, strength: 1 });
           const padX = find(z, 140, slots.slice().reverse());
           if (padX !== null) CLOUD_PADS.push({ id: CLOUD_PADS.length, x: padX, width: 124, power: 6.5 });
-          // Anello alto: puoi evitarlo guidando, ma chi salta lo attraversa e ottiene
-          // una piccola spinta verticale. Non viene attivato da una ruota a terra.
-          // L'anello vola sopra la corsia e può coincidere con una corrente ascensionale:
-          // viene cercato separatamente dalle strutture appoggiate a terra.
-          const haloX = [0.46, 0.31, 0.69, 0.55, 0.21].map(f => Math.round(z.start + z.len * f)).find(px =>
-            inside(px) && (!z.gap || px < z.gap.g0 - 80 || px > z.gap.g1 + 80) &&
-            !(z.patches || []).some(p => px > p.a - 110 && px < p.b + 110) &&
-            Math.abs(height(px + 45) - height(px - 45)) < 32
-          );
-          if (haloX !== undefined) HALO_RINGS.push({ id: HALO_RINGS.length, x: haloX, rise: 105, width: 94, lift: 2.6, boost: 0.5 });
+          // V22 rework: niente HALO_RINGS. Il ritmo aereo viene da nuvole elastiche,
+          // correnti leggibili e passerelle fisiche: nessun bonus volante arbitrario.
         }
       } else if (world === 'inferno') {
         if (z.key === 'lava' && z.gap && !z.bridge) {
@@ -672,22 +664,25 @@ const Terrain = (() => {
       const progression = Math.max(0, Math.min(1, z.start / Math.max(1, FINISH_X)));
       if (!special && rand() > 0.54 + 0.23 * progression) continue;
       const localWorld = special ? wd : 'classic';
+      const variants={
+        paradise:['bell','balance','crumble','spring'],
+        inferno:['meteor','bigroller','boulder'],
+        atlantis:['shell','bigroller','balance','spring'],
+        enchanted:['log','spring','boulder','crumble'],
+        neon:['piston','gate','roller','balance']
+      };
       let kind;
-      if (localWorld === 'paradise') kind = 'bell';
-      else if (localWorld === 'inferno') kind = 'meteor';
-      else if (localWorld === 'atlantis') kind = 'shell';
-      else if (localWorld === 'enchanted') kind = 'log';
-      else if (localWorld === 'neon') kind = 'piston';
-      else kind = ({ hills: 'roller', gravel: 'roller', ice: 'iceblock',
-        water: 'log', lava: 'roller', ramps: 'seesaw' })[z.key] || 'roller';
+      if(variants[localWorld]) kind=variants[localWorld][Math.floor(rand()*variants[localWorld].length)];
+      else kind=({hills:'boulder',gravel:'bigroller',ice:'iceblock',water:'balance',
+        lava:'bigroller',ramps:'crumble'})[z.key]||'roller';
       let found = null;
-      const radius = kind === 'seesaw' || kind === 'log' ? 118 : kind === 'bell' || kind === 'meteor' ? 140 : 92;
+      const radius = ['balance','crumble'].includes(kind)?170:['boulder','bigroller','roller'].includes(kind)?115:kind==='gate'?150:['bell','meteor'].includes(kind)?150:kind==='log'||kind==='seesaw'?130:100;
       for (const f of fractions) {
         const x = Math.round(z.start + z.len * f);
         if (x < z.start + 280 || x > z.end - 280 || x < 1160 || x > FINISH_X - 540) continue;
         if (special && (x < WORLD_SEGMENT.start + 190 || x > WORLD_SEGMENT.end - 190)) continue;
-        if (z.gap && x > z.gap.g0 - 225 && x < z.gap.g1 + 225) continue;
-        if ((z.patches || []).some(p => x > p.a - 215 && x < p.b + 215)) continue;
+        if (z.gap && x > z.gap.g0 - 270 && x < z.gap.g1 + 270) continue;
+        if ((z.patches || []).some(p => x > p.a - 255 && x < p.b + 255)) continue;
         // Protect the full collision envelope and the approach, not merely the centre.
         // Otherwise a triangular/star wheel can be squeezed between a moving solid and a hill.
         const h0=height(x-150), h1=height(x-75), hc=height(x), h2=height(x+75), h3=height(x+150);
@@ -701,9 +696,76 @@ const Terrain = (() => {
       }
       if (found === null) continue;
       DYNAMIC_OBSTACLES.push({ id: DYNAMIC_OBSTACLES.length, x: found, kind,
-        biome: localWorld, zone: z.key, period: (kind === 'piston' ? 4.6 : kind === 'bell' || kind === 'meteor' ? 3.8 : 3.4) + rand()*0.55,
+        biome: localWorld, zone: z.key, period: (['piston','gate','crumble'].includes(kind) ? 4.6 : kind === 'bell' || kind === 'meteor' ? 3.8 : 3.4) + rand()*0.55,
         phase: rand() * 6.283185307179586 });
     }
+  }
+
+  // V22 — ostacoli che reagiscono ai giocatori, non solo animati a tempo.
+  // Il placement è deterministico, separato dallo stato fisico gestito dall'host.
+  function planInteractiveObstacles(keys) {
+    INTERACTIVE_OBSTACLES=[];
+    const rng=mulberry32(hashStr(keys.join('|')+'#interactive-v22-'+(WORLD_SEGMENT?WORLD_SEGMENT.world:WORLD)));
+    const events=[...UPDRAFTS,...GEYSERS,...CLOUD_PADS,...BUBBLE_VENTS,...NEON_BOOSTS,
+      ...HALO_RINGS,...ASH_GUSTS,...TIDAL_CURRENTS,...ROOT_RIDGES,...NEON_GATES];
+    let specials=0;
+    const candidates=[];
+    for(const z of ZONES) {
+      if(z.key==='start'||z.key==='finish')continue;
+      const special=!!(WORLD_SEGMENT&&z.start<WORLD_SEGMENT.end&&z.end>WORLD_SEGMENT.start);
+      if(!special&&rng()>0.42)continue;
+      candidates.push({z,special});
+    }
+    // Prova prima il cuore del mondo speciale; non sposta il set-piece né le probabilità.
+    candidates.sort((a,b)=> Number(b.special)-Number(a.special)||a.z.index-b.z.index);
+    for(const {z,special} of candidates) {
+      if(INTERACTIVE_OBSTACLES.length>=Math.min(8,Math.ceil((ZONES.length-2)*0.58)))break;
+      if(special&&specials>=3)continue;
+      const world=special?WORLD_SEGMENT.world:'classic';
+      let kind;
+      if(world==='inferno') kind = z.key==='ramps' ? 'tilt' : 'boulder';
+      else if(world==='paradise') kind = z.key==='water' ? 'drop' : z.key==='hills' ? 'spring' : 'tilt';
+      else if(world==='atlantis') kind = z.key==='ramps' ? 'spring' : 'drop';
+      else if(world==='enchanted') kind = z.key==='hills' ? 'spring' : 'boulder';
+      else if(world==='neon') kind = z.key==='ramps' ? 'spring' : 'drop';
+      else kind = ({water:'drop',ice:'boulder',ramps:'spring',
+          gravel:'boulder',lava:'drop',hills:'tilt'})[z.key]||'tilt';
+      let selected=null;
+      for(const f of (world==='atlantis'?[0.15,0.85,0.17,0.82,0.23,0.77]:[0.46,0.28,0.70,0.56,0.78,0.20,0.15,0.85])){
+        const x=Math.round(z.start+z.len*f);
+        if(x<z.start+350||x>z.end-350||x<1400||x>FINISH_X-650)continue;
+        if(special&&(x<WORLD_SEGMENT.start+180||x>WORLD_SEGMENT.end-180))continue;
+        if(z.gap&&x>z.gap.g0-(world==='atlantis'?272:280)&&x<z.gap.g1+(world==='atlantis'?272:280))continue;
+        if((z.patches||[]).some(p=>x>p.a-260&&x<p.b+260))continue;
+        if(BRIDGES.some(b=>x>b.start-(special?190:250)&&x<b.end+(special?190:250)))continue;
+        if(events.some(e=>e.x!==undefined&&Math.abs(e.x-x)<(world==='atlantis'?150:special?170:205)))continue;
+        if(DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-x)<(world==='atlantis'?235:special?265:330)))continue;
+        if(INTERACTIVE_OBSTACLES.some(o=>Math.abs(o.x-x)<(special?610:720)))continue;
+        const hs=[-170,-100,-40,0,40,100,170].map(d=>height(x+d));
+        if(Math.max(...hs)-Math.min(...hs)>(special?44:38))continue;
+        if(Math.abs(height(x+55)-height(x-55))>(special?21:18))continue;
+        selected=x;break;
+      }
+      if(selected===null)continue;
+      INTERACTIVE_OBSTACLES.push({id:INTERACTIVE_OBSTACLES.length,x:selected,kind,
+        biome:world,zone:z.key});
+      if(special)specials++;
+    }
+    if (WORLD_SEGMENT && specials === 0) {
+      const zone = ZONES[Math.min(WORLD_SEGMENT.firstZone + 1, WORLD_SEGMENT.lastZone)] || ZONES[WORLD_SEGMENT.firstZone];
+      if (zone) {
+        const world = WORLD_SEGMENT.world;
+        const fallbackX = Math.round(Math.max(zone.start + 240, Math.min(zone.end - 240, (zone.start + zone.end) * 0.5)));
+        const kind = world==='inferno' ? 'boulder' : world==='paradise' ? 'tilt' : world==='atlantis' ? 'drop' : world==='enchanted' ? 'spring' : 'drop';
+        const safe = !(zone.patches||[]).some(p=>fallbackX>p.a-260&&fallbackX<p.b+260) && !INTERACTIVE_OBSTACLES.some(o=>Math.abs(o.x-fallbackX)<560) && !DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-fallbackX)<340) && !(zone.gap&&fallbackX>zone.gap.g0-280&&fallbackX<zone.gap.g1+280);
+        if (safe) {
+          INTERACTIVE_OBSTACLES.push({id:INTERACTIVE_OBSTACLES.length,x:fallbackX,kind,biome:world,zone:zone.key});
+          specials++;
+        }
+      }
+    }
+    INTERACTIVE_OBSTACLES.sort((a,b)=>a.x-b.x);
+    INTERACTIVE_OBSTACLES.forEach((o,i)=>o.id=i);
   }
 
   // ---- costruzione delle zone ---------------------------------------------------------------
@@ -726,7 +788,7 @@ const Terrain = (() => {
       const motif = selectedWorld === 'atlantis' ? ['water', 'water', 'hills']
         : selectedWorld === 'enchanted' ? ['hills', 'ramps', 'hills']
         : selectedWorld === 'neon' ? ['ramps', 'hills', 'ramps']
-        : selectedWorld === 'paradise' ? ['hills', 'ramps', 'hills']
+        : selectedWorld === 'paradise' ? ['hills', 'ramps', 'water']
         : ['hills', 'lava', 'ramps']; // Dante V: un solo bacino delle anime deformato, fra bufera e architetture gotiche
       for (let i = 0; i < 3; i++) keys[segmentOffset + i] = motif[i];
     }
@@ -766,8 +828,9 @@ const Terrain = (() => {
     planPatches(rnd, force);
     planWorldEvents(keys);
     planDynamicObstacles(keys);
+    planInteractiveObstacles(keys);
     PORTALS = []; if (force && force.crazy) planPortals(keys, force.np);
-    FLOWERS = generateFlowers(rnd).filter(f => !DYNAMIC_OBSTACLES.some(o => Math.abs(o.x - f.x) < 180));
+    FLOWERS = generateFlowers(rnd).filter(f => !DYNAMIC_OBSTACLES.some(o => Math.abs(o.x - f.x) < 180) && !INTERACTIVE_OBSTACLES.some(o => Math.abs(o.x - f.x) < 175));
     LILIES = generateLilies();
   }
 
@@ -1022,7 +1085,7 @@ const Terrain = (() => {
 
   return {
     generateRandomLayout, applyLayout, plainAt, SEASONS, seasonOf, PACES, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
-    get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get DYNAMIC_OBSTACLES() { return DYNAMIC_OBSTACLES; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; }, get HALO_RINGS() { return HALO_RINGS; }, get ASH_GUSTS() { return ASH_GUSTS; }, get TIDAL_CURRENTS() { return TIDAL_CURRENTS; }, get ROOT_RIDGES() { return ROOT_RIDGES; }, get NEON_GATES() { return NEON_GATES; },
+    get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get DYNAMIC_OBSTACLES() { return DYNAMIC_OBSTACLES; }, get INTERACTIVE_OBSTACLES() { return INTERACTIVE_OBSTACLES; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; }, get HALO_RINGS() { return HALO_RINGS; }, get ASH_GUSTS() { return ASH_GUSTS; }, get TIDAL_CURRENTS() { return TIDAL_CURRENTS; }, get ROOT_RIDGES() { return ROOT_RIDGES; }, get NEON_GATES() { return NEON_GATES; },
     frictionAt: x => { const f = FRICTION[zoneAt(x).key] || 0.9; return f < 0.9 && onRamp(x) ? 0.9 : f; },   // il piano della rampa tiene sempre (anche nel ghiaccio)
     colorAt: x => zoneAt(x).color || '#059669',
     zoneKeyAt: x => zoneAt(x).key,

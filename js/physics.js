@@ -69,6 +69,14 @@ const Sim = (() => {
 
     engine.positionIterations = 30;
     engine.velocityIterations = 20;
+    // Solo l'host rileva il contatto delle pedane. Viene letto il tempo fisico
+    // della simulazione, non Date.now: stessi eventi anche dopo frame persi.
+    Matter.Events.on(engine,'collisionStart',ev=>{
+      for(const pair of ev.pairs)InteractiveObstacles.contact(pair.bodyA,pair.bodyB,obstacleClockMs);
+    });
+    Matter.Events.on(engine,'collisionActive',ev=>{
+      for(const pair of ev.pairs)InteractiveObstacles.contact(pair.bodyA,pair.bodyB,obstacleClockMs);
+    });
 
     racerGroup = Matter.Body.nextGroup(true);
   }
@@ -87,6 +95,7 @@ const Sim = (() => {
     Matter.World.add(world, buildWalls());
     Matter.World.add(world, buildFlowers());
     DynamicObstacles.mount(world);
+    InteractiveObstacles.mount(world);
     resetRaceState();
   }
   // Costruzione del mondo "a fette" (≈4 ms alla volta) durante l'intro: su una pista lunga sono ~1100 corpi statici
@@ -104,6 +113,7 @@ const Sim = (() => {
       if (x < END) { setTimeout(step, 0); return; }
       Matter.World.add(world, buildWalls()); Matter.World.add(world, buildFlowers());
       DynamicObstacles.mount(world);
+    InteractiveObstacles.mount(world);
       resetRaceState(); prepared = true; if (cb) cb();
     };
     step();
@@ -1169,19 +1179,8 @@ const Sim = (() => {
         const impulse = 0.12 * Math.min(1, lift);
         for (const b of bodies) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.max(-6.5, b.velocity.y - impulse) });
       }
-      // L'anello sospeso premia un salto riuscito, ma la strada a terra resta libera.
-      r.haloHits = r.haloHits || {};
-      for (const q of Terrain.HALO_RINGS) {
-        const dx = Math.abs(x - q.x), altitude = GROUND_Y - Terrain.height(x) - r.chassis.position.y;
-        if (dx >= q.width * 0.55) { r.haloHits[q.id] = false; continue; }
-        if (!r.haloHits[q.id] && altitude >= 65 && altitude <= 155) {
-          for (const b of bodies) Matter.Body.setVelocity(b, {
-            x: Math.min(11, b.velocity.x + q.boost),
-            y: Math.min(b.velocity.y, -q.lift)
-          });
-          r.haloHits[q.id] = true;
-        }
-      }
+      // Nessun anello boost: la verticalità del Paradiso è ora data dalle nubi
+      // e dalle pedane reattive, con punti d'appoggio fisici riconoscibili.
       r.cloudPadHits = r.cloudPadHits || {};
       for (const q of Terrain.CLOUD_PADS) {
         const near = Math.abs(x - q.x) < q.width * 0.5;
@@ -1347,8 +1346,10 @@ const Sim = (() => {
         // Each fixed physics substep advances the obstacle by the same fixed dt.
         // Multiple catch-up steps no longer push the obstacle to identical positions.
         const nextObstacleTime = obstacleClockMs + FIXED_DT / SUBSTEPS;
-        DynamicObstacles.update(nextObstacleTime);
+        DynamicObstacles.update(nextObstacleTime,racerOrder);
+        InteractiveObstacles.beforeStep(nextObstacleTime, racerOrder);
         Matter.Engine.update(engine, FIXED_DT / SUBSTEPS);
+        InteractiveObstacles.afterStep(nextObstacleTime, racerOrder);
         obstacleClockMs = nextObstacleTime;
         for (let i = 0; i < n; i++) { const r = racerOrder[i]; antiSink(r.fw); antiSink(r.rw); }
       }
@@ -1400,7 +1401,7 @@ const Sim = (() => {
 
   return {
     init, addRacer, updateRacerWheel, drainMelts, meltBase, meltVertices, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
-    snapshot, jump, sprint, allFinished, isTimedOut, standings, GROUND_Y, getElapsed: () => running ? performance.now() - startedAt : 0, getObstacleTime: () => obstacleClockMs, usedPortals: () => Object.keys(portalUsed).map(Number),
+    snapshot, jump, sprint, allFinished, isTimedOut, standings, GROUND_Y, getElapsed: () => running ? performance.now() - startedAt : 0, getObstacleTime: () => obstacleClockMs, getInteractiveState: () => InteractiveObstacles.snapshot(), obstacleSnapshot:()=>DynamicObstacles.snapshot(), usedPortals: () => Object.keys(portalUsed).map(Number),
     get FINISH_X() { return Terrain.FINISH_X; },
     // ms rimasti agli altri dopo che il primo ha tagliato il traguardo (null = nessuno è arrivato)
     graceLeft() { if (firstFinishAt === null || !running) return null; return Math.max(0, GRACE_BASE_MS + firstFinishAt * GRACE_FRAC - (performance.now() - startedAt - firstFinishAt)); },

@@ -470,7 +470,7 @@
     if (data.type === 'goToDraw') { champ = data.champ || null; enterDrawPhase(); }
     if (data.type === 'wheel' && Net.isHost && Net.players[from] && validWheelVertices(data.vertices)) receiveWheel(from, data.vertices);
     if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
-    if (data.type === 'snap') { if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); if (!Net.isHost && Number.isFinite(data.ht) && Number.isFinite(data.ts) && snapOff !== null) { const origin = data.ts + snapOff - data.ht; hazardHostOrigin = hazardHostOrigin === null ? origin : hazardHostOrigin * 0.94 + origin * 0.06; } }
+    if (data.type === 'snap') { if (!Net.isHost) { InteractiveObstacles.receive(data.io); if (data.obs) DynamicObstacles.setRemoteStates(data.obs); } if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); if (!Net.isHost && Number.isFinite(data.ht) && Number.isFinite(data.ts) && snapOff !== null) { const origin = data.ts + snapOff - data.ht; hazardHostOrigin = hazardHostOrigin === null ? origin : hazardHostOrigin * 0.94 + origin * 0.06; } }
     if (data.type === 'results') showResults(data.standings, data.champ);
     if (data.type === 'lastCall') showLastCall(data.ms);
     if (data.type === 'restartToDraw') { champ = data.champ || null; enterDrawPhase(); }
@@ -576,6 +576,7 @@
   // Durante il conto alla rovescia le bici stanno ferme in griglia (stesse posizioni di partenza
   // della fisica), così si vede già il mondo e chi c'è in gara; il primo snapshot le sostituisce.
   function placeGrid() {
+    InteractiveObstacles.clearClient();
     latestRacers = {}; snapBuf.length = 0; snapOff = null; lastRemoteSnapTs = -Infinity; hazardHostOrigin = null;
     snapPrevArrival = 0; snapIntervalMean = 50; snapJitter = 0; interpClientMs = INTERP_CLIENT_MS;
     Object.keys(raceMeta).forEach((id, i) => {
@@ -629,7 +630,7 @@
     snapshotLoopHandle = Ticker.start(() => {
       const now = performance.now(), dt = Math.min(now - last, 100); last = now;
       const pt = Perf.on ? performance.now() : 0; Sim.tick(dt); const snap = Sim.snapshot(), pu = Sim.usedPortals(); syncUsed(pu); applySnapshot(snap); if (Perf.on) Perf.tick(performance.now() - pt);
-      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now, ht: Sim.getObstacleTime(), pu }); }
+      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now, ht: Sim.getObstacleTime(), io: Sim.getInteractiveState(), obs:Sim.obstacleSnapshot(), pu }); }
       Sim.drainMelts().forEach(m => { applyMelt(m.id, m.f, m.r); Net.broadcast({ type: 'melt', id: m.id, f: m.f, r: m.r }); });
       // primo traguardo: gli altri hanno un tempo limitato, e lo sanno
       const gl = Sim.graceLeft();
@@ -1435,6 +1436,7 @@
     const obstacleElapsed = Net.isHost ? Sim.getObstacleTime() :
       Math.max(0, hazardHostOrigin === null ? t0 - raceT0 : t0 - hazardHostOrigin - interpClientMs);
     DynamicObstacles.draw(ctx2d, camX, w, groundY, obstacleElapsed);
+    InteractiveObstacles.draw(ctx2d, camX, w, groundY, !Net.isHost);
     if (!inLocalWorld && Terrain.WORLD === 'classic') {
       Flora.drawLilies(ctx2d, camX, w, groundY, SC);
       Flora.draw(ctx2d, camX, w, groundY, SC);

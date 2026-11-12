@@ -821,28 +821,25 @@ const Scenery = (() => {
   function drawWorldEffects(ctx, camX, w, gy, raceTime = 0) {
     const world = S.segment && (camX + w * 0.40 >= S.segment.start - 80) && (camX + w * 0.40 <= S.segment.end + 80) ? S.segment.world : S.world;
     if (world === 'paradise') {
-      // Aureole sospese: ricompensano il salto, il terreno rimane attraversabile.
-      for (const q of Terrain.HALO_RINGS) {
-        const x = q.x - camX; if (x < -95 || x > w + 95) continue;
-        const y = gy - Terrain.height(q.x) - q.rise, pulse = 0.78 + 0.22 * Math.sin(raceTime / 460 + q.id);
-        ctx.save(); ctx.lineCap = 'round'; ctx.shadowColor = '#fff1a1'; ctx.shadowBlur = 9;
-        ctx.strokeStyle = `rgba(255,232,146,${0.75 * pulse})`; ctx.lineWidth = 11;
-        ctx.beginPath(); ctx.ellipse(x, y, 43, 48, -0.1, 0, TAU); ctx.stroke();
-        ctx.shadowBlur = 0; ctx.strokeStyle = '#fffef0'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.ellipse(x, y, 39, 44, -0.1, 0, TAU); ctx.stroke();
-        for (let i = 0; i < 3; i++) {
-          const th = raceTime / 800 + i * TAU / 3 + q.id;
-          const px = x + Math.cos(th) * 43, py = y + Math.sin(th) * 48;
-          ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px, py, 3.2, 0, TAU); ctx.fill();
-        }
-        ctx.restore();
-      }
+      // V22 Paradise: le vecchie aureole boost sono state rimosse.
       for (const q of Terrain.CLOUD_PADS) {
         const x = q.x - camX; if (x < -80 || x > w + 80) continue;
         const y = gy - Terrain.height(q.x) - 2, pulse = 0.85 + 0.15 * Math.sin(raceTime / 240 + q.id);
-        ctx.save(); ctx.globalAlpha = 0.82 * pulse; ctx.fillStyle = '#ffffff';
-        ctx.beginPath(); ctx.ellipse(x, y, 30, 8, 0, 0, TAU); ctx.ellipse(x - 16, y - 5, 15, 9, 0, 0, TAU); ctx.ellipse(x + 14, y - 6, 17, 10, 0, 0, TAU); ctx.fill();
-        ctx.strokeStyle = 'rgba(126,194,225,0.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 22, y + 6); ctx.quadraticCurveTo(x, y + 11, x + 22, y + 6); ctx.stroke(); ctx.restore();
+        ctx.save();
+        // La nube è larga davvero quanto l'area che lancia: niente minuscolo
+        // effetto cosmetico con collisione/trigger nascosti.
+        ctx.shadowColor = '#fff6c6'; ctx.shadowBlur = 17;
+        const grad=ctx.createLinearGradient(0,y-45,0,y+16);
+        grad.addColorStop(0,'#fffdf3');grad.addColorStop(.60,'#eef8ff');grad.addColorStop(1,'#aacfe3');
+        ctx.fillStyle=grad;ctx.globalAlpha=.91+.09*pulse;
+        ctx.beginPath();ctx.ellipse(x,y-8,61,18,0,0,TAU);
+        ctx.ellipse(x-33,y-18,27,24,0,0,TAU);
+        ctx.ellipse(x+5,y-29,40,29,0,0,TAU);
+        ctx.ellipse(x+40,y-16,24,21,0,0,TAU);ctx.fill();
+        ctx.shadowBlur=0;ctx.lineWidth=3;ctx.strokeStyle='#c59c54';
+        ctx.beginPath();ctx.moveTo(x-55,y+2);ctx.quadraticCurveTo(x,y+14,x+55,y+2);ctx.stroke();
+        for(let k=-1;k<=1;k++) {ctx.fillStyle='#f6d889';ctx.beginPath();ctx.arc(x+k*29,y-4-(k===0?15:6),2.8,0,TAU);ctx.fill();}
+        ctx.restore();
       }
       for (const q of Terrain.UPDRAFTS) {
         const x = q.x - camX; if (x < -q.width || x > w + q.width) continue;
