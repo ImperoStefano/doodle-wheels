@@ -957,6 +957,14 @@
   let ftRaf = 0;
   const FT_PAL = { start: '#78ba8e', hills: '#438c67', ice: '#bfe3ea', gravel: '#ecbd6f', water: '#9fd3c2', ramps: '#e3937a', lava: '#6b3a2a', finish: '#78ba8e' };
   const FT_BAND = { start: '#78ba8e', hills: '#438c67', ice: '#bfe3ea', gravel: '#ecbd6f', water: '#5bb5b0', ramps: '#e3937a', lava: '#fb5f35', finish: '#78ba8e' };
+  // V25: special biome indicator on the finished-race track; don't recolor the riders.
+  const FT_SPECIAL = {
+    paradise: { band: '#8864c6', text: '#fff8e6' },
+    inferno: { band: '#a62b5a', text: '#fff0dc' },
+    atlantis: { band: '#087eaa', text: '#f3fffd' },
+    enchanted: { band: '#347550', text: '#f4ffe0' },
+    neon: { band: '#5934c3', text: '#dffff8' }
+  };
   const FT_FLOWERS = ['#fb5f35', '#f5e594', '#e3937a', '#ecbd6f', '#f8f4dc'];
   // Tooltip della pista finale: zona sotto il puntatore (mouse o dito), pastiglia evidenziata e nome con il colore della zona
   let ftHoverState = null, ftHoverBound = false, ftHideT = 0;
@@ -970,11 +978,13 @@
       const S = ftHoverState; if (!S) return;
       const r = cv.getBoundingClientRect(), k = r.width / S.W, px = (ev.clientX - r.left) / k;
       const z = S.zones.find(q => px >= q.a && px < q.b); if (!z) { hide(); return; }
-      const nm = I18n.t('sign.' + z.key);
-      tip.innerHTML = ''; const dot = document.createElement('i'); dot.style.background = z.col; const tx = document.createElement('span'); tx.textContent = nm; tip.append(dot, tx);
+      const sp = S.special && px >= S.special.a && px < S.special.b ? S.special : null;
+      const nm = (sp ? I18n.t('world.tag.' + sp.key) + ' · ' : '') + I18n.t('sign.' + z.key);
+      tip.innerHTML = ''; const dot = document.createElement('i'); dot.style.background = sp ? sp.col : z.col; const tx = document.createElement('span'); tx.textContent = nm; tip.append(dot, tx);
       tip.hidden = false; hl.hidden = false;
       const ox = cv.offsetLeft, oy = cv.offsetTop, sc = cv.offsetWidth / S.W;
-      hl.style.left = (ox + (z.a + 0.8) * sc) + 'px'; hl.style.top = (oy + S.bY * sc) + 'px'; hl.style.width = ((z.b - z.a - 1.6) * sc) + 'px'; hl.style.height = (S.bH * sc) + 'px'; hl.style.borderRadius = (S.bH * sc / 2) + 'px';
+      const a = sp ? Math.max(z.a, sp.a) : z.a, b = sp ? Math.min(z.b, sp.b) : z.b;
+      hl.style.left = (ox + (a + 0.8) * sc) + 'px'; hl.style.top = (oy + S.bY * sc) + 'px'; hl.style.width = (Math.max(1,b - a - 1.6) * sc) + 'px'; hl.style.height = (S.bH * sc) + 'px'; hl.style.borderRadius = (S.bH * sc / 2) + 'px';
       const tw = tip.offsetWidth, cx = Math.max(tw / 2 + 4, Math.min(cv.offsetWidth - tw / 2 - 4, ox + ((z.a + z.b) / 2) * sc));
       tip.style.left = cx + 'px'; tip.style.top = (oy + S.bY * sc - 8) + 'px';
       clearTimeout(ftHideT); if (ev.pointerType && ev.pointerType !== 'mouse') ftHideT = setTimeout(hide, 2800);   // col dito non c'è "uscita": sparisce da solo
@@ -1017,6 +1027,9 @@
     let lo = 1e9, hi = -1e9; P.forEach(q => { lo = Math.min(lo, q[1]); hi = Math.max(hi, q[1]); }); hi = Math.max(hi, altMax);
     const topPad = 34 + lift + laneGap * (ids.length - 1) + bw0 * (GR.length ? 1.9 : 1) / 2, sy = (gB - 12 - topPad) / Math.max(150, hi - lo), baseY = gB - 12 + lo * sy, Yh = h => baseY - h * sy;
     const zs = Terrain.ZONES.filter(z => z.end > x0 && z.start < x1), ZC = z => FT_PAL[z.key] || '#94a3b8';
+    const sw = Terrain.WORLD_SEGMENT;
+    const scfg = sw && FT_SPECIAL[sw.world];
+    const spTrace = scfg && sw.end > x0 && sw.start < x1 ? { key:sw.world, a:X(Math.max(x0,sw.start)), b:X(Math.min(x1,sw.end)), col:scfg.band, text:scfg.text } : null;
     for (const id of ids) { const R = runs[id], lane = order.indexOf(id), dy = -lift - lane * laneGap; R.Y = R.H2.map(h => Yh(h) + dy); R.kk = R.F.map(q => GR.length ? gk(q[0]) : 0); }
     const winner = order[0];
 
@@ -1120,6 +1133,20 @@
       const bun = ['#fb5f35', '#f5e594', '#5bb5b0', '#78ba8e', '#e3937a', '#ecbd6f'], bx0 = fx, by0 = fy - fh + 1, bx1 = fx - 62, by1 = fy - 8;
       s.strokeStyle = 'rgba(45,62,72,0.55)'; s.lineWidth = 1; s.beginPath(); s.moveTo(bx0, by0); s.quadraticCurveTo((bx0 + bx1) / 2, Math.max(by0, by1) + 6, bx1, by1); s.stroke();
       for (let k = 1; k <= 6; k++) { const t = k / 7, px = (1 - t) * (1 - t) * bx0 + 2 * (1 - t) * t * ((bx0 + bx1) / 2) + t * t * bx1, py = (1 - t) * (1 - t) * by0 + 2 * (1 - t) * t * (Math.max(by0, by1) + 6) + t * t * by1; s.fillStyle = bun[k - 1]; s.beginPath(); s.moveTo(px - 3.4, py); s.lineTo(px + 3.4, py); s.lineTo(px, py + 7); s.closePath(); s.fill(); } }
+    // V25: a narrow watercolor accent over the special stretch. The original
+    // landscape, terrain shapes, bridges and rider strokes stay untouched.
+    if (spTrace && spTrace.b - spTrace.a > 3) {
+      s.save();
+      s.fillStyle = spTrace.col; s.globalAlpha = 0.11;
+      s.fillRect(spTrace.a, 15, spTrace.b - spTrace.a, gB - 15);
+      s.globalAlpha = 0.70;
+      s.strokeStyle = spTrace.col; s.lineWidth = 1.6;
+      s.setLineDash([3, 4]);
+      for (const x of [spTrace.a, spTrace.b]) {
+        s.beginPath(); s.moveTo(x, 20); s.lineTo(x, gB + 1); s.stroke();
+      }
+      s.setLineDash([]); s.restore();
+    }
     // fascia dei biomi: pastiglie piene con il nome
     const bY = gB + 7, bH = H - 5 - bY;
     s.font = `700 ${fz.toFixed(1)}px Kalam, cursive`; s.textAlign = 'center'; s.textBaseline = 'middle';
@@ -1127,8 +1154,28 @@
       const xa = X(Math.max(x0, z.start)), xb = X(Math.min(x1, z.end)); if (xb - xa < 4) return;
       rr(s, xa + 0.8, bY, xb - xa - 1.6, bH, bH / 2); s.fillStyle = FT_BAND[z.key] || '#94a3b8'; s.fill();
     });
-    // niente scritte sulla fascia: il nome della zona compare passando il mouse (o toccando) sulla pista, con lo stesso colore della pastiglia
-    ftHover(cv, { W, bY, bH, zones: zs.map(z => ({ key: z.key, a: X(Math.max(x0, z.start)), b: X(Math.min(x1, z.end)), col: FT_BAND[z.key] || '#94a3b8' })) });
+    // Segmento speciale: stessa fascia dei biomi, un colore diverso solo dove
+    // il mondo speciale si è effettivamente manifestato (anche a metà zona).
+    if (spTrace && spTrace.b - spTrace.a > 3) {
+      const bw = spTrace.b - spTrace.a;
+      rr(s, spTrace.a + 0.7, bY, bw - 1.4, bH, bH / 2);
+      s.fillStyle = spTrace.col; s.fill();
+      s.strokeStyle = CRM; s.globalAlpha = 0.65; s.lineWidth = 1.5; s.stroke(); s.globalAlpha = 1;
+      // Mark center only if readable; small screens rely on the tooltip.
+      const shortName = { paradise:'PARADISO', inferno:'INFERNO', atlantis:'ATLANTIDE', enchanted:'BOSCO MAGICO', neon:'NEON' }[spTrace.key];
+      if (bw > 60 && I18n.lang === 'it') {
+        s.fillStyle = spTrace.text; s.font = `700 ${Math.min(11,Math.max(8.5,bw/11)).toFixed(1)}px Kalam, cursive`;
+        s.textAlign = 'center'; s.textBaseline = 'middle';
+        s.fillText(shortName, (spTrace.a + spTrace.b) / 2, bY + bH / 2 + 0.5, bw - 7);
+      } else if (bw > 60) {
+        const label = I18n.t('world.tag.' + spTrace.key);
+        s.fillStyle = spTrace.text; s.font = '700 9.5px Kalam, cursive';
+        s.textAlign = 'center'; s.textBaseline = 'middle';
+        s.fillText(label, (spTrace.a + spTrace.b) / 2, bY + bH / 2 + 0.5, bw - 7);
+      }
+    }
+    // Le fasce classiche restano; l'hover chiarisce il nome del mondo speciale.
+    ftHover(cv, { W, bY, bH, special: spTrace, zones: zs.map(z => ({ key: z.key, a: X(Math.max(x0, z.start)), b: X(Math.min(x1, z.end)), col: FT_BAND[z.key] || '#94a3b8' })) });
 
     // ======= le corse (si ridisegnano a ogni fotogramma, tagliate al punto in cui è arrivato il pennello) =======
     const sparks = [], conf = []; let confMade = false, lastT = 0;

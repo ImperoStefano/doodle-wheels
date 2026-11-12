@@ -540,3 +540,30 @@ Le sezioni precedenti registrano l'evoluzione storica del progetto; quando descr
 **Verifica e limiti:** controlli automatici di sintassi, integrità del pacchetto, generazione e posizionamento degli ostacoli. Le simulazioni non dimostrano da sole che ogni forma di ruota possa affrontare tutti gli urti senza incastrarsi. Restano da svolgere collaudi multiplayer su 2–5 dispositivi reali e prove di FPS/bilanciamento su smartphone prima di considerare chiusa la fase di tuning.
 
 **Distribuzione:** per GitHub Pages mantenere `index.html` nella radice del repository insieme alle cartelle `js/`, `img/` e `audio/`. Gli script V22 utilizzano il parametro cache `?v=20261112-v22-interactive-release`.
+
+## V23–V25 — Ostacoli reattivi e tracciato finale dei mondi speciali (12 novembre 2026)
+
+Questa sezione **sostituisce le informazioni V22 ormai superate** relative a dimensioni, pedane cedevoli e fumo sacro.
+
+- **V23:** il trampolino interattivo è largo 170 × 20 unità e possiede vere rampe fisiche d'accesso. Il rimbalzo agisce sulla bici completa, con una ricarica per giocatore. La pedana basculante (282 × 22) ha sostegno e fulcro visibili. Le emote remote fuori inquadratura sono mantenute.
+- **V24:** la vecchia pedana cedevole (`drop`) è rimossa dalla generazione. I nuovi oggetti interattivi sono massa ellittica larga 132 e alta 60, bilancia `tilt`, trampolino `spring`, lastra di basalto `shard`, conchiglia `clam`, bocciolo `bud`, modulo su guida `servo`. I biomi hanno ulteriori ostacoli fisici animati con disegni specifici. Per il Paradiso, la massa `boulder` è una nube compatta.
+- **V25:** rimosso definitivamente **fumo sacro / `mist`** dalla generazione e dal modulo degli ostacoli. Il Paradiso genera invece `spring`, `tilt` e `boulder` (nube compatta), più gli ostacoli dinamici già esistenti; aggiornate le indicazioni IT/EN che parlavano ancora di anelli boost.
+- **Pista finale dei risultati:** in `js/game.js` la fascia dei biomi rimane invariata nei tratti normali. Quando si è verificato un mondo speciale, **solo la porzione effettiva** della gara viene evidenziata con un colore dedicato, nome leggibile e velatura leggera. Mouse/tocco sul segmento mostrano il mondo speciale e il bioma originale. Le pennellate colorate dei corridori, fiori, montagne, ponti e laghi rimangono visibili e identici all'impostazione precedente. Colori: Paradiso viola ametista, Inferno cremisi, Atlantide blu profondo, Bosco verde smeraldo, Neon viola elettrico.
+- **Collegamenti cache:** tutti gli script del gioco hanno il parametro `?v=20261112-v25-special-trace` per aggiornare GitHub Pages.
+
+### Test e limitazioni
+
+- **Verificato nell'ambiente di sviluppo:** sintassi JS completa, generazione deterministica su 1.080 piste (900 con un mondo speciale), 2.884 ostacoli interattivi controllati, 0 ostacoli `mist` generati e 0 sovrapposizioni rispetto alle protezioni del generatore. Sei casi della pista finale (classica + cinque mondi) disegnati nel browser senza errori JS.
+- **Matter.js reale non verificato in questo ambiente:** non è stato possibile scaricare o caricare la dipendenza esterna (CDN e npm bloccati). I test geometrici e di logica **non equivalgono** a una gara reale con il solver. È incluso `tests/matter-collision-race.js`, che usa **Matter.js 0.19.0 vero, non un mock**, per provare tre forme (tonda, quadrata, irregolare), salto sopra la massa, passaggio su bilancia, contatto con trampolino e due ciclisti sullo stesso trampolino. Eseguilo in un ambiente con Node.js e accesso a npm:
+
+```bash
+npm install --no-save matter-js@0.19.0
+node tests/matter-collision-race.js
+node tests/generation-v25.js
+```
+
+Il test stampa PASS/FAIL per ogni scenario; se Matter.js non è disponibile fallisce con `MISSING_REAL_MATTER` anziché simulare risultati inventati. **Prima di dichiarare concluso il bilanciamento servono prove su un telefono e almeno una partita con due dispositivi collegati.**
+
+### Sviluppo/pubblicazione
+
+Il gioco è statico e pronto da caricare su GitHub Pages: mantenere `index.html` nella root con `style.css`, cartelle `js/`, `img/`, `audio/`. PeerJS, Matter.js e poly-decomp vengono caricati dai CDN indicati in `index.html`, perciò serve una connessione internet per una gara online. Per scegliere temporaneamente un mondo: aggiungere `?testWorld=paradise` (oppure `inferno`, `atlantis`, `enchanted`, `neon`) al link che apre l'host.

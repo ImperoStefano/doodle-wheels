@@ -664,19 +664,35 @@ const Terrain = (() => {
       const progression = Math.max(0, Math.min(1, z.start / Math.max(1, FINISH_X)));
       if (!special && rand() > 0.54 + 0.23 * progression) continue;
       const localWorld = special ? wd : 'classic';
+      // Ogni mondo ha pericoli con una propria dinamica, non soltanto una palette.
+      // I vecchi spring/balance/crumble/boulder V20 duplicavano gli oggetti reattivi V22:
+      // ora esiste UN solo sistema per trampolini, bilance, ponti e massi.
+      // V24: repertorio effettivamente più ampio e specifico per bioma.
+      // Ogni meccanica ha una silhouette e una traiettoria diverse nel motore fisico.
       const variants={
-        paradise:['bell','balance','crumble','spring'],
-        inferno:['meteor','bigroller','boulder'],
-        atlantis:['shell','bigroller','balance','spring'],
-        enchanted:['log','spring','boulder','crumble'],
-        neon:['piston','gate','roller','balance']
+        paradise:['bell','lightstep','choir','sunwheel'],
+        inferno:['meteor','hammer','ashdrum','piston'],
+        atlantis:['shell','jelly','waterwheel','bigroller'],
+        enchanted:['log','branch','flowergate','bigroller'],
+        neon:['piston','gate','lift','magbar']
       };
-      let kind;
-      if(variants[localWorld]) kind=variants[localWorld][Math.floor(rand()*variants[localWorld].length)];
-      else kind=({hills:'boulder',gravel:'bigroller',ice:'iceblock',water:'balance',
-        lava:'bigroller',ramps:'crumble'})[z.key]||'roller';
+      const classicVariants={
+        hills:['roller','log','hayroll','bigroller'],
+        gravel:['bigroller','roller','hayroll','log'],
+        ice:['iceblock','roller','icefang','bigroller'],
+        water:['shell','log','waterwheel','bigroller'],
+        lava:['meteor','ashdrum','piston','hammer'],
+        ramps:['log','roller','hayroll','bigroller']
+      };
+      const pool=variants[localWorld]||classicVariants[z.key]||['roller','bigroller'];
+      const last=DYNAMIC_OBSTACLES.slice(-3).filter(e=>e.biome===localWorld);
+      const lastGlobal=DYNAMIC_OBSTACLES.length?DYNAMIC_OBSTACLES[DYNAMIC_OBSTACLES.length-1].kind:null;
+      const fresh=pool.filter(k=>k!==lastGlobal&&!last.some(v=>v.kind===k));
+      const choices=fresh.length?fresh:pool.filter(k=>k!==lastGlobal);
+      const options=choices.length?choices:pool;
+      const kind=options[Math.floor(rand()*options.length)];
       let found = null;
-      const radius = ['balance','crumble'].includes(kind)?170:['boulder','bigroller','roller'].includes(kind)?115:kind==='gate'?150:['bell','meteor'].includes(kind)?150:kind==='log'||kind==='seesaw'?130:100;
+      const radius = ['lightstep','lift','branch','seesaw','magbar'].includes(kind)?170:['bigroller','roller','ashdrum','hayroll','waterwheel','sunwheel'].includes(kind)?115:kind==='gate'||kind==='hammer'||kind==='choir'||kind==='flowergate'||kind==='icefang'?155:['bell','meteor','jelly'].includes(kind)?160:kind==='log'?130:115;
       for (const f of fractions) {
         const x = Math.round(z.start + z.len * f);
         if (x < z.start + 280 || x > z.end - 280 || x < 1160 || x > FINISH_X - 540) continue;
@@ -696,7 +712,7 @@ const Terrain = (() => {
       }
       if (found === null) continue;
       DYNAMIC_OBSTACLES.push({ id: DYNAMIC_OBSTACLES.length, x: found, kind,
-        biome: localWorld, zone: z.key, period: (['piston','gate','crumble'].includes(kind) ? 4.6 : kind === 'bell' || kind === 'meteor' ? 3.8 : 3.4) + rand()*0.55,
+        biome: localWorld, zone: z.key, period: (['piston','gate','choir','flowergate','icefang'].includes(kind) ? 4.6 : ['bell','meteor','magbar'].includes(kind) ? 3.8 : 3.4) + rand()*0.55,
         phase: rand() * 6.283185307179586 });
     }
   }
@@ -722,14 +738,24 @@ const Terrain = (() => {
       if(INTERACTIVE_OBSTACLES.length>=Math.min(8,Math.ceil((ZONES.length-2)*0.58)))break;
       if(special&&specials>=3)continue;
       const world=special?WORLD_SEGMENT.world:'classic';
-      let kind;
-      if(world==='inferno') kind = z.key==='ramps' ? 'tilt' : 'boulder';
-      else if(world==='paradise') kind = z.key==='water' ? 'drop' : z.key==='hills' ? 'spring' : 'tilt';
-      else if(world==='atlantis') kind = z.key==='ramps' ? 'spring' : 'drop';
-      else if(world==='enchanted') kind = z.key==='hills' ? 'spring' : 'boulder';
-      else if(world==='neon') kind = z.key==='ramps' ? 'spring' : 'drop';
-      else kind = ({water:'drop',ice:'boulder',ramps:'spring',
-          gravel:'boulder',lava:'drop',hills:'tilt'})[z.key]||'tilt';
+      // Non più: un solo tipo fisso per zona. Varianti realmente diverse per mondo,
+      // con memoria delle ultime tre scelte nella stessa ambientazione.
+      const palettes={
+        paradise:['spring','tilt','boulder'],
+        inferno:['shard','tilt','boulder','spring'],
+        atlantis:['clam','spring','tilt','boulder'],
+        enchanted:['bud','spring','boulder','tilt'],
+        neon:['servo','spring','tilt','boulder']
+      };
+      const classic={water:['clam','tilt','spring'],ice:['boulder','spring','shard'],
+        ramps:['spring','tilt','servo'],gravel:['boulder','shard','spring'],
+        lava:['shard','tilt','boulder'],hills:['tilt','spring','boulder','bud']};
+      const pool=palettes[world]||classic[z.key]||['tilt','spring','boulder'];
+      const recent=INTERACTIVE_OBSTACLES.slice(-3).filter(o=>o.biome===world).map(o=>o.kind);
+      const choices=pool.filter(k=>!recent.includes(k));
+      const usable=choices.length?choices:pool.filter(k=>k!==recent.at(-1));
+      const kinds=usable.length?usable:pool;
+      const kind=kinds[Math.floor(rng()*kinds.length)];
       let selected=null;
       for(const f of (world==='atlantis'?[0.15,0.85,0.17,0.82,0.23,0.77]:[0.46,0.28,0.70,0.56,0.78,0.20,0.15,0.85])){
         const x=Math.round(z.start+z.len*f);
@@ -756,7 +782,7 @@ const Terrain = (() => {
       if (zone) {
         const world = WORLD_SEGMENT.world;
         const fallbackX = Math.round(Math.max(zone.start + 240, Math.min(zone.end - 240, (zone.start + zone.end) * 0.5)));
-        const kind = world==='inferno' ? 'boulder' : world==='paradise' ? 'tilt' : world==='atlantis' ? 'drop' : world==='enchanted' ? 'spring' : 'drop';
+        const kind = ({inferno:'shard',paradise:'spring',atlantis:'clam',enchanted:'bud',neon:'servo'})[world] || 'tilt';
         const safe = !(zone.patches||[]).some(p=>fallbackX>p.a-260&&fallbackX<p.b+260) && !INTERACTIVE_OBSTACLES.some(o=>Math.abs(o.x-fallbackX)<560) && !DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-fallbackX)<340) && !(zone.gap&&fallbackX>zone.gap.g0-280&&fallbackX<zone.gap.g1+280);
         if (safe) {
           INTERACTIVE_OBSTACLES.push({id:INTERACTIVE_OBSTACLES.length,x:fallbackX,kind,biome:world,zone:zone.key});

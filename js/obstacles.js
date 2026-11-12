@@ -1,4 +1,4 @@
-/* Doodle Wheels V21 — ostacoli realmente solidi e animati.
+/* Doodle Wheels V24 — ostacoli realmente solidi e animati.
  * Il percorso è deterministico (Terrain.DYNAMIC_OBSTACLES); Matter.js risolve
  * le collisioni SOLTANTO sull'host. I client ridisegnano le stesse traiettorie.
  */
@@ -6,16 +6,41 @@ const DynamicObstacles = (() => {
   const TAU = Math.PI * 2, clamp = (v,lo,hi) => Math.min(hi,Math.max(lo,v));
   let instances = [];
   let remoteStates = null;
+  let remoteViews = null;
+  let previousFrame = 0;
   const smoothstep = v => {v=clamp(v,0,1);return v*v*(3-2*v);};
   function pose(o, elapsedMs, baseY = 520) {
     const g = baseY - Terrain.height(o.x), t = Math.max(0, elapsedMs) / 1000;
     const a = TAU * t / o.period + o.phase;
     const s = Math.sin(a), c = Math.cos(a);
     switch (o.kind) {
+      // V24: additional *physical* mechanisms. No duplicated decorative trampolines.
+      case 'sunwheel': return {x:o.x,y:g-60,angle:a*.32,radius:48};
+      case 'ashdrum': return {x:o.x+28*s,y:g-49,angle:a*.51,radius:49};
+      case 'waterwheel': return {x:o.x,y:g-56,angle:a*.43,radius:50};
+      case 'hayroll': return {x:o.x+18*s,y:g-48,angle:a*.37,radius:48};
+      case 'choir': {const up=smoothstep((1+s)/2);
+        return {x:o.x,y:g+20-58*up,angle:0,width:118,height:57,up};}
+      case 'flowergate': {const up=smoothstep((1+s)/2);
+        return {x:o.x,y:g+27-58*up,angle:0,width:108,height:66,up};}
+      case 'icefang': {const up=smoothstep((1+s)/2);
+        return {x:o.x,y:g+19-67*up,angle:0,width:83,height:70,up};}
+      case 'magbar':return {x:o.x,y:g-65,angle:.25*s,width:186,height:24};
       case 'bell': case 'meteor': {
-        const anchorY = g - 171, angle = 0.38 * s;
-        return { x: o.x + Math.sin(angle) * 112, y: anchorY + Math.cos(angle) * 112, angle, anchorY, anchorX: o.x, radius: 29 };
+        const anchorY = g - 197, angle = 0.39 * s;
+        return { x: o.x + Math.sin(angle) * 137, y: anchorY + Math.cos(angle) * 137, angle, anchorY, anchorX: o.x, radius: o.kind==='bell'?39:45 };
       }
+      // A marble/solar stair rises out of a low pedestal: useful as a timing jump.
+      case 'lightstep': {const lift=smoothstep((1+Math.sin(a))/2);
+        return {x:o.x,y:g-40-49*lift,angle:0,width:178,height:24,lift};}
+      // Basalt hammer: vertical stroke, with enough room to jump past on approach.
+      case 'hammer': {const strike=smoothstep((1-Math.cos(a))/2);
+        return {x:o.x,y:g-162+102*strike,angle:0,width:78,height:95,strike};}
+      // Gelatinous but genuinely collidable giant sea creature.
+      case 'jelly':return {x:o.x+20*s,y:g-58-14*Math.cos(a),angle:0,radius:47};
+      case 'branch':return {x:o.x,y:g-59,angle:0.32*s,width:198,height:29};
+      case 'lift':{const lift=smoothstep((1+Math.sin(a))/2);
+        return {x:o.x,y:g-39-67*lift,angle:0,width:169,height:24,lift};}
       case 'piston': {
         // Rientra completamente sotto il terreno tra una chiusura e l'altra.
         const raised = smoothstep((1 - Math.cos(a)) * 0.5);
@@ -40,7 +65,8 @@ const DynamicObstacles = (() => {
   function makeBody(o) {
     const p = pose(o,0);
     // Material differences matter: ice is slippery, forest timber grips, Atlantis bounces.
-    const profile = ({iceblock:[0.045,0.08,0.04],log:[0.8,0.8,0.12],
+    const profile = ({iceblock:[0.045,0.08,0.04],icefang:[.07,.14,.05],log:[0.8,0.8,0.12],hayroll:[.77,.82,.22],
+      choir:[.46,.63,.26],sunwheel:[.58,.65,.10],ashdrum:[.76,.82,.11],waterwheel:[.42,.57,.23],flowergate:[.72,.80,.17],magbar:[.66,.77,.08],lightstep:[0.7,0.76,0.05],hammer:[0.58,0.62,0.10],jelly:[0.5,0.55,0.72],branch:[0.86,0.88,0.13],lift:[0.68,0.75,0.07],
       balance:[0.85,0.8,0.12],crumble:[0.68,0.75,0.08],gate:[0.6,0.6,0.1],spring:[0.6,0.7,0.7],boulder:[0.9,0.9,0.1],bigroller:[0.7,0.75,0.15],shell:[0.48,0.58,0.32],seesaw:[0.66,0.68,0.14],
       bell:[0.52,0.56,0.2],meteor:[0.64,0.66,0.15],
       piston:[0.5,0.6,0.09],roller:[0.62,0.68,0.2]})[o.kind] || [0.6,0.68,0.16];
@@ -55,7 +81,7 @@ const DynamicObstacles = (() => {
     return b;
   }
   function mount(world) {
-    remoteStates=null;instances = (Terrain.DYNAMIC_OBSTACLES || []).map(o=>({config:o, body:makeBody(o), tilt:0, tiltVelocity:0, drop:0, dropVelocity:0, cooldown:0, initialX:o.x}));
+    remoteStates=null;remoteViews=null;previousFrame=0;instances = (Terrain.DYNAMIC_OBSTACLES || []).map(o=>({config:o, body:makeBody(o), tilt:0, tiltVelocity:0, drop:0, dropVelocity:0, cooldown:0, initialX:o.x}));
     if (instances.length) Matter.World.add(world, instances.map(q=>q.body));
     // A rolling boulder is a genuinely dynamic Matter body; a soft tether prevents
     // it from escaping the section and obstructing later players indefinitely.
@@ -103,7 +129,13 @@ const DynamicObstacles = (() => {
   function snapshot(){return instances.map(q=>{
     const b=q.body;return [Math.round(b.position.x*10)/10,Math.round(b.position.y*10)/10,Math.round(b.angle*1000)/1000];
   });}
-  function setRemoteStates(states){remoteStates=Array.isArray(states)?states:null;}
+  function setRemoteStates(states){
+    if(!Array.isArray(states)){remoteStates=null;remoteViews=null;return;}
+    // Match the host for ALL moving bodies; the clock-derived pose is fallback only.
+    // Smooth snapshots instead of snapping 20 times/sec on network clients.
+    if(!remoteViews||remoteViews.length!==states.length)remoteViews=states.map(s=>Array.isArray(s)?s.slice():null);
+    remoteStates=states;
+  }
   // Used for visual warnings. The warning never changes collision or racer velocity.
   function active(o, t) {
     if (o.kind === 'gate') return pose(o,t).y > 520 - Terrain.height(o.x) - 190;
@@ -144,10 +176,36 @@ const DynamicObstacles = (() => {
       circ(c,0,0,R*.83,'#3d1e2d');c.strokeStyle='#ff9957';c.lineWidth=4;
       ln(c,[-R*.72,-13,-19,-7,-7,14,21,20,R*.65,-7]);ln(c,[-10,-R*.75,3,-22,15,-R*.5]);
       for(let i=0;i<7;i++){let a=i*TAU/7;circ(c,Math.cos(a)*R*.78,Math.sin(a)*R*.78,4.5,'#ff604c');}
+    } else if(o.kind==='jelly'){
+      c.fillStyle='#9cebe3';c.globalAlpha=.48;c.beginPath();c.ellipse(0,10,R*.76,R*.4,0,0,TAU);c.fill();c.globalAlpha=1;
+      c.strokeStyle='#d9fff7';c.lineWidth=3;
+      for(let i=-3;i<=3;i++){let x=i*R*.23;c.beginPath();c.moveTo(x,12);c.quadraticCurveTo(x+Math.sin(ms*.004+i)*5,R*.72,x,R*.8);c.stroke();}
+      circ(c,-10,-9,5,'#194b5e');circ(c,11,-9,5,'#194b5e');
     } else if(o.kind==='shell'){
       circ(c,0,0,R*.79,'#286e80');c.strokeStyle='#bdf8e6';c.lineWidth=3;
       for(let i=-3;i<=3;i++){c.beginPath();c.moveTo(0,R*.72);c.quadraticCurveTo(i*11,-8,i*11,-R*.68);c.stroke();}
       circ(c,0,-12,8,'#fff0c2');c.beginPath();c.arc(0,0,R*.72,Math.PI*.1,Math.PI*.9);c.stroke();
+    } else if(o.kind==='sunwheel'){
+      c.fillStyle='#fdf7db';circ(c,0,0,R*.86,'#f5dfae');
+      c.strokeStyle='#a889b0';c.lineWidth=3;
+      for(let j=0;j<12;j++){let a=j*TAU/12;
+        ln(c,[Math.cos(a)*R*.25,Math.sin(a)*R*.25,Math.cos(a)*R*.79,Math.sin(a)*R*.79]);}
+      circ(c,0,0,12,'#96749c');circ(c,0,0,6,'#fff7cb');
+    } else if(o.kind==='ashdrum'){
+      circ(c,0,0,R*.82,'#3e2230');c.strokeStyle='#ff9964';c.lineWidth=4;
+      for(let j=0;j<9;j++){let a=j*TAU/9;ln(c,[Math.cos(a)*R*.28,Math.sin(a)*R*.28,Math.cos(a+.22)*R*.82,Math.sin(a+.22)*R*.82]);}
+      circ(c,0,0,11,'#f07954');
+    } else if(o.kind==='waterwheel'){
+      c.strokeStyle='#b4fff3';c.lineWidth=5;
+      for(let j=0;j<8;j++){let a=j*TAU/8;
+        ln(c,[Math.cos(a)*12,Math.sin(a)*12,Math.cos(a)*R*.83,Math.sin(a)*R*.83]);
+        circ(c,Math.cos(a)*R*.79,Math.sin(a)*R*.79,5,'#65beb6');}
+      c.strokeStyle='#d8fded';c.beginPath();c.arc(0,0,R*.64,0,TAU);c.stroke();circ(c,0,0,12,'#e4d3a2');
+    } else if(o.kind==='hayroll'){
+      c.strokeStyle='#efdc92';c.lineWidth=4;
+      for(let k=0;k<4;k++){c.beginPath();c.arc(0,0,R*(.30+k*.17),0,TAU);c.stroke();}
+      for(let j=0;j<11;j++){let a=j*TAU/11;ln(c,[Math.cos(a)*15,Math.sin(a)*15,Math.cos(a+.1)*R*.91,Math.sin(a+.1)*R*.91]);}
+      circ(c,0,0,8,'#d4a35a');
     } else if(o.kind==='bigroller'||o.kind==='roller'){
       c.strokeStyle=o.biome==='atlantis'?'#c6fff1':'#e5c497';c.lineWidth=4;
       for(let i=0;i<8;i++){let a=i*TAU/8;ln(c,[Math.cos(a)*R*.27,Math.sin(a)*R*.27,Math.cos(a+.13)*R*.85,Math.sin(a+.13)*R*.85]);}
@@ -166,7 +224,42 @@ const DynamicObstacles = (() => {
     const g=c.createLinearGradient(0,-H/2,0,H/2);g.addColorStop(0,T.l);g.addColorStop(.6,T.a);g.addColorStop(1,T.b);
     c.fillStyle=g;rect(c,-W/2+4,-H/2+3,W-8,H-6,Math.min(6,H*.2));c.fill();
     c.strokeStyle=T.c;c.lineWidth=2;
-    if(o.kind==='balance'||o.kind==='crumble'||o.kind==='seesaw'){
+    if(o.kind==='choir'){
+      c.strokeStyle='#e9d4a3';c.fillStyle='#fff4d3';c.lineWidth=4;
+      for(let k=-2;k<=2;k++){
+        c.beginPath();c.arc(k*20,0,17,Math.PI,TAU);c.stroke();
+        c.beginPath();c.ellipse(k*20,0,15,9,0,Math.PI,TAU);c.fill();
+      }
+      c.strokeStyle='#a68eb5';c.lineWidth=2;
+      for(let j=-3;j<=3;j++)ln(c,[j*15,-H*.13,j*15+7,H*.31]);
+    }else if(o.kind==='flowergate'){
+      c.fillStyle='#4b8152';rect(c,-W*.42,-H*.34,W*.84,H*.68,14);c.fill();
+      for(let j=0;j<5;j++){
+        const a=j*TAU/5;c.save();c.rotate(a);
+        c.fillStyle=j%2?'#baf0a2':'#e2b5eb';c.beginPath();c.ellipse(0,-H*.19,12,24,0,0,TAU);c.fill();c.restore();
+      }circ(c,0,0,7,'#f8e2a8');
+    }else if(o.kind==='icefang'){
+      c.fillStyle='rgba(237,251,255,.89)';
+      c.beginPath();c.moveTo(-W*.39,H*.37);c.lineTo(-W*.18,-H*.36);c.lineTo(0,-H*.24);c.lineTo(W*.23,-H*.41);c.lineTo(W*.42,H*.35);c.closePath();c.fill();
+      c.strokeStyle='#83d2f0';c.lineWidth=3;ln(c,[-W*.15,H*.28,0,-H*.19,W*.23,H*.24]);
+    }else if(o.kind==='magbar'){
+      c.fillStyle='#182649';rect(c,-W*.44,-H*.30,W*.88,H*.60,6);c.fill();
+      c.strokeStyle='#77fff5';c.lineWidth=3;
+      for(let j=-4;j<=4;j++)ln(c,[j*20-7,-5,j*20+4,4]);
+      c.strokeStyle='#f878eb';ln(c,[-W*.4,H*.20,W*.4,H*.20]);
+    }else if(o.kind==='lightstep'||o.kind==='lift'){
+      c.strokeStyle=T.l;c.lineWidth=3;for(let i=-3;i<=3;i++)ln(c,[i*23,-H*.28,i*23,H*.26]);
+      if(o.kind==='lightstep'){c.strokeStyle='#eacb80';ln(c,[-W*.4,1,W*.4,1]);}
+      else{c.strokeStyle='#fe66e2';ln(c,[-W*.4,-3,W*.4,-3]);}
+    }else if(o.kind==='hammer'){
+      c.fillStyle='#4a2131';rect(c,-W*.38,-H*.37,W*.76,H*.74,8);c.fill();
+      c.strokeStyle='#ffae61';c.lineWidth=4;ln(c,[-W*.30,-H*.21,-9,-14,7,14,W*.3,H*.18]);
+      for(let i=-1;i<=1;i++)circ(c,i*21,H*.32,5,'#ff7655');
+    }else if(o.kind==='branch'){
+      c.fillStyle='#485a3c';rect(c,-W*.44,-H*.29,W*.88,H*.58,9);c.fill();
+      c.strokeStyle='#dcf5b3';c.lineWidth=3;for(let i=-3;i<=3;i++)ln(c,[i*25,-H*.4,i*25+17,H*.25]);
+      for(let i=-2;i<=2;i++)circ(c,i*39,-H*.46,6,'#bdf39c');
+    }else if(o.kind==='balance'||o.kind==='crumble'||o.kind==='seesaw'){
       for(let i=-Math.floor(W/50);i<=Math.floor(W/50);i++)ln(c,[i*24,-H/2+3,i*24,H/2-4]);
       if(o.biome==='paradise'){
         c.strokeStyle='#92729a';for(let i=-3;i<=3;i++){c.beginPath();c.arc(i*39,0,7,Math.PI,0);c.stroke();}
@@ -208,17 +301,68 @@ const DynamicObstacles = (() => {
   function draw(ctx,camX,viewportWidth,gy,elapsedMs,overrideItems){
     const items=overrideItems||Terrain.DYNAMIC_OBSTACLES||[];
     if(!items.length)return;
+    const now=typeof performance!=='undefined'?performance.now():0;
+    const blend=1-Math.exp(-Math.max(8,Math.min(65,previousFrame?now-previousFrame:16))/64);
+    previousFrame=now;
     ctx.save();ctx.translate(-camX,0);
     for(const o of items){
       if(o.x<camX-300||o.x>camX+viewportWidth+300)continue;
       const p=pose(o,elapsedMs,gy),r=remoteStates&&remoteStates[o.id],local=instances[o.id];
-      const body=r||((local&&local.body)?[local.body.position.x,local.body.position.y,local.body.angle]:null);
-      if(body&&['boulder','balance','crumble'].includes(o.kind)){p.x=body[0];p.y=body[1];p.angle=body[2];}
+      let body=null;
+      if(r&&Array.isArray(r)&&remoteViews&&remoteViews[o.id]){
+        const view=remoteViews[o.id];for(let k=0;k<3;k++)view[k]+=(r[k]-view[k])*blend;body=view;
+      } else if(local&&local.body){body=[local.body.position.x,local.body.position.y,local.body.angle];}
+      if(body){p.x=body[0];p.y=body[1];p.angle=body[2];}
       const T=COLORS[o.biome]||COLORS.classic;
       const groundY=gy-Terrain.height(o.x);
       // Contact shadow and mechanical fixtures are physically intuitive.
       ctx.fillStyle='rgba(23,26,42,.19)';ctx.beginPath();ctx.ellipse(o.x,groundY+3,
         p.width?Math.min(p.width*.49,145):p.radius?Math.max(39,p.radius):48,6,0,0,TAU);ctx.fill();
+      if(o.kind==='choir'||o.kind==='flowergate'||o.kind==='icefang'){
+        // Visual track shows where a retracting obstacle comes out of the floor.
+        ctx.fillStyle=T.c;ctx.strokeStyle=T.a;ctx.lineWidth=3;
+        rect(ctx,o.x-64,groundY-5,128,13,4);ctx.fill();ctx.stroke();
+        ctx.globalAlpha=.55;
+        for(const dx of [-35,35]){
+          ctx.strokeStyle=T.a;ctx.lineWidth=3;
+          ln(ctx,[o.x+dx,groundY-5,o.x+dx,p.y+16]);
+        }ctx.globalAlpha=1;
+      }else if(o.kind==='magbar'){
+        ctx.strokeStyle=T.c;ctx.lineWidth=11;ctx.lineCap='round';
+        ln(ctx,[o.x-66,groundY-2,o.x,p.y,o.x+66,groundY-2]);
+        ctx.strokeStyle=T.a;ctx.lineWidth=3;
+        ln(ctx,[o.x-66,groundY-2,o.x,p.y,o.x+66,groundY-2]);
+        circ(ctx,o.x,p.y,10,T.c);circ(ctx,o.x,p.y,5,T.l);
+      }else if(o.kind==='waterwheel'||o.kind==='sunwheel'){
+        ctx.strokeStyle=T.c;ctx.lineWidth=8;ctx.lineCap='round';
+        ln(ctx,[o.x,groundY-3,o.x,p.y]);
+        ctx.strokeStyle=T.a;ctx.lineWidth=3;
+        ln(ctx,[o.x,groundY-3,o.x,p.y]);
+        circ(ctx,o.x,groundY-2,9,T.c);
+      }
+      if(o.kind==='lightstep'||o.kind==='lift'){
+        // Airy illuminated supports, intentionally non-solid and pass-through.
+        // The solid part is ONLY the clearly edged horizontal slab.
+        const h=Math.max(8,groundY-(p.y+(p.height||24)*.5));
+        const gx=ctx.createLinearGradient(o.x-20,0,o.x+20,0);
+        gx.addColorStop(0,'rgba(255,255,255,0)');gx.addColorStop(.5,o.kind==='lightstep'?'rgba(255,231,165,.38)':'rgba(82,247,245,.42)');gx.addColorStop(1,'rgba(255,255,255,0)');
+        ctx.fillStyle=gx;ctx.fillRect(o.x-20,groundY-h,40,h);
+        ctx.globalAlpha=.6;ctx.strokeStyle=T.a;ctx.lineWidth=2;
+        for(const dx of [-13,13])ln(ctx,[o.x+dx,groundY-4,o.x+dx,p.y+12]);
+        ctx.globalAlpha=1;circ(ctx,o.x,groundY-4,7,T.a);
+      }else if(o.kind==='hammer'){
+        ctx.strokeStyle=T.c;ctx.lineWidth=13;ln(ctx,[o.x,groundY-258,o.x,p.y-43]);
+        ctx.strokeStyle=T.a;ctx.lineWidth=4;ln(ctx,[o.x,groundY-258,o.x,p.y-43]);
+      }else if(o.kind==='branch'){
+        // A pair of luminous thin vines anchors the oscillating branch to a
+        // canopy above. Unlike the branch slab, the ropes are scenery only.
+        ctx.globalAlpha=.6;ctx.strokeStyle='#cbf6a4';ctx.lineWidth=3;
+        const dx=Math.sin(p.angle)*12;
+        ln(ctx,[o.x-70,groundY-188,o.x-68+dx,p.y-12]);
+        ln(ctx,[o.x+70,groundY-188,o.x+68-dx,p.y-12]);
+        for(let i=-1;i<=1;i++)circ(ctx,o.x+i*70,groundY-187,5,'#9dd58e');
+        ctx.globalAlpha=1;
+      }
       if(p.anchorY!==undefined){
         ctx.strokeStyle=T.c;ctx.lineWidth=10;ctx.lineCap='round';ln(ctx,[p.anchorX,p.anchorY,p.x,p.y]);
         ctx.strokeStyle=T.a;ctx.lineWidth=4;ln(ctx,[p.anchorX,p.anchorY,p.x,p.y]);
@@ -234,6 +378,15 @@ const DynamicObstacles = (() => {
           ctx.strokeStyle=T.c;ctx.lineWidth=2.5;
           ln(ctx,[o.x+d*35,groundY-238,o.x+d*35,groundY-4]);
         }
+      }else if(o.kind==='log'||o.kind==='branch'||o.kind==='seesaw'){
+        // Fixed trestle tied to the terrain. Pivot exactly matches rotating collider.
+        ctx.lineCap='round';ctx.lineJoin='round';
+        ctx.strokeStyle=T.c;ctx.lineWidth=12;
+        ln(ctx,[o.x-45,groundY-4,o.x,p.y+5,o.x+45,groundY-4]);
+        ctx.strokeStyle=T.a;ctx.lineWidth=4;
+        ln(ctx,[o.x-45,groundY-4,o.x,p.y+5,o.x+45,groundY-4]);
+        ctx.fillStyle=T.c;ctx.beginPath();ctx.arc(o.x,p.y+4,10,0,TAU);ctx.fill();
+        circ(ctx,o.x,p.y+4,5,T.l);
       }else if(o.kind==='balance'||o.kind==='crumble'){
         ctx.fillStyle=T.c;ctx.beginPath();ctx.moveTo(o.x-18,groundY);ctx.lineTo(o.x+18,groundY);ctx.lineTo(o.x,groundY-27);ctx.closePath();ctx.fill();
         circ(ctx,o.x,groundY-25,5,T.a);
