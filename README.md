@@ -35,12 +35,12 @@ A ogni nuova pista l'host sorteggia un mondo: i mondi speciali sono eventi casua
 
 | Mondo | Probabilità | Identità e meccanica distintiva |
 |---|---:|---|
-| **Classico** | **60%** | Biomi, stagioni e ostacoli originali, incluso il Vulcano. |
-| **Paradiso** | **8%** | Architetture celesti, isole sospese, luce serena, correnti ascensionali e nuvole elastiche. |
-| **Inferno** | **8%** | Paesaggio vulcanico e dantesco, bufera, lava e geyser che spingono la ruota. |
-| **Atlantide** | **8%** | Città sommersa, palazzi abissali, raggi subacquei, fauna marina e correnti di bolle. |
-| **Bosco Incantato** | **8%** | Foresta notturna, albero antico con portale, funghi luminosi e piattaforme elastiche. |
-| **Città Neon** | **8%** | Metropoli futuristica, torri luminose, maglev e varchi di accelerazione. |
+| **Classico** | **50%** | Biomi, stagioni e ostacoli originali, incluso il Vulcano. |
+| **Paradiso** | **10%** | Architetture celesti, isole sospese, luce serena, correnti ascensionali e nuvole elastiche. |
+| **Inferno** | **10%** | Paesaggio vulcanico e dantesco, bufera, lava e geyser che spingono la ruota. |
+| **Atlantide** | **10%** | Città sommersa, palazzi abissali, raggi subacquei, fauna marina e correnti di bolle. |
+| **Bosco Incantato** | **10%** | Foresta notturna, albero antico con portale, funghi luminosi e piattaforme elastiche. |
+| **Città Neon** | **10%** | Metropoli futuristica, torri luminose, maglev e varchi di accelerazione. |
 
 I tre mondi aggiunti hanno fondali panoramici dedicati in `img/worlds/`: non riutilizzano le montagne generiche del Classico. Per Atlantide, Bosco Incantato e Città Neon sono presenti fondali e livelli di primo piano locali rasterizzati in PNG, con parallasse differenziata; alghe/coralli, felci/rami e dettagli urbani incorniciano la scena senza coprire terreno o corridori. Particelle ambientali leggere completano l’atmosfera; non sono richiesti servizi esterni. Terreno, ostacoli e meccaniche restano disegnati dal motore di gioco.
 
@@ -462,7 +462,7 @@ Dallo zip `doodle-wheels-modificati` sono stati fusi nella versione corrente (se
 
 ## Implementazione dei mondi
 
-- Le probabilità sono centralizzate in `WORLD_CHANCES` in `js/game.js`: Classico 60%; Paradiso, Inferno, Atlantide, Bosco Incantato e Città Neon 8% ciascuno (40% complessivo di mondi speciali).
+- Le probabilità sono centralizzate in `WORLD_CHANCES` in `js/game.js`: Classico 50%; Paradiso, Inferno, Atlantide, Bosco Incantato e Città Neon 10% ciascuno (50% complessivo di mondi speciali).
 - I layout e gli eventi di gameplay sono generati in modo deterministico in `js/terrain.js`; la fisica autorevole resta in `js/physics.js`.
 - Le illustrazioni panoramiche di Atlantide, Bosco Incantato e Città Neon sono in `img/worlds/`; `js/scenery.js` carica un fondale e un livello trasparente di primo piano per ciascun mondo e li disegna con parallasse differenziata. Pesci e meduse, lucciole e foglie, traffico volante e scie luminose sono animati via Canvas.
 - Se un asset non è disponibile, il motore mantiene un fondale Canvas di riserva.
@@ -612,3 +612,11 @@ In seguito al rapporto QA V25.2 (1/10 PASS; nove spostamenti esatti di 90/180 px
 **Controlli eseguiti qui:** sintassi JavaScript, regressioni logiche (355 asserzioni; adattatore, **non Matter.js**), geometria su 600 piste con 13.000+ pose, generazione su 1.080 piste (2.474 oggetti controllati, nessuna sovrapposizione rilevata), ingressi e distanze su altre 720 piste (569 rampe d'accesso, nessuna violazione rilevata), caricamento della pagina QA in Chromium (nessun errore JS). **Non è stato possibile eseguire fisica Matter.js 0.19.0 in questo ambiente** per indisponibilità della libreria: i nuovi 13 esiti richiedono ancora il test online. Nessuno di questi controlli statici implica automaticamente che tutti i 13 scenari fisici passeranno.
 
 **Da provare dopo la pubblicazione:** `https://imperostefano.github.io/doodle-wheels/test-fisica.html`. Premi *Avvia test Matter.js*, poi *Copia rapporto*. Non dichiarare la correzione completa finché non hai un rapporto reale.
+
+
+## V25.6 — Mondi speciali al 10% e interfaccia mobile (12/11/2026)
+
+- Ogni nuova pista: **Paradiso 10%, Inferno 10%, Atlantide 10%, Bosco Incantato 10%, Città Neon 10%**, **Classico 50%**. Somma 100%; la decisione resta esclusivamente dell'host, condivisa con tutti i client. La modalità `?testWorld=` forza ancora il mondo desiderato senza alterare le probabilità delle gare normali.
+- Testo informativo aggiornato nella lobby e nei dizionari italiano/inglese; versioni degli script aggiornate per evitare cache obsolete di GitHub Pages.
+- Interfaccia mobile: menu, lobby, disegno e risultati possono scorrere verticalmente; gara a schermo intero con tocchi di salto preservati; modale di ridisegno con scorrimento proprio. La pagina QA aggiorna il rapporto a scatti per non bloccare l'interfaccia.
+- Le correzioni fisiche successive alla V25.3 sono incluse come codice in sviluppo; il risultato dell'ultimo test pubblico noto era **9/13** (4 casi ancora da collaudare con Matter.js dopo la pubblicazione). Non considerare quei quattro scenari superati finché non si esegue il nuovo rapporto.

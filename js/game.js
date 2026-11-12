@@ -201,15 +201,15 @@
   els.lenHint.textContent = I18n.t('len.hint.' + trackLen);
   // I mondi speciali sono eventi a comparsa frequente ma non garantita: il sorteggio avviene una volta per ogni nuova pista,
   // soltanto sull'host. La scelta viene poi inviata con allReady, così tutti vedono lo stesso mondo.
-  // Il replay conserva invece la pista e il mondo appena giocati. Le probabilità sommano al 40%: il Classico resta presente nel 60% delle nuove gare.
-  const WORLD_CHANCES = { paradise: 0.08, inferno: 0.08, atlantis: 0.08, enchanted: 0.08, neon: 0.08 };
+  // Il replay conserva invece la pista e il mondo appena giocati. Le probabilità sommano al 50%: il Classico resta presente nel 50% delle nuove gare.
+  const WORLD_CHANCES = { paradise: 0.10, inferno: 0.10, atlantis: 0.10, enchanted: 0.10, neon: 0.10 };
   function drawWorld() {
     // Modalità collaudo facoltativa (solo per l'host): ?testWorld=atlantis.
-    // Le partite normali conservano esattamente le probabilità originarie.
+    // Nelle partite normali si applicano le probabilità configurate in WORLD_CHANCES.
     const previewWorld = new URLSearchParams(location.search).get('testWorld');
     if (Object.prototype.hasOwnProperty.call(WORLD_CHANCES, previewWorld)) return previewWorld;
     const r = Math.random(); let edge = 0;
-    for (const [world, chance] of Object.entries(WORLD_CHANCES)) { edge += chance; if (r < edge) return world; }
+    for (const [world, chance] of Object.entries(WORLD_CHANCES)) { edge = Math.round((edge + chance) * 1e6) / 1e6; if (r < edge) return world; }
     return 'classic';
   }
   els.modePicker.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => {

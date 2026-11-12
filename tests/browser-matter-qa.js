@@ -14,7 +14,9 @@
   const cases = [];for(const name of Object.keys(shapes)){cases.push({name,kind:'none',manual:false});for(const kind of ['boulder','tilt','spring'])cases.push({name,kind,manual:kind==='boulder'});}
   cases.push({name:'tonda + quadrata',kind:'spring',concurrent:true});
   const results=[];let stopping=false,working=false,lastVis=null,loadFailure=null;
-  const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
+  // Frequent, real event-loop breaks prevent Matter.js QA from locking the UI,
+  // especially on smartphones. The integration test keeps the exact same physics.
+  const pause=()=>new Promise(resolve=>setTimeout(resolve,8));
   async function loadJs(src){
     return new Promise((resolve,reject)=>{
       const el=document.createElement('script');el.src=src;el.async=true;el.onload=()=>resolve();el.onerror=()=>{el.remove();reject(Error(src+' non raggiungibile'));};document.head.appendChild(el);
@@ -68,7 +70,7 @@
     let pass=results.filter(v=>v.pass).length,fail=results.filter(v=>!v.pass).length;
     totals.textContent=`${pass} superati · ${fail} non superati · ${results.length}/${cases.length} verifiche`;
     out.replaceChildren();for(const o of results){const tr=document.createElement('tr');for(const value of [o.shape,short(o.kind),o.pass?'PASS':'FAIL',o.detail]){const td=document.createElement('td');td.textContent=value;tr.appendChild(td);}tr.children[2].className=o.pass?'good':'bad';out.appendChild(tr);}
-    const obj={suite:'Doodle Wheels QA V25.3',engine:window.Matter?.version||null,location:location.href,startedAt:new Date(startedAt).toISOString(),completed:results.length,expected:cases.length,pass,fail,loadFailure,results};
+    const obj={suite:'Doodle Wheels QA V25.6',engine:window.Matter?.version||null,location:location.href,startedAt:new Date(startedAt).toISOString(),completed:results.length,expected:cases.length,pass,fail,loadFailure,results};
     report.textContent=JSON.stringify(obj,null,2);
   }
   function single(v,files,Matter){
@@ -86,7 +88,7 @@
         const r=S.snapshot()[0];if(!r||![r.x,r.y,r.fwY,r.rwY,r.angle].every(Number.isFinite))throw Error('Posizione o angolo non finito');
         if(last!==null)bigStep=Math.max(bigStep,Math.abs(r.x-last));last=r.x;lastX=r.x;maxX=Math.max(maxX,r.x);
         const obs=S.getInteractiveState()?.[0];if(obs){phase ||=obs[4]===5;angleMax=Math.max(angleMax,Math.abs(obs[3]));}
-        if(step%13===0){lastVis={name:v.name,kind:v.kind,cx:r.x,angle:obs?.[3]||0,bikes:[r]};paintFrame(lastVis);await pause();}
+        if(step%8===0){lastVis={name:v.name,kind:v.kind,cx:r.x,angle:obs?.[3]||0,bikes:[r]};paintFrame(lastVis);await pause();}
         if(r.x>1170){ended=true;break;}
       }
       const diag=S.diagnostics?.()[0]||{};const reasons=[];if(!ended)reasons.push('La bici non ha superato la zona dell’ostacolo');if((diag.hops||0)>0)reasons.push('Recupero anti-blocco '+diag.hops+' volte (ultima x='+Math.round(diag.lastUnstickX||0)+', t='+Math.round(diag.lastUnstickAt||0)+' ms)');else if(bigStep>55)reasons.push('Spostamento anomalo di '+bigStep.toFixed(1)+' px');
@@ -105,7 +107,7 @@
       if(stopping)throw Error('Test interrotto');holder.time+=1000/60;S.tick(1000/60);all=S.snapshot();
       const o=S.getInteractiveState()?.[0];seen ||= !!o&&o[4]===5;
       for(const r of all)if(![r.x,r.y,r.fwY,r.rwY].every(Number.isFinite))throw Error('Coordinate non finite per '+r.id);
-      if(step%13===0){lastVis={name:'2 giocatori',kind:'spring',cx:(all[0].x+all[1].x)/2,bikes:all};paintFrame(lastVis);await pause();}
+      if(step%8===0){lastVis={name:'2 giocatori',kind:'spring',cx:(all[0].x+all[1].x)/2,bikes:all};paintFrame(lastVis);await pause();}
       if(all.length===2&&all.every(r=>r.x>1170))break;
     }
     const d=S.diagnostics?.()||[];const rescued=d.reduce((sum,r)=>sum+(r.hops||0),0);
@@ -118,7 +120,7 @@
       const Matter=await loadEngine();engineEl.textContent='✓ Motore reale: Matter.js '+Matter.version;engineEl.className='good';
       stat.textContent='Caricamento degli stessi moduli del gioco...';const files=await loadSources();
       for(let i=0;i<cases.length&&!stopping;i++){
-        const v=cases[i];stat.textContent=`Prova ${i+1}/${cases.length}: ${v.name} — ${short(v.kind)}`;
+        const v=cases[i];stat.textContent=`Prova ${i+1}/${cases.length}: ${v.name} — ${short(v.kind)} · puoi scorrere e interrompere il test`;
         try{results.push(v.concurrent?await concurrency(files,Matter):await single(v,files,Matter));}
         catch(e){results.push({shape:v.name,kind:v.kind,pass:false,detail:String(e.stack||e.message||e)});}
         bar.style.width=((i+1)/cases.length*100).toFixed(2)+'%';render();await pause();

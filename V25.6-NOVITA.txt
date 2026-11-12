@@ -1,0 +1,20 @@
+DOODLE WHEELS V25.6 — 12 novembre 2026
+
+PROBABILITÀ PER NUOVA PISTA
+Classico: 50%
+Paradiso: 10%
+Inferno: 10%
+Atlantide: 10%
+Bosco Incantato: 10%
+Città Neon: 10%
+
+Le probabilità si applicano soltanto a piste nuove; il replay conserva il mondo scelto.
+La modalità ?testWorld=paradise/inferno/atlantis/enchanted/neon resta disponibile.
+
+INTERFACCIA
+Menu/lobby/disegno/risultati scorrevoli su telefoni piccoli; gara non scorrevole per preservare il salto. QA Matter.js resa più reattiva.
+
+COLLAUDO
+La build include interventi in corso su ostacoli e fisica. Dopo il push,
+aprire https://imperostefano.github.io/doodle-wheels/test-fisica.html?v=256
+e ripetere i 13 test veri con Matter.js. L'ultimo report prima dei fix segnava 9/13 PASS; la nuova build non è ancora certificata 13/13.
