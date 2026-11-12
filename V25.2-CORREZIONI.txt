@@ -1,0 +1,32 @@
+DOODLE WHEELS V25.2 — CORREZIONI ANCORAGGI (12/11/2026)
+
+BUG REALE 1 — DUE SPAZI VERTICALI DIVERSI
+In js/obstacles.js i corpi Matter sono in coordinate con GROUND_Y=520, ma erano
+renderizzati direttamente nella viewport con terreno a groundY variabile.
+Fix: ctx.translate(-camX,gy-GROUND_Y) + pose fisica a GROUND_Y.
+
+BUG REALE 2 — RUOTE SU PENDIO
+Ashdrum/roller/hayroll/bigroller usavano il terreno alla x iniziale quando
+si spostavano orizzontalmente. Fix: quota locale alla x corrente.
+Sunwheel e waterwheel avevano 12/6 px di distacco dal suolo: fix.
+
+DESIGN LEVA
+Pedane interattive: supporti a A ancorati al suolo con piedi indipendenti
+alla quota del terreno in x-76 e x+76. Fulcro posizionato al centro Matter
+effettivo; supporti solo visivi e non collidibili. Stesso principio per
+le leve classiche. Nessun ostacolo nuovo aggiunto.
+
+TEST ESEGUITI LOCALMENTE
+- 600 piste e 13.398 pose ruote/rulli: distacco geometrico massimo 1 px.
+- 1.080 piste: generazione e posizionamento, test superato.
+- 354 verifiche di logica con adattatore minimo, NON Matter.
+- Rendering browser reale dei moduli Canvas: sei casi visivi, 0 eccezioni JS.
+- Integrita ZIP e sintassi JS.
+
+TEST NON ESEGUITI LOCALMENTE
+- Collaudo fisico completo Matter.js, dipende da CDN/npm non raggiungibile.
+- Multiplayer reale, FPS e comportamento su dispositivi fisici.
+
+TEST ONLINE
+Pubblicare lo ZIP ed eseguire /test-fisica.html sul proprio GitHub Pages.
+La pagina richiede Matter.js reale e segnala esplicitamente errori o fallimenti.

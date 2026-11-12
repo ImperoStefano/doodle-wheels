@@ -3,7 +3,7 @@
  * le collisioni SOLTANTO sull'host. I client ridisegnano le stesse traiettorie.
  */
 const DynamicObstacles = (() => {
-  const TAU = Math.PI * 2, clamp = (v,lo,hi) => Math.min(hi,Math.max(lo,v));
+  const TAU = Math.PI * 2, GROUND_Y = 520, clamp = (v,lo,hi) => Math.min(hi,Math.max(lo,v));
   let instances = [];
   let remoteStates = null;
   let remoteViews = null;
@@ -15,10 +15,10 @@ const DynamicObstacles = (() => {
     const s = Math.sin(a), c = Math.cos(a);
     switch (o.kind) {
       // V24: additional *physical* mechanisms. No duplicated decorative trampolines.
-      case 'sunwheel': return {x:o.x,y:g-60,angle:a*.32,radius:48};
-      case 'ashdrum': return {x:o.x+28*s,y:g-49,angle:a*.51,radius:49};
-      case 'waterwheel': return {x:o.x,y:g-56,angle:a*.43,radius:50};
-      case 'hayroll': return {x:o.x+18*s,y:g-48,angle:a*.37,radius:48};
+      case 'sunwheel': return {x:o.x,y:g-48,angle:a*.32,radius:48};
+      case 'ashdrum': {const x=o.x+28*s;return {x,y:baseY-Terrain.height(x)-49+1,angle:a*.51,radius:49};}
+      case 'waterwheel': return {x:o.x,y:g-50,angle:a*.43,radius:50};
+      case 'hayroll': {const x=o.x+18*s;return {x,y:baseY-Terrain.height(x)-48+1,angle:a*.37,radius:48};}
       case 'choir': {const up=smoothstep((1+s)/2);
         return {x:o.x,y:g+20-58*up,angle:0,width:118,height:57,up};}
       case 'flowergate': {const up=smoothstep((1+s)/2);
@@ -51,7 +51,7 @@ const DynamicObstacles = (() => {
       case 'gate': {const lift=smoothstep((1+Math.sin(a))/2);return {x:o.x,y:g-100-145*lift,angle:0,width:28,height:175};}
       case 'spring': return {x:o.x,y:g-20+3*s,angle:0,width:144,height:30};
       case 'boulder': return {x:o.x,y:g-64,angle:0,radius:64};
-      case 'bigroller': return {x:o.x+20*s,y:g-60,angle:a*.7,radius:60};
+      case 'bigroller': {const x=o.x+20*s;return {x,y:baseY-Terrain.height(x)-60+1,angle:a*.7,radius:60};}
       case 'log': case 'seesaw':
         return { x:o.x, y:g-27, angle:0.17*s, width:o.kind==='log'?170:220, height:28 };
       case 'iceblock':
@@ -59,7 +59,7 @@ const DynamicObstacles = (() => {
       case 'shell':
         return { x:o.x, y:g-42-7*(0.5+0.5*s), angle:0.09*s, radius:40 };
       default:
-        return { x:o.x+14*s, y:g-48, angle:a*0.7, radius:48 };
+        {const x=o.x+14*s;return { x, y:baseY-Terrain.height(x)-48+1, angle:a*0.7, radius:48 };}
     }
   }
   function makeBody(o) {
@@ -304,20 +304,32 @@ const DynamicObstacles = (() => {
     const now=typeof performance!=='undefined'?performance.now():0;
     const blend=1-Math.exp(-Math.max(8,Math.min(65,previousFrame?now-previousFrame:16))/64);
     previousFrame=now;
-    ctx.save();ctx.translate(-camX,0);
+    // IMPORTANT: host snapshots are in Matter coordinates (GROUND_Y=520), while
+    // the visible ground follows the viewport/camera. The previous version drew
+    // host bodies without this offset: on tall/short screens they appeared to hover.
+    ctx.save();ctx.translate(-camX,gy-GROUND_Y);
     for(const o of items){
       if(o.x<camX-300||o.x>camX+viewportWidth+300)continue;
-      const p=pose(o,elapsedMs,gy),r=remoteStates&&remoteStates[o.id],local=instances[o.id];
+      const p=pose(o,elapsedMs,GROUND_Y),r=remoteStates&&remoteStates[o.id],local=instances[o.id];
       let body=null;
       if(r&&Array.isArray(r)&&remoteViews&&remoteViews[o.id]){
         const view=remoteViews[o.id];for(let k=0;k<3;k++)view[k]+=(r[k]-view[k])*blend;body=view;
       } else if(local&&local.body){body=[local.body.position.x,local.body.position.y,local.body.angle];}
       if(body){p.x=body[0];p.y=body[1];p.angle=body[2];}
       const T=COLORS[o.biome]||COLORS.classic;
-      const groundY=gy-Terrain.height(o.x);
+      const groundY=GROUND_Y-Terrain.height(o.x);
       // Contact shadow and mechanical fixtures are physically intuitive.
       ctx.fillStyle='rgba(23,26,42,.19)';ctx.beginPath();ctx.ellipse(o.x,groundY+3,
         p.width?Math.min(p.width*.49,145):p.radius?Math.max(39,p.radius):48,6,0,0,TAU);ctx.fill();
+      if(o.kind==='ashdrum'){
+        // The drum is a rolling obstacle: a compact hot contact patch, not a
+        // floating glowing orb. This is decorative; the circle remains the collider.
+        const contactY=GROUND_Y-Terrain.height(p.x);
+        ctx.save();ctx.globalAlpha=.72;
+        ctx.fillStyle='#5a2434';ctx.beginPath();ctx.ellipse(p.x,contactY,37,4,0,0,TAU);ctx.fill();
+        ctx.strokeStyle='#ff9d52';ctx.lineWidth=2;ln(ctx,[p.x-25,contactY-1,p.x,contactY-2,p.x+25,contactY-1]);
+        ctx.restore();
+      }
       if(o.kind==='choir'||o.kind==='flowergate'||o.kind==='icefang'){
         // Visual track shows where a retracting obstacle comes out of the floor.
         ctx.fillStyle=T.c;ctx.strokeStyle=T.a;ctx.lineWidth=3;
@@ -378,15 +390,23 @@ const DynamicObstacles = (() => {
           ctx.strokeStyle=T.c;ctx.lineWidth=2.5;
           ln(ctx,[o.x+d*35,groundY-238,o.x+d*35,groundY-4]);
         }
-      }else if(o.kind==='log'||o.kind==='branch'||o.kind==='seesaw'){
-        // Fixed trestle tied to the terrain. Pivot exactly matches rotating collider.
+      }else if(o.kind==='log'||o.kind==='seesaw'){
+        // Leg supports have their OWN terrain heights; the fulcrum is always
+        // attached to the actual moving plank, not an arbitrary height in air.
+        const lx=o.x-54,rx=o.x+54,ly=GROUND_Y-Terrain.height(lx)-4,
+              ry=GROUND_Y-Terrain.height(rx)-4,cy=p.y+5;
         ctx.lineCap='round';ctx.lineJoin='round';
-        ctx.strokeStyle=T.c;ctx.lineWidth=12;
-        ln(ctx,[o.x-45,groundY-4,o.x,p.y+5,o.x+45,groundY-4]);
-        ctx.strokeStyle=T.a;ctx.lineWidth=4;
-        ln(ctx,[o.x-45,groundY-4,o.x,p.y+5,o.x+45,groundY-4]);
-        ctx.fillStyle=T.c;ctx.beginPath();ctx.arc(o.x,p.y+4,10,0,TAU);ctx.fill();
-        circ(ctx,o.x,p.y+4,5,T.l);
+        ctx.fillStyle=T.c;ctx.globalAlpha=.34;ctx.beginPath();
+        ctx.moveTo(lx,ly);ctx.lineTo(o.x,cy);ctx.lineTo(rx,ry);ctx.closePath();ctx.fill();ctx.globalAlpha=1;
+        ctx.strokeStyle=T.c;ctx.lineWidth=15;
+        ln(ctx,[lx,ly,o.x,cy,rx,ry]);
+        ctx.strokeStyle=T.a;ctx.lineWidth=5;
+        ln(ctx,[lx,ly,o.x,cy,rx,ry]);
+        for(const [fx,fy] of [[lx,ly],[rx,ry]]){
+          ctx.fillStyle=T.c;rect(ctx,fx-23,fy-5,46,10,4);ctx.fill();
+          circ(ctx,fx,fy-2,4,T.l);
+        }
+        circ(ctx,o.x,cy,13,T.c);circ(ctx,o.x,cy,7,T.a);circ(ctx,o.x,cy,3,T.l);
       }else if(o.kind==='balance'||o.kind==='crumble'){
         ctx.fillStyle=T.c;ctx.beginPath();ctx.moveTo(o.x-18,groundY);ctx.lineTo(o.x+18,groundY);ctx.lineTo(o.x,groundY-27);ctx.closePath();ctx.fill();
         circ(ctx,o.x,groundY-25,5,T.a);

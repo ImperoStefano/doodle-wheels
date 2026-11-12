@@ -85,7 +85,7 @@ const InteractiveObstacles = (() => {
       if(rider.position.y > obstacle.position.y-17)return;
       if(Math.abs(rider.position.x-obstacle.position.x)>SIZES.spring.w/2+25)return;
       if(rider.velocity.y < -3.3)return;
-      if(timeMs-(entry.reactivations.get(racer)||-1e7)<850)return;
+      if(timeMs-(entry.reactivations.get(racer)??-1e7)<850)return;
       if(!pendingSprings.some(q=>q.entry===entry&&q.racer===racer))
         pendingSprings.push({entry,racer,at:timeMs});
     }else if(obstacleKind==='boulder'){
@@ -93,7 +93,7 @@ const InteractiveObstacles = (() => {
       // legible ride-up assist (not an invisible wall). Slow touches do nothing.
       if(rider.label!=='wheel'||rider.position.x>obstacle.position.x+10)return;
       if(rider.velocity.x<3.2||rider.velocity.y < -3)return;
-      if(timeMs-(entry.reactivations.get(racer)||-1e7)<1200)return;
+      if(timeMs-(entry.reactivations.get(racer)??-1e7)<1200)return;
       if(!pendingVaults.some(q=>q.entry===entry&&q.racer===racer))
         pendingVaults.push({entry,racer,at:timeMs});
     }else if(rider.label==='wheel' && entry.phase==='idle'){
@@ -127,7 +127,7 @@ const InteractiveObstacles = (() => {
     // Rounded mobile volume: speed + deliberate approach offers a modest vault.
     // Never applies a boost on an arbitrary collision with its back or underside.
     for(const {entry,racer,at} of pendingVaults){
-      if(at-(entry.reactivations.get(racer)||-1e7)<1200)continue;
+      if(at-(entry.reactivations.get(racer)??-1e7)<1200)continue;
       entry.reactivations.set(racer,at);
       entry.phase='react';entry.phaseAt=nowMs;
       const push=({paradise:8.3,inferno:5.5,atlantis:7.5,enchanted:8.0,neon:7.0,classic:6.6})[entry.config.biome]||6.6;
@@ -139,7 +139,7 @@ const InteractiveObstacles = (() => {
     // One jump event boosts the entire bike, preserving its axle constraints.
     // Separate cooldowns make multiplayer simultaneous landings deterministic.
     for(const {entry,racer,at} of pendingSprings){
-      if(at-(entry.reactivations.get(racer)||-1e7)<850)continue;
+      if(at-(entry.reactivations.get(racer)??-1e7)<850)continue;
       entry.reactivations.set(racer,at);
       entry.phase='spring';entry.phaseAt=nowMs;
       for(const body of [racer.chassis,racer.fw,racer.rw]){
@@ -189,33 +189,42 @@ const InteractiveObstacles = (() => {
       dot(c,o.x+dx,g-26,3,theme.light);
     }c.globalAlpha=1;
   }
-  function pedestal(c,o,g,theme){
-    // A-frame tied to ground; pivot is precisely the physical Matter constraint.
-    const pivot=basePose(o).y, sx=o.x, by=g-3;
+  function pedestal(c,o,g,theme,deck){
+    // The fulcrum is the REAL (host or remote) plate center. Each foot is
+    // independently attached to terrain, even on a gentle slope. This is a
+    // visible non-colliding support: the only platform collider is the deck.
+    const sx=o.x, px=deck&&Number.isFinite(deck.x)?deck.x:sx;
+    const pivot=deck&&Number.isFinite(deck.y)?deck.y:basePose(o).y;
+    const lx=sx-76,rx=sx+76,ly=ground(lx)-4,ry=ground(rx)-4;
     c.save();c.lineJoin='round';c.lineCap='round';
-    // Broad fixed feet prevent the visual illusion of a levitating plank.
-    c.fillStyle=theme.dark;c.strokeStyle=theme.metal;c.lineWidth=3.5;
-    rounded(c,sx-90,by-9,180,12,5);c.fill();c.stroke();
-    c.strokeStyle=theme.dark;c.lineWidth=16;
-    line(c,[sx-65,by-10,sx,pivot+5,sx+65,by-10]);
-    c.strokeStyle=theme.metal;c.lineWidth=5;
-    line(c,[sx-65,by-10,sx,pivot+5,sx+65,by-10]);
-    c.strokeStyle=theme.light;c.lineWidth=2;
-    line(c,[sx-58,by-10,sx,pivot+7,sx+58,by-10]);
-    c.fillStyle=theme.dark;dot(c,sx,pivot+5,14);
-    c.fillStyle=theme.metal;dot(c,sx,pivot+5,9);
-    c.fillStyle=theme.light;dot(c,sx,pivot+5,4);
-    for(const dx of [-71,71])dot(c,sx+dx,by-3,4,theme.light);
+    // Open A-frame (not a second fake platform). Broad distinct ground plates.
+    c.fillStyle=theme.dark;c.globalAlpha=.30;
+    c.beginPath();c.moveTo(lx,ly);c.lineTo(px,pivot+5);c.lineTo(rx,ry);c.closePath();c.fill();c.globalAlpha=1;
+    for(const [x,y] of [[lx,ly],[rx,ry]]){
+      c.fillStyle=theme.dark;rounded(c,x-26,y-7,52,12,4);c.fill();
+      c.strokeStyle=theme.metal;c.lineWidth=2.5;c.stroke();
+      dot(c,x-13,y-2,3,theme.light);dot(c,x+13,y-2,3,theme.light);
+    }
+    c.strokeStyle=theme.dark;c.lineWidth=19;
+    line(c,[lx,ly-6,px,pivot+7,rx,ry-6]);
+    c.strokeStyle=theme.metal;c.lineWidth=7;
+    line(c,[lx,ly-6,px,pivot+7,rx,ry-6]);
+    c.strokeStyle=theme.light;c.lineWidth=2.5;
+    line(c,[lx+8,ly-7,px,pivot+7,rx-8,ry-7]);
+    // The axle ring is drawn ON TOP of the braces, underneath the tilting deck.
+    dot(c,px,pivot+6,16,theme.dark);
+    dot(c,px,pivot+6,10,theme.metal);
+    dot(c,px,pivot+6,5,theme.light);
     if(o.biome==='paradise'){
       c.strokeStyle=theme.light;c.lineWidth=3;
-      line(c,[sx,by-15,sx,pivot+7]);
-      dot(c,sx,pivot+5,3,theme.dark);
+      line(c,[sx,ground(sx)-9,px,pivot+10]);
     }else if(o.biome==='neon'){
       c.strokeStyle=theme.glow;c.lineWidth=2.5;
-      line(c,[sx-43,by-8,sx,pivot+13,sx+43,by-8]);
+      line(c,[lx+16,ly-11,px,pivot+11,rx-16,ry-11]);
     }
     c.restore();
   }
+
   function drawBoulder(c,o,p,T,ms){
     const R=SIZES.boulder.r;
     if(o.biome==='paradise'){
@@ -445,7 +454,7 @@ const InteractiveObstacles = (() => {
       // Fixed shadow follows the *physical* envelope. No dotted warning/!.
       ctx.fillStyle=o.biome==='paradise'?'rgba(80,111,151,.17)':'rgba(20,25,41,.24)';
       ctx.beginPath();ctx.ellipse(p.x,groundYLocal+4,o.kind==='tilt'?136:o.kind==='spring'?76:o.kind==='boulder'?65:77,7,0,0,TAU);ctx.fill();
-      if(o.kind==='tilt')pedestal(ctx,o,groundYLocal,T);
+      if(o.kind==='tilt')pedestal(ctx,o,groundYLocal,T,p);
       if(['shard','clam','bud','servo'].includes(o.kind)){
         // Fixed in-world anchor: even when the obstacle moves it does not float.
         ctx.strokeStyle=T.dark;ctx.lineWidth=8;ctx.lineCap='round';

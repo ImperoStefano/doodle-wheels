@@ -567,3 +567,25 @@ Il test stampa PASS/FAIL per ogni scenario; se Matter.js non è disponibile fall
 ### Sviluppo/pubblicazione
 
 Il gioco è statico e pronto da caricare su GitHub Pages: mantenere `index.html` nella root con `style.css`, cartelle `js/`, `img/`, `audio/`. PeerJS, Matter.js e poly-decomp vengono caricati dai CDN indicati in `index.html`, perciò serve una connessione internet per una gara online. Per scegliere temporaneamente un mondo: aggiungere `?testWorld=paradise` (oppure `inferno`, `atlantis`, `enchanted`, `neon`) al link che apre l'host.
+
+
+## Collaudo fisico Matter.js (V25.1 QA)
+
+Dopo la pubblicazione su GitHub Pages apri `https://TUO-UTENTE.github.io/doodle-wheels/test-fisica.html` e premi **Avvia test Matter.js**. La pagina carica il motore Matter.js 0.19.0 e gli stessi file JS del gioco, quindi verifica con il motore reale tre geometrie di ruote (tonda, quadrata, irregolare) su massa mobile saltabile, pedana basculante e trampolino; prova anche due bici sullo stesso trampolino. Puoi copiare il rapporto diagnostico. Questa pagina non verifica la rete PeerJS né costituisce una prova di tutte le piste possibili.
+
+In assenza di connessione alla libreria, mostra un errore senza inventare esiti. I test locali di logica sono eseguibili con `node tests/obstacle-logic-regression.js` (adattatore minimo, **non** Matter.js); quelli di generazione con `node tests/generation-v25.js`. Il file `tests/matter-collision-race.js` è la versione per Node con il vero motore e richiede `npm install --no-save matter-js@0.19.0`.
+
+### Correzione V25.1
+
+Risolto un bug sul cooldown dei trampolini e delle masse: l'istante 0 della simulazione non viene più erroneamente trattato come un valore mancante (`??` invece di `||`). Corretto anche il test di logica precedente, che controllava l'impulso prima di `afterStep` e cercava una pedana `drop` già rimossa.
+
+
+## V25.2 — ostacoli ancorati al terreno e controllo visivo (12/11/2026)
+
+- Corretto **bug comune al rendering** degli ostacoli dinamici: il loro stato fisico usa un terreno a quota 520, mentre la telecamera mobile può disegnare il terreno a qualsiasi altezza. Ora `DynamicObstacles.draw()` trasla tutti i corpi in base a `groundY-520`, come fa già il sistema degli ostacoli interattivi. È una correzione importante soprattutto su smartphone e con la camera verticale.
+- `ashdrum`, `hayroll`, `bigroller` e `roller` calcolano la quota della ruota alla propria **x corrente**, non alla x di spawn. `sunwheel` e `waterwheel` ora poggiano sul terreno, senza distacchi di 12/6 px.
+- Migliorata la **leggibilità degli appoggi**: la pedana basculante (inclusa la bilancia del Paradiso) disegna il fulcro alla posizione fisica effettiva ricevuta dall'host e due gambe con piedi ancorati alle rispettive quote del terreno; le leve in legno hanno a loro volta cavalletti con piedi indipendenti. Il telaio di supporto è grafico e non introduce collider aggiuntivi.
+- Effetto di contatto sul terreno della ruota magmatica.
+- `preview-ancoraggi.html`: galleria visiva che esercita direttamente i moduli Canvas su fondo inclinato a due diverse quote schermo.
+- `tests/grounding-geometry.js`: collaudo matematico sull'aderenza al terreno.
+- **Collaudo Matter.js reale**: pubblicare anche `test-fisica.html` e aprire `https://<utente>.github.io/<repo>/test-fisica.html`. La pagina esegue 10 scenari Matter.js con ruote tonde, quadrate, irregolari, pedane, masse e trampolini. Il test fisico **non è stato eseguibile offline qui** per indisponibilità della libreria 0.19.0: i controlli geometrici e visivi non devono essere confusi con esso.
