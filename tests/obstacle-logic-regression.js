@@ -25,9 +25,11 @@ c.Terrain.INTERACTIVE_OBSTACLES=[
 ];
 const w={bodies:[]};I.mount(w);assert.equal(I.hostBodies.length,4);
 const [spring,tilt,boulder,clam]=I.hostBodies;
-assert.equal(spring.width,170);assert.equal(spring.position.y-spring.height/2,480);
+assert.equal(spring.width,170);assert.equal(spring.position.y-spring.height/2,489);
 assert(w.bodies.some(o=>o.pointA&&o.pointA.x===1700),'tilt has real pivot');
-assert(w.bodies.filter(o=>o.label==='interactive-spring-ramp').length===2,'spring has entry ramps');cases+=4;
+assert(w.bodies.filter(o=>o.label==='interactive-spring-ramp').length===2,'spring has entry ramps');
+assert(w.bodies.filter(o=>o.label==='interactive-tilt-ramp').length===2,'tilt has entry ramps');
+cases+=5;
 function rider(x){const fw={label:'wheel',position:{x,y:447},velocity:{x:4,y:3}},rw={label:'wheel',position:{x:x-65,y:447},velocity:{x:4,y:3}},chassis={label:'chassis',position:{x,y:427},velocity:{x:4,y:2}};return {fw,rw,chassis,finished:false};}
 const a=rider(835),b=rider(831);I.beforeStep(0,[a,b]);
 I.contact(spring,a.fw,0);I.contact(spring,b.fw,0);I.afterStep(0,[a,b]);

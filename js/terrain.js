@@ -761,14 +761,15 @@ const Terrain = (() => {
         const x=Math.round(z.start+z.len*f);
         if(x<z.start+350||x>z.end-350||x<1400||x>FINISH_X-650)continue;
         if(special&&(x<WORLD_SEGMENT.start+180||x>WORLD_SEGMENT.end-180))continue;
-        if(z.gap&&x>z.gap.g0-(world==='atlantis'?272:280)&&x<z.gap.g1+(world==='atlantis'?272:280))continue;
-        if((z.patches||[]).some(p=>x>p.a-260&&x<p.b+260))continue;
-        if(BRIDGES.some(b=>x>b.start-(special?190:250)&&x<b.end+(special?190:250)))continue;
-        if(events.some(e=>e.x!==undefined&&Math.abs(e.x-x)<(world==='atlantis'?150:special?170:205)))continue;
-        if(DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-x)<(world==='atlantis'?235:special?265:330)))continue;
+        if(z.gap&&x>z.gap.g0-(kind==='tilt'?380:world==='atlantis'?272:280)&&x<z.gap.g1+(kind==='tilt'?380:world==='atlantis'?272:280))continue;
+        if((z.patches||[]).some(p=>x>p.a-(kind==='tilt'?375:260)&&x<p.b+(kind==='tilt'?375:260)))continue;
+        if(BRIDGES.some(b=>x>b.start-(kind==='tilt'?375:kind==='spring'?270:special?190:250)&&x<b.end+(kind==='tilt'?375:kind==='spring'?270:special?190:250)))continue;
+        if(events.some(e=>e.x!==undefined&&Math.abs(e.x-x)<(kind==='tilt'?395:kind==='spring'?315:world==='atlantis'?150:special?170:205)))continue;
+        if(DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-x)<(kind==='tilt'?460:kind==='spring'?390:world==='atlantis'?235:special?265:330)))continue;
         if(INTERACTIVE_OBSTACLES.some(o=>Math.abs(o.x-x)<(special?610:720)))continue;
-        const hs=[-170,-100,-40,0,40,100,170].map(d=>height(x+d));
-        if(Math.max(...hs)-Math.min(...hs)>(special?44:38))continue;
+        const extent=kind==='tilt'?290:kind==='spring'?210:170;
+        const hs=[-extent,-extent*.6,-40,0,40,extent*.6,extent].map(d=>height(x+d));
+        if(Math.max(...hs)-Math.min(...hs)>(kind==='tilt'?45:special?44:38))continue;
         if(Math.abs(height(x+55)-height(x-55))>(special?21:18))continue;
         selected=x;break;
       }
@@ -777,16 +778,29 @@ const Terrain = (() => {
         biome:world,zone:z.key});
       if(special)specials++;
     }
+    // A fallback is NEVER allowed to bypass the same collision/terrain safeguards.
+    // Previous versions forced a trampoline onto a steep or broken hillside if
+    // the normal placement search found nothing; in-game it looked suspended.
     if (WORLD_SEGMENT && specials === 0) {
-      const zone = ZONES[Math.min(WORLD_SEGMENT.firstZone + 1, WORLD_SEGMENT.lastZone)] || ZONES[WORLD_SEGMENT.firstZone];
-      if (zone) {
-        const world = WORLD_SEGMENT.world;
-        const fallbackX = Math.round(Math.max(zone.start + 240, Math.min(zone.end - 240, (zone.start + zone.end) * 0.5)));
-        const kind = ({inferno:'shard',paradise:'spring',atlantis:'clam',enchanted:'bud',neon:'servo'})[world] || 'tilt';
-        const safe = !(zone.patches||[]).some(p=>fallbackX>p.a-260&&fallbackX<p.b+260) && !INTERACTIVE_OBSTACLES.some(o=>Math.abs(o.x-fallbackX)<560) && !DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-fallbackX)<340) && !(zone.gap&&fallbackX>zone.gap.g0-280&&fallbackX<zone.gap.g1+280);
-        if (safe) {
-          INTERACTIVE_OBSTACLES.push({id:INTERACTIVE_OBSTACLES.length,x:fallbackX,kind,biome:world,zone:zone.key});
-          specials++;
+      const world=WORLD_SEGMENT.world;
+      const kind=({inferno:'shard',paradise:'spring',atlantis:'clam',enchanted:'bud',neon:'servo'})[world]||'tilt';
+      const searchZones=ZONES.filter(z=>z.key!=='start'&&z.key!=='finish'&&z.end>WORLD_SEGMENT.start&&z.start<WORLD_SEGMENT.end);
+      fallback: for(const zone of searchZones){
+        for(const f of [0.50,0.27,0.73,0.39,0.61]){
+          const x=Math.round(zone.start+zone.len*f);
+          if(x<zone.start+350||x>zone.end-350||x<WORLD_SEGMENT.start+290||x>WORLD_SEGMENT.end-290)continue;
+          if(zone.gap&&x>zone.gap.g0-300&&x<zone.gap.g1+300)continue;
+          if((zone.patches||[]).some(p=>x>p.a-290&&x<p.b+290))continue;
+          if(BRIDGES.some(b=>x>b.start-290&&x<b.end+290))continue;
+          if(events.some(e=>e.x!==undefined&&Math.abs(e.x-x)<270))continue;
+          if(DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-x)<390))continue;
+          if(INTERACTIVE_OBSTACLES.some(o=>Math.abs(o.x-x)<610))continue;
+          const extent=kind==='spring'?210:170;
+          const hs=[-extent,-extent*.6,-40,0,40,extent*.6,extent].map(d=>height(x+d));
+          if(Math.max(...hs)-Math.min(...hs)>42)continue;
+          if(Math.abs(height(x+55)-height(x-55))>19)continue;
+          INTERACTIVE_OBSTACLES.push({id:INTERACTIVE_OBSTACLES.length,x,kind,biome:world,zone:zone.key});
+          specials++;break fallback;
         }
       }
     }

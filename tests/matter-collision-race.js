@@ -16,6 +16,8 @@ const shapes={
   quadrata:[{x:-31,y:-31},{x:31,y:-31},{x:31,y:31},{x:-31,y:31}],
   irregolare:[{x:39,y:0},{x:28,y:31},{x:1,y:38},{x:-31,y:25},{x:-38,y:-2},{x:-20,y:-37},{x:16,y:-37}]
 };
+// Use the REAL 80px wheel radius of Draw.getNormalizedVertices(), not test-only 40px wheels.
+for(const vertices of Object.values(shapes)){const r=Math.max(...vertices.map(p=>Math.hypot(p.x,p.y))); for(const p of vertices){p.x*=80/r;p.y*=80/r;}}
 let pass=0,fail=0;const results=[];
 function scenario(shape,kind,withJump){
   let clock=0;
@@ -30,7 +32,7 @@ function scenario(shape,kind,withJump){
   Terrain.FLOWERS.length=0;
   Terrain.DYNAMIC_OBSTACLES.length=0;
   Terrain.INTERACTIVE_OBSTACLES.splice(0,Terrain.INTERACTIVE_OBSTACLES.length,
-    {id:0,x,kind,biome:'classic',zone:'start'});
+    ...(kind==='none'?[]:[{id:0,x,kind,biome:'classic',zone:'start'}]));
   Sim.init();
   Sim.addRacer('r',shapes[shape],'#004466','QA racer',0);
   Sim.start();
@@ -38,7 +40,7 @@ function scenario(shape,kind,withJump){
   for(let k=0;k<2400;k++){
     clock+=EPOCH;
     const before=Sim.snapshot()[0];
-    if(withJump&&!jumped&&clock>400&&before.x>=x-210){jumped=Sim.jump('r')===true;}
+    if(withJump&&!jumped&&clock>400&&before.fwX>=x-265){jumped=Sim.jump('r')===true;}
     Sim.tick(EPOCH);
     const racer=Sim.snapshot()[0];
     if(!racer)throw Error('racer disappeared');
@@ -51,8 +53,10 @@ function scenario(shape,kind,withJump){
     if(racer.x>maxX+5){stall=0;maxX=racer.x;} else stall++;
     if(racer.x>x+330)break;
   }
-  const result={shape,kind,jumped,seenSpring,angleMax:+angleMax.toFixed(3),x:+lastX.toFixed(1),teleports,advanced:lastX>x+330};
+  const diag=Sim.diagnostics?.()[0]||{};
+  const result={shape,kind,jumped,seenSpring,angleMax:+angleMax.toFixed(3),x:+lastX.toFixed(1),teleports,antiStall:diag.hops||0,antiStallX:diag.lastUnstickX??null,advanced:lastX>x+330};
   assert(result.advanced,`Bike failed to pass ${kind}: ${JSON.stringify(result)}`);
+  assert(result.antiStall===0,`Anti-stall rescue required: ${JSON.stringify(result)}`);
   assert(teleports===0,`Unexpected large displacement: ${JSON.stringify(result)}`);
   if(kind==='spring')assert(seenSpring,`No spring collision detected: ${JSON.stringify(result)}`);
   if(withJump)assert(jumped,`Manual jump did not register: ${JSON.stringify(result)}`);
@@ -80,11 +84,13 @@ function concurrentSpring(){
     sample=all;if(all.length===2&&all.every(r=>r.x>1150))break;
   }
   assert(hit,'Spring never triggered during two-bike simultaneous test');
+  assert(S.diagnostics().every(d=>d.springHits>0),'Both bikes must receive their OWN spring impulse');
   assert(sample.length===2&&sample.every(r=>r.x>1150),'One of the two bikes was blocked by repeated contact');
+  assert(S.diagnostics().every(d=>d.hops===0),'One or more bikes needed anti-stall on the spring');
   return {status:'PASS',case:'two bikes / same spring',observedPeak:peak};
 }
 
-for(const shape of Object.keys(shapes))for(const kind of ['boulder','tilt','spring']){
+for(const shape of Object.keys(shapes))for(const kind of ['none','boulder','tilt','spring']){
   try{const result=scenario(shape,kind,kind==='boulder');results.push({status:'PASS',...result});pass++;}
   catch(e){results.push({status:'FAIL',shape,kind,error:e.message});fail++;}
 }

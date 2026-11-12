@@ -688,6 +688,8 @@ const Sim = (() => {
       Matter.Body.setAngularVelocity(b, 0);
     }
     r.hops++;
+    r.lastUnstickX = r.chassis.position.x - dist;
+    r.lastUnstickAt = performance.now() - startedAt;
     r.stallStreak++;
     r.bestX = cx * (r.dir || 1);   // new baseline: only real driving from here counts as progress (in coordinate di avanzamento: dir·x)
     r.hopBaseX = cx * (r.dir || 1);
@@ -1401,6 +1403,13 @@ const Sim = (() => {
 
   return {
     init, addRacer, updateRacerWheel, drainMelts, meltBase, meltVertices, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
+    // Local QA diagnostics only. Never added to network snapshots.
+    diagnostics: () => racerOrder.map(r => ({
+      id: Object.keys(racers).find(k=>racers[k]===r),
+      hops:r.hops||0, rampRescues:r.rampRescues||0, springHits:r.springHits||0,
+      lastUnstickX:r.lastUnstickX??null,
+      lastUnstickAt:r.lastUnstickAt??null
+    })),
     snapshot, jump, sprint, allFinished, isTimedOut, standings, GROUND_Y, getElapsed: () => running ? performance.now() - startedAt : 0, getObstacleTime: () => obstacleClockMs, getInteractiveState: () => InteractiveObstacles.snapshot(), obstacleSnapshot:()=>DynamicObstacles.snapshot(), usedPortals: () => Object.keys(portalUsed).map(Number),
     get FINISH_X() { return Terrain.FINISH_X; },
     // ms rimasti agli altri dopo che il primo ha tagliato il traguardo (null = nessuno è arrivato)

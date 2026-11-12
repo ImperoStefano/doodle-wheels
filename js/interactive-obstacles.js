@@ -6,7 +6,8 @@ const InteractiveObstacles = (() => {
   'use strict';
   const TAU=Math.PI*2, GY=520;
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-  const SIZES={boulder:{r:30,rx:66},tilt:{w:282,h:22},spring:{w:170,h:20},shard:{w:114,h:54},clam:{w:148,h:40},bud:{w:114,h:54},servo:{w:125,h:52}};
+  const SPRING_RAMP_RUN=115, TILT_RAMP_RUN=145;
+  const SIZES={boulder:{r:30,rx:78},tilt:{w:282,h:22},spring:{w:170,h:20},shard:{w:114,h:54},clam:{w:148,h:40},bud:{w:114,h:54},servo:{w:125,h:52}};
   const THEMES={
     classic:{dark:'#514539',mid:'#9a7750',light:'#f4d7a0',edge:'#5d4036',metal:'#e2b15d',glow:'#fff1bb'},
     paradise:{dark:'#5e7999',mid:'#d4bb82',light:'#fff7db',edge:'#8d6e9b',metal:'#e5bc64',glow:'#fff6cf'},
@@ -18,19 +19,19 @@ const InteractiveObstacles = (() => {
   let host=[], remote=new Map(), drawAt=0, activeRacers=[], pendingSprings=[],pendingVaults=[];
   const placements=()=>Terrain.INTERACTIVE_OBSTACLES||[];
   const ground=(x)=>GY-Terrain.height(x);
-  const basePose=(o)=>({x:o.x,y:ground(o.x)-({boulder:30,tilt:39,spring:30,shard:28,clam:26,bud:29,servo:29}[o.kind]||25),a:0,s:0});
+  const basePose=(o)=>({x:o.x,y:ground(o.x)-({boulder:30,tilt:20,spring:21,shard:28,clam:26,bud:29,servo:29}[o.kind]||25),a:0,s:0});
   const nearby=(rs,x,r=230)=>Boolean(rs&&rs.some(q=>q&&!q.finished&&q.chassis&&Math.abs(q.chassis.position.x-x)<r));
   function mount(world){
     host=[];activeRacers=[];pendingSprings=[];pendingVaults=[];remote=new Map();drawAt=0;
     for(const config of placements()){
       const p=basePose(config); let body, joint=null;
       if(config.kind==='boulder'){
-        body=Matter.Bodies.circle(p.x,p.y,SIZES.boulder.r,{label:'interactive-boulder',density:.00095,friction:.63,frictionStatic:.65,frictionAir:.024,restitution:.13,slop:.02},32);
-        // Large horizontal seed/bale/pearl, but only 60px high: JUMP_V=16 can clear it.
+        body=Matter.Bodies.circle(p.x,p.y,SIZES.boulder.r,{label:'interactive-boulder',density:.00068,friction:.47,frictionStatic:.48,frictionAir:.020,restitution:.20,slop:.02},32);
+        // Broad oval, 156x60, with rounded edges. Actual game tyres have radius 80.
         // Physics ellipse = art ellipse. No invisible cylinder with the wrong silhouette.
         Matter.Body.scale(body,SIZES.boulder.rx/SIZES.boulder.r,1);
       }else if(config.kind==='tilt'){
-        body=Matter.Bodies.rectangle(p.x,p.y,SIZES.tilt.w,SIZES.tilt.h,{label:'interactive-tilt',density:.0014,friction:.83,frictionStatic:.86,frictionAir:.12,restitution:.06,slop:.02});
+        body=Matter.Bodies.rectangle(p.x,p.y,SIZES.tilt.w,SIZES.tilt.h,{label:'interactive-tilt',density:.00135,friction:.74,frictionStatic:.77,frictionAir:.12,restitution:.08,slop:.02});
         joint=Matter.Constraint.create({pointA:{x:p.x,y:p.y},bodyB:body,pointB:{x:0,y:0},length:0,stiffness:.96,damping:.31,render:{visible:false}});
       }else if(['shard','clam','bud','servo'].includes(config.kind)){
         // V24 replaces the disliked sinking 'drop' deck with compact, ground-rooted
@@ -50,21 +51,27 @@ const InteractiveObstacles = (() => {
       const entry={config,body,joint,original:p,phase:'idle',phaseAt:0,lastTriggerAt:-1e7,reactivations:new WeakMap(),resetAt:-1,ramps:[]};
       host.push(entry);
       Matter.World.add(world,joint?[body,joint]:[body]);
-      if(config.kind==='spring'){
-        // Two REAL beveled entry ramps, sharing the bed top surface.
-        // Without them the slab is a high vertical step: racers hit its SIDE,
-        // receive no bounce, and the art looks like a fake trampoline.
-        const W=SIZES.spring.w, top=p.y-SIZES.spring.h/2, run=70;
+      if(config.kind==='spring'||config.kind==='tilt'){
+        // Both decks MUST be accessible from the road. In V25.2 the tilt
+        // presented a 50px vertical wall; the spring ramp rose 36px in 70px.
+        // Tires naturally jammed before reaching the actual contact surface.
+        // These ramps are real Matter bodies and exactly match the drawn edges.
+        const isSpring=config.kind==='spring', W=isSpring?SIZES.spring.w:SIZES.tilt.w;
+        const H=isSpring?SIZES.spring.h:SIZES.tilt.h;
+        const run=isSpring?SPRING_RAMP_RUN:TILT_RAMP_RUN;
+        const top=p.y-H/2;
         for(const side of [-1,1]){
           const edge=config.x+side*W/2, foot=config.x+side*(W/2+run);
-          const yFoot=ground(foot)-4, yTop=top;
-          const ax=side===-1?foot:edge, ay=side===-1?yFoot:yTop;
-          const bx=side===-1?edge:foot, by=side===-1?yTop:yFoot;
-          const w=Math.hypot(bx-ax,by-ay), angle=Math.atan2(by-ay,bx-ax);
-          const ramp=Matter.Bodies.rectangle((ax+bx)/2,(ay+by)/2+4,w,8,{
-            isStatic:true,angle,label:'interactive-spring-ramp',friction:.77,frictionStatic:.79,restitution:.06,slop:.02
+          const footY=ground(foot)-3;
+          const ax=side===-1?foot:edge, ay=side===-1?footY:top;
+          const bx=side===-1?edge:foot, by=side===-1?top:footY;
+          const len=Math.hypot(bx-ax,by-ay);
+          const ramp=Matter.Bodies.rectangle((ax+bx)/2,(ay+by)/2+3,len,6,{
+            isStatic:true,angle:Math.atan2(by-ay,bx-ax),
+            label:'interactive-'+config.kind+'-ramp',
+            friction:.76,frictionStatic:.78,restitution:.055,slop:.02
           });
-          ramp.friction=.77;ramp.restitution=.06;
+          ramp.friction=.76;ramp.restitution=.055;
           entry.ramps.push(ramp);Matter.World.add(world,ramp);
         }
       }
@@ -105,9 +112,9 @@ const InteractiveObstacles = (() => {
     for(const entry of host){
       const b=entry.body, home=entry.original;
       if(entry.config.kind==='tilt'){
-        const a=clamp(b.angle,-.22,.22);
+        const a=clamp(b.angle,-.11,.11);
         if(a!==b.angle){Matter.Body.setAngle(b,a);Matter.Body.setAngularVelocity(b,0);}
-        Matter.Body.setAngularVelocity(b,clamp((b.angularVelocity-a*.013)*.953,-.038,.038));
+        Matter.Body.setAngularVelocity(b,clamp((b.angularVelocity-a*.012)*.94,-.028,.028));
       }else if(['shard','clam','bud','servo'].includes(entry.config.kind)){
         const type=entry.config.kind,t=nowMs/1000;
         // Slow, clearly telegraphed movement and conservative heights.
@@ -130,7 +137,7 @@ const InteractiveObstacles = (() => {
       if(at-(entry.reactivations.get(racer)??-1e7)<1200)continue;
       entry.reactivations.set(racer,at);
       entry.phase='react';entry.phaseAt=nowMs;
-      const push=({paradise:8.3,inferno:5.5,atlantis:7.5,enchanted:8.0,neon:7.0,classic:6.6})[entry.config.biome]||6.6;
+      const push=({paradise:9.4,inferno:6.6,atlantis:8.1,enchanted:9.0,neon:8.2,classic:7.5})[entry.config.biome]||6.6;
       for(const body of [racer.chassis,racer.fw,racer.rw])if(body){
         Matter.Body.setVelocity(body,{x:Math.max(body.velocity.x,3.7),y:Math.min(body.velocity.y,-push)});
       }
@@ -142,11 +149,12 @@ const InteractiveObstacles = (() => {
       if(at-(entry.reactivations.get(racer)??-1e7)<850)continue;
       entry.reactivations.set(racer,at);
       entry.phase='spring';entry.phaseAt=nowMs;
+      racer.springHits=(racer.springHits||0)+1;
       for(const body of [racer.chassis,racer.fw,racer.rw]){
         if(!body)continue;
         Matter.Body.setVelocity(body,{
           x:body.velocity.x+Math.min(.8,Math.max(.1,body.velocity.x*.055)),
-          y:Math.min(body.velocity.y,-12.2)
+          y:Math.min(body.velocity.y,-20.2)
         });
       }
     }
@@ -428,6 +436,21 @@ const InteractiveObstacles = (() => {
     if(flash){c.fillStyle='rgba(255,255,255,'+flash+')';rounded(c,-W/2+6,-H/2+3,W-12,H-6,5);c.fill();}
     c.fillStyle=T.metal;for(const x of [-W*.43,W*.43]){c.beginPath();c.arc(x,H*.10,3,0,TAU);c.fill();}
   }
+  function drawApproach(ctx,o,p,theme,kind){
+    const isSpring=kind==='spring', half=(isSpring?SIZES.spring.w:SIZES.tilt.w)/2;
+    const run=isSpring?SPRING_RAMP_RUN:TILT_RAMP_RUN;
+    const top=p.y-(isSpring?SIZES.spring.h:SIZES.tilt.h)/2;
+    for(const side of [-1,1]){
+      const edge=o.x+side*half, foot=o.x+side*(half+run);
+      const fy=ground(foot)-3;
+      ctx.lineCap='round';ctx.strokeStyle=theme.dark;ctx.lineWidth=10;
+      line(ctx,[foot,fy,edge,top]);
+      ctx.strokeStyle=theme.metal;ctx.lineWidth=5;
+      line(ctx,[foot,fy,edge,top]);
+      ctx.strokeStyle=theme.light;ctx.lineWidth=2;
+      line(ctx,[foot,fy-3,edge,top-3]);
+    }
+  }
   function draw(ctx,camX,viewW,groundY,remoteMode,demoMs,overrideItems){
     const configs=overrideItems||placements();if(!configs.length)return;
     const byId=remoteMode?null:new Map(host.map(e=>[e.config.id,e]));
@@ -454,7 +477,7 @@ const InteractiveObstacles = (() => {
       // Fixed shadow follows the *physical* envelope. No dotted warning/!.
       ctx.fillStyle=o.biome==='paradise'?'rgba(80,111,151,.17)':'rgba(20,25,41,.24)';
       ctx.beginPath();ctx.ellipse(p.x,groundYLocal+4,o.kind==='tilt'?136:o.kind==='spring'?76:o.kind==='boulder'?65:77,7,0,0,TAU);ctx.fill();
-      if(o.kind==='tilt')pedestal(ctx,o,groundYLocal,T,p);
+      if(o.kind==='tilt'){pedestal(ctx,o,groundYLocal,T,p);drawApproach(ctx,o,p,T,'tilt');}
       if(['shard','clam','bud','servo'].includes(o.kind)){
         // Fixed in-world anchor: even when the obstacle moves it does not float.
         ctx.strokeStyle=T.dark;ctx.lineWidth=8;ctx.lineCap='round';
@@ -471,17 +494,8 @@ const InteractiveObstacles = (() => {
         }
       }
       if(o.kind==='spring'){
-        // Visually identical approach ramps to the real 8px solid bodies.
-        const half=SIZES.spring.w/2, top=p.y-SIZES.spring.h/2;
-        for(const side of [-1,1]){
-          const edge=o.x+side*half,foot=o.x+side*(half+70),fy=ground(foot)-4;
-          ctx.strokeStyle=T.dark;ctx.lineWidth=12;
-          line(ctx,[foot,fy,edge,top]);
-          ctx.strokeStyle=T.metal;ctx.lineWidth=5;
-          line(ctx,[foot,fy,edge,top]);
-          ctx.strokeStyle=T.light;ctx.lineWidth=2;
-          line(ctx,[foot,fy-3,edge,top-3]);
-        }
+        // The visible lead-ins coincide with the actual six-pixel physics bodies.
+        drawApproach(ctx,o,p,T,'spring');
         // Exposed elastic mechanism beneath the physically collidable bed.
         // Draw the coils between y=ground and y=p.y+H/2: no fake extra collider.
         const bottom=p.y+SIZES.spring.h/2, gap=Math.max(0,groundYLocal-bottom);

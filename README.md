@@ -589,3 +589,26 @@ Risolto un bug sul cooldown dei trampolini e delle masse: l'istante 0 della simu
 - `preview-ancoraggi.html`: galleria visiva che esercita direttamente i moduli Canvas su fondo inclinato a due diverse quote schermo.
 - `tests/grounding-geometry.js`: collaudo matematico sull'aderenza al terreno.
 - **Collaudo Matter.js reale**: pubblicare anche `test-fisica.html` e aprire `https://<utente>.github.io/<repo>/test-fisica.html`. La pagina esegue 10 scenari Matter.js con ruote tonde, quadrate, irregolari, pedane, masse e trampolini. Il test fisico **non è stato eseguibile offline qui** per indisponibilità della libreria 0.19.0: i controlli geometrici e visivi non devono essere confusi con esso.
+
+## V25.3 — correzione del collaudo Matter.js e accessi agli ostacoli (12/11/2026)
+
+In seguito al rapporto QA V25.2 (1/10 PASS; nove spostamenti esatti di 90/180 px) è stata esaminata **la causa dei risultati**, non soltanto il contatore dei test.
+
+**Problema del test precedente:** `test-fisica.html` creava ruote di **raggio 40**, mentre nel gioco `Draw.getNormalizedVertices()` usa **raggio 80**. Per la massa, inoltre, il test attivava il salto solo quando la ruota anteriore era già troppo vicina. Pertanto **il precedente 1/10 non misura in modo attendibile la fisica delle bici reali**. I salti di 90/180 px sono coerenti con l'anti-blocco `unstick()` di `js/physics.js`, non necessariamente con un'esplosione numerica del motore.
+
+**Interventi nel gioco:**
+- `js/interactive-obstacles.js`: rampe di accesso fisiche **anche per le bilance basculanti** (prima il loro bordo era un gradino di ~50px). La piattaforma ora parte più vicina al suolo e limita l'angolo a ±0,11 rad. I due ingressi sono disegnati esattamente dove si trovano i collider reali.
+- Trampolini: rampe fisiche più lunghe, quota della piattaforma ridotta e impulso verticale aumentato (velocità target **−20,2 px per tick** al posto di −12,2), per un salto visibile e utilizzabile.
+- Masse mobili: profilo largo e basso **156×60**, con attrito più contenuto e movimento libero; nessun teletrasporto durante un urto. Restano diverse graficamente fra i biomi.
+- Generazione: margini di sicurezza ampliati per l'intero ingombro delle rampe. Il *fallback* del mondo speciale non può più ignorare le verifiche di pendenza, vuoti o vicinanza ad altri ostacoli; se non c'è un punto sicuro, non forza un ostacolo mal posizionato.
+
+**Interventi nel test reale:**
+- `test-fisica.html` usa le stesse forme **normalizzate a raggio 80** del gioco.
+- Il test di salto ora parte con anticipo sufficiente rispetto alla ruota anteriore.
+- **13 scenari**: tre piste senza ostacoli per verificare la locomozione di base, nove forme × ostacoli e uno con due giocatori sul trampolino.
+- Il rapporto distingue i recuperi anti-blocco dalla normale progressione e riporta **posizione e tempo dell'ultimo recupero**; ogni recupero fa fallire il test.
+- Due ciclisti sullo stesso trampolino devono ora ricevere **entrambi** un impulso, non soltanto raggiungere la fine della pista.
+
+**Controlli eseguiti qui:** sintassi JavaScript, regressioni logiche (355 asserzioni; adattatore, **non Matter.js**), geometria su 600 piste con 13.000+ pose, generazione su 1.080 piste (2.474 oggetti controllati, nessuna sovrapposizione rilevata), ingressi e distanze su altre 720 piste (569 rampe d'accesso, nessuna violazione rilevata), caricamento della pagina QA in Chromium (nessun errore JS). **Non è stato possibile eseguire fisica Matter.js 0.19.0 in questo ambiente** per indisponibilità della libreria: i nuovi 13 esiti richiedono ancora il test online. Nessuno di questi controlli statici implica automaticamente che tutti i 13 scenari fisici passeranno.
+
+**Da provare dopo la pubblicazione:** `https://imperostefano.github.io/doodle-wheels/test-fisica.html`. Premi *Avvia test Matter.js*, poi *Copia rapporto*. Non dichiarare la correzione completa finché non hai un rapporto reale.
