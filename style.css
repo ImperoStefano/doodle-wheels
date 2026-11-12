@@ -707,3 +707,15 @@ input[type="text"]:focus { border-color: var(--teal); }
   .emote-toggle { width: 52px; min-width: 52px; height: 52px; min-height: 52px; }
   .emote-toggle img { width: 45px; height: 45px; }
 }
+
+/* V17 · reconnect feedback is independent of the camera and HUD. */
+.connection-status[hidden] { display:none!important; }
+.connection-status {
+  position:fixed;z-index:4000;left:50%;top:calc(10px + env(safe-area-inset-top,0px));
+  transform:translateX(-50%);width:max-content;max-width:calc(100vw - 24px);
+  background:#fff9e7;color:#264553;border:2px solid #234452;border-radius:999px;
+  padding:10px 16px;box-shadow:0 4px 0 rgba(36,68,82,.23);
+  text-align:center;font:700 13px/1.25 'Space Grotesk',system-ui,sans-serif;
+  pointer-events:none;
+}
+@media(max-height:450px){.connection-status{font-size:11px;padding:6px 12px;top:calc(5px + env(safe-area-inset-top,0px))}}

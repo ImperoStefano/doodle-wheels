@@ -821,6 +821,22 @@ const Scenery = (() => {
   function drawWorldEffects(ctx, camX, w, gy, raceTime = 0) {
     const world = S.segment && (camX + w * 0.40 >= S.segment.start - 80) && (camX + w * 0.40 <= S.segment.end + 80) ? S.segment.world : S.world;
     if (world === 'paradise') {
+      // Aureole sospese: ricompensano il salto, il terreno rimane attraversabile.
+      for (const q of Terrain.HALO_RINGS) {
+        const x = q.x - camX; if (x < -95 || x > w + 95) continue;
+        const y = gy - Terrain.height(q.x) - q.rise, pulse = 0.78 + 0.22 * Math.sin(raceTime / 460 + q.id);
+        ctx.save(); ctx.lineCap = 'round'; ctx.shadowColor = '#fff1a1'; ctx.shadowBlur = 9;
+        ctx.strokeStyle = `rgba(255,232,146,${0.75 * pulse})`; ctx.lineWidth = 11;
+        ctx.beginPath(); ctx.ellipse(x, y, 43, 48, -0.1, 0, TAU); ctx.stroke();
+        ctx.shadowBlur = 0; ctx.strokeStyle = '#fffef0'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.ellipse(x, y, 39, 44, -0.1, 0, TAU); ctx.stroke();
+        for (let i = 0; i < 3; i++) {
+          const th = raceTime / 800 + i * TAU / 3 + q.id;
+          const px = x + Math.cos(th) * 43, py = y + Math.sin(th) * 48;
+          ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(px, py, 3.2, 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      }
       for (const q of Terrain.CLOUD_PADS) {
         const x = q.x - camX; if (x < -80 || x > w + 80) continue;
         const y = gy - Terrain.height(q.x) - 2, pulse = 0.85 + 0.15 * Math.sin(raceTime / 240 + q.id);
@@ -840,6 +856,26 @@ const Scenery = (() => {
         ctx.restore();
       }
     } else if (world === 'inferno') {
+      // Le raffiche si annunciano con linee rubino e si manifestano da destra a sinistra.
+      for (const q of Terrain.ASH_GUSTS) {
+        const x = q.x - camX; if (x < -q.width || x > w + q.width) continue;
+        const phase = ((raceTime / 1000 + q.phase) % q.period + q.period) % q.period;
+        const active = phase < q.burst, warning = phase > q.period - q.warning;
+        if (!active && !warning) continue;
+        const y = gy - Terrain.height(q.x) - 25;
+        ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = active ? 3.3 : 2;
+        ctx.strokeStyle = active ? 'rgba(238,111,144,0.73)' : 'rgba(255,184,184,0.60)';
+        const jitter = raceTime * (active ? 0.18 : 0.06);
+        for (let i = 0; i < 4; i++) {
+          const xx = x - q.width * 0.45 + (i * 51 + jitter) % Math.max(60, q.width);
+          const yy = y - 13 - i * 20;
+          ctx.beginPath(); ctx.moveTo(xx + 26, yy);
+          ctx.bezierCurveTo(xx + 6, yy - 10, xx - 15, yy + 8, xx - 33, yy - 3);
+          ctx.stroke();
+        }
+        if (warning) { ctx.fillStyle = '#ffdbbb'; ctx.beginPath(); ctx.moveTo(x, y - 88); ctx.lineTo(x - 8, y - 72); ctx.lineTo(x + 8, y - 72); ctx.closePath(); ctx.fill(); }
+        ctx.restore();
+      }
       for (const q of Terrain.GEYSERS) {
         const x = q.x - camX; if (x < -100 || x > w + 100) continue;
         const phase = ((raceTime / 1000 + q.phase) % q.period + q.period) % q.period;
@@ -858,6 +894,22 @@ const Scenery = (() => {
         ctx.restore();
       }
     } else if (world === 'atlantis') {
+      // Correnti: frecce luminose sul fondo dei canali, chiaramente distinte dai getti.
+      for (const q of Terrain.TIDAL_CURRENTS) {
+        const x = q.x - camX; if (x < -q.width || x > w + q.width) continue;
+        const phase = ((raceTime / 1000 + q.phase) % q.period + q.period) % q.period;
+        const active = phase < q.burst;
+        const y = gy - Terrain.height(q.x) - 16;
+        ctx.save(); ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+        ctx.strokeStyle = active ? 'rgba(143,255,220,0.86)' : 'rgba(110,185,205,0.38)';
+        ctx.globalAlpha = active ? 1 : 0.54;
+        for (let i = 0; i < 3; i++) {
+          const xx = x - 90 + i * 72 + (active ? (raceTime * 0.075) % 35 : 0);
+          ctx.beginPath(); ctx.moveTo(xx - 13, y - 10); ctx.lineTo(xx + 17, y - 10);
+          ctx.lineTo(xx + 10, y - 17); ctx.moveTo(xx + 17, y - 10); ctx.lineTo(xx + 10, y - 3); ctx.stroke();
+        }
+        ctx.restore();
+      }
       for (const q of Terrain.BUBBLE_VENTS) {
         const x = q.x - camX; if (x < -q.width || x > w + q.width) continue;
         const y = gy - Terrain.height(q.x), pulse = 0.65 + 0.35 * Math.sin(raceTime / 430 + q.phase);
@@ -868,6 +920,28 @@ const Scenery = (() => {
         ctx.restore();
       }
     } else if (world === 'enchanted') {
+      // Radici-vite: il profilo disegnato segue le stesse altezze della collisione.
+      for (const q of Terrain.ROOT_RIDGES) {
+        const x = q.x - camX; if (x < -q.width || x > w + q.width) continue;
+        const w2 = q.width * 0.5;
+        ctx.save(); ctx.lineCap = 'round';
+        ctx.strokeStyle = 'rgba(52,106,82,0.95)'; ctx.lineWidth = 10;
+        ctx.beginPath();
+        for (let j = 0; j <= 20; j++) {
+          const xx = q.x - w2 + j * q.width / 20;
+          const yy = gy - Terrain.height(xx) - 1.5;
+          if (j === 0) ctx.moveTo(xx - camX, yy); else ctx.lineTo(xx - camX, yy);
+        }
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(192,250,146,0.78)'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.fillStyle = '#e6ffd5';
+        for (let i = 0; i < 3; i++) {
+          const xx = q.x + (i - 1) * q.width * 0.3, yy = gy - Terrain.height(xx) - 8;
+          const pulse = 2.4 + Math.sin(raceTime / 480 + i * 1.6 + q.id) * 0.8;
+          ctx.beginPath(); ctx.arc(xx - camX, yy, pulse, 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      }
       for (const q of Terrain.CLOUD_PADS) {
         const x = q.x - camX; if (x < -90 || x > w + 90) continue;
         const y = gy - Terrain.height(q.x), pulse = 0.82 + 0.18 * Math.sin(raceTime / 330 + q.id);
@@ -877,6 +951,28 @@ const Scenery = (() => {
         ctx.fillStyle = '#f5e6ff'; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(x + i * 13, y - 32, 3, 0, TAU); ctx.fill(); } ctx.restore();
       }
     } else if (world === 'neon') {
+      // Barriere a impulso: rosso = attiva; giallo = sta per accendersi; ciano = spenta.
+      // L'altezza del laser rende visibile il salto come strategia alternativa.
+      for (const q of Terrain.NEON_GATES) {
+        const x = q.x - camX; if (x < -80 || x > w + 80) continue;
+        const y = gy - Terrain.height(q.x);
+        const phase = ((raceTime / 1000 + q.phase) % q.period + q.period) % q.period;
+        const active = phase < q.burst, warning = phase > q.period - q.warning;
+        const col = active ? '#ff53ad' : warning ? '#ffd071' : '#63dae8';
+        ctx.save(); ctx.globalAlpha = active ? 0.95 : warning ? 0.72 : 0.32;
+        ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = active ? 15 : 6;
+        ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(x - 36, y - 2); ctx.lineTo(x - 36, y - 91);
+        ctx.quadraticCurveTo(x, y - 116, x + 36, y - 91); ctx.lineTo(x + 36, y - 2); ctx.stroke();
+        if (active) {
+          ctx.lineWidth = 3; ctx.beginPath();
+          for (let i = 0; i < 4; i++) {
+            const yy = y - 15 - i * 18;
+            ctx.moveTo(x - 30, yy); ctx.lineTo(x + 30, yy - 8); 
+          }
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0; ctx.restore();
+      }
       for (const q of Terrain.NEON_BOOSTS) {
         const x = q.x - camX; if (x < -100 || x > w + 100) continue;
         const y = gy - Terrain.height(q.x), pulse = 0.6 + 0.4 * Math.sin(raceTime / 190 + q.id);
@@ -1319,12 +1415,14 @@ const Scenery = (() => {
         ctx.restore();
       }
       drawDedicatedWorldAtmosphere(ctx, S.world, w, h, gy, now);
+      if (typeof WorldArtV19 !== "undefined") WorldArtV19.draw(ctx, S.world, w, h, gy, S.camX, now, quality);
       return;
     }
     // Fallback vettoriale immediato mentre il browser carica l'illustrazione locale.
     if (S.world === 'atlantis') drawAtlantisBackdrop(ctx, w, h, gy, now);
     else if (S.world === 'enchanted') drawEnchantedBackdrop(ctx, w, h, gy, now);
     else drawNeonBackdrop(ctx, w, h, gy, now);
+    if (typeof WorldArtV19 !== "undefined") WorldArtV19.draw(ctx, S.world, w, h, gy, S.camX, now, quality);
   }
 
   function drawDedicatedWorldAtmosphere(ctx, world, w, h, gy, now) {

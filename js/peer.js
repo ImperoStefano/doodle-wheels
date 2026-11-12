@@ -140,6 +140,7 @@ const Net = (() => {
         opened = true; connectedOnce = true; attempts = 0;
         clearTimeout(timer); clearTimeout(retryTimer);
         safeSend(conn, { type: 'join', name, resume: resuming });
+        if (resuming) emit('reconnected');
       });
       conn.on('data', data => { if (!stopped && hostConn === conn) handleData('host', data); });
       conn.on('close', () => {
@@ -155,6 +156,7 @@ const Net = (() => {
     };
     const scheduleRetry = () => {
       if (stopped || retryTimer) return;
+      if (connectedOnce) emit('reconnecting');
       if (++attempts > 5) {
         stopped = true;
         if (connectedOnce) emit('hostLeft');

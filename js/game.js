@@ -155,7 +155,15 @@
   }
 
   Net.on('error', err => showMenuError(err.message || I18n.t('menu.err.net')));
-  Net.on('hostLeft', () => { alert(I18n.t('race.hostleft')); location.reload(); });
+  const connectionStatus = document.getElementById('connection-status');
+  Net.on('reconnecting', () => {
+    if (connectionStatus) {
+      connectionStatus.textContent = I18n.t('net.reconnecting');
+      connectionStatus.hidden = false;
+    }
+  });
+  Net.on('reconnected', () => { if (connectionStatus) connectionStatus.hidden = true; });
+  Net.on('hostLeft', () => { if (connectionStatus) connectionStatus.hidden = true; alert(I18n.t('race.hostleft')); location.reload(); });
   Net.on('roomReady', ({ code }) => { els.roomCode.textContent = code; renderPlayerList(); showScreen('lobby'); refreshInvite(); });
   Net.on('playersChanged', () => {
     renderPlayerList();
@@ -196,6 +204,10 @@
   // Il replay conserva invece la pista e il mondo appena giocati. Le probabilità sommano al 40%: il Classico resta presente nel 60% delle nuove gare.
   const WORLD_CHANCES = { paradise: 0.08, inferno: 0.08, atlantis: 0.08, enchanted: 0.08, neon: 0.08 };
   function drawWorld() {
+    // Modalità collaudo facoltativa (solo per l'host): ?testWorld=atlantis.
+    // Le partite normali conservano esattamente le probabilità originarie.
+    const previewWorld = new URLSearchParams(location.search).get('testWorld');
+    if (Object.prototype.hasOwnProperty.call(WORLD_CHANCES, previewWorld)) return previewWorld;
     const r = Math.random(); let edge = 0;
     for (const [world, chance] of Object.entries(WORLD_CHANCES)) { edge += chance; if (r < edge) return world; }
     return 'classic';
@@ -317,23 +329,22 @@
     if (k) { e.preventDefault(); tryEmote(EMOTE_IDS[Number(k[1])-1]); }
     else if (e.code === 'Escape') closeEmotePicker();
   });
-  // V16: emote grandi e leggibili, espresse in pixel SCHERMO anziché in unità del mondo.
+  // V17: emote grandi, sempre in pixel SCHERMO, con layout anticollisione.
   // In questo gioco lo zoom della camera è circa 0.42–1 sui telefoni: prima le emote
   // si riducevano insieme alle ruote e diventavano minuscole proprio sul mobile.
-  function drawEmoteBubble(id, x, y, color, ts) {
+  function drawEmoteBubble(id, centerX, centerY, color, ts, indicator = null) {
     const e = activeEmotes[id]; if (!e) return;
     const age = ts - e.at;
     if (age >= EMOTE_DURATION || age < 0) { delete activeEmotes[id]; return; }
     const compact = Math.min(cssWv, cssHv) < 520;
     const u = 1 / Math.max(0.28, viewScale); // un pixel CSS nel sistema di coordinate canvas
-    const icon = (compact ? 72 : 84) * u;     // prima: 46 unità mondo (= ~20–46 px)
-    const hw = icon / 2 + 10 * u, hh = icon / 2 + 8 * u;
-    const tail = 12 * u;
-    const drift = Math.min(age / 90, 18) * u;
-    const lift = (compact ? 52 : 83) * u + drift;
-    const dx = Math.max(hw + 3 * u, Math.min(viewW - hw - 3 * u, x));
-    // La punta del fumetto rimane sopra il pilota, senza sparire fuori dallo schermo.
-    const dy = Math.max(hh + 4 * u, y - lift - tail - hh);
+    const offscreen = !!(indicator && indicator.offscreen);
+    const icon = (indicator && indicator.icon || (compact ? 72 : 84)) * u;
+    const hw = icon / 2 + (offscreen ? 8 : 10) * u, hh = icon / 2 + (offscreen ? 7 : 8) * u;
+    const tail = (offscreen ? 7 : 12) * u;
+    // Il layout è calcolato dopo tutte le bici, in coordinate di schermo.
+    // centerX/centerY sono già limitati alla viewport e distanziati tra loro.
+    const dx = centerX, dy = centerY;
     const fadeOut = Math.max(0, Math.min(1, (EMOTE_DURATION - age) / 440));
     const fadeIn = Math.min(1, age / 110);
     const pop = 0.88 + 0.12 * Math.min(1, age / 180);
@@ -373,6 +384,34 @@
       ctx2d.font = `bold ${13 * u}px system-ui,sans-serif`;
       ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
       ctx2d.fillText(EMOTES[e.code], 0, 0);
+    }
+    if (offscreen) {
+      // Indicatore persistente durante l'emote: freccia verso l'avversario e suo nome.
+      // Il badge resta leggibile anche quando la sua bici non è nella telecamera.
+      const side = indicator.side || 'right', left = side === 'left';
+      const name = String(indicator.displayName || indicator.name || 'Giocatore').slice(0, 13);
+      const tagW = Math.min(108, 22 + name.length * 6.3) * u;
+      const tagH = 27 * u;
+      const tagX = left ? hw + 7 * u : -hw - 7 * u - tagW;
+      ctx2d.fillStyle = 'rgba(24,37,55,.91)';
+      ctx2d.strokeStyle = 'rgba(255,255,255,.85)';
+      ctx2d.lineWidth = 1.3 * u;
+      ctx2d.beginPath();
+      ctx2d.roundRect(tagX, -tagH / 2, tagW, tagH, 9 * u);
+      ctx2d.fill(); ctx2d.stroke();
+      ctx2d.font = `bold ${12 * u}px system-ui,sans-serif`;
+      ctx2d.textAlign = 'center'; ctx2d.textBaseline = 'middle';
+      ctx2d.fillStyle = '#ffffff';
+      ctx2d.fillText(name, tagX + tagW / 2, 0, tagW - 12 * u);
+      const ax = side === 'left' ? -hw + 1 * u : side === 'right' ? hw - 1 * u : 0;
+      const ay = side === 'up' ? -hh + 2 * u : side === 'down' ? hh - 2 * u : -hh + 10 * u;
+      ctx2d.fillStyle = color || '#24505e';
+      ctx2d.strokeStyle = 'white'; ctx2d.lineWidth = 2 * u;
+      ctx2d.beginPath(); ctx2d.arc(ax, ay, 13 * u, 0, Math.PI * 2); ctx2d.fill(); ctx2d.stroke();
+      ctx2d.save();ctx2d.translate(ax, ay);
+      ctx2d.rotate(side === 'left' ? Math.PI : side === 'up' ? -Math.PI / 2 : side === 'down' ? Math.PI / 2 : 0);
+      ctx2d.strokeStyle = '#fff';ctx2d.lineWidth = 2.8 * u;ctx2d.lineCap='round';ctx2d.lineJoin='round';
+      ctx2d.beginPath();ctx2d.moveTo(-5*u,-5*u);ctx2d.lineTo(2*u,0);ctx2d.lineTo(-5*u,5*u);ctx2d.stroke();ctx2d.restore();
     }
     ctx2d.restore();
   }
@@ -431,7 +470,7 @@
     if (data.type === 'goToDraw') { champ = data.champ || null; enterDrawPhase(); }
     if (data.type === 'wheel' && Net.isHost && Net.players[from] && validWheelVertices(data.vertices)) receiveWheel(from, data.vertices);
     if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
-    if (data.type === 'snap') { if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); }
+    if (data.type === 'snap') { if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); if (!Net.isHost && Number.isFinite(data.ht) && Number.isFinite(data.ts) && snapOff !== null) { const origin = data.ts + snapOff - data.ht; hazardHostOrigin = hazardHostOrigin === null ? origin : hazardHostOrigin * 0.94 + origin * 0.06; } }
     if (data.type === 'results') showResults(data.standings, data.champ);
     if (data.type === 'lastCall') showLastCall(data.ms);
     if (data.type === 'restartToDraw') { champ = data.champ || null; enterDrawPhase(); }
@@ -537,7 +576,7 @@
   // Durante il conto alla rovescia le bici stanno ferme in griglia (stesse posizioni di partenza
   // della fisica), così si vede già il mondo e chi c'è in gara; il primo snapshot le sostituisce.
   function placeGrid() {
-    latestRacers = {}; snapBuf.length = 0; snapOff = null; lastRemoteSnapTs = -Infinity;
+    latestRacers = {}; snapBuf.length = 0; snapOff = null; lastRemoteSnapTs = -Infinity; hazardHostOrigin = null;
     snapPrevArrival = 0; snapIntervalMean = 50; snapJitter = 0; interpClientMs = INTERP_CLIENT_MS;
     Object.keys(raceMeta).forEach((id, i) => {
       const x = 60, y = Sim.GROUND_Y - Terrain.height(x) - 70;   // stesso punto di partenza per tutti (come nella fisica)
@@ -590,7 +629,7 @@
     snapshotLoopHandle = Ticker.start(() => {
       const now = performance.now(), dt = Math.min(now - last, 100); last = now;
       const pt = Perf.on ? performance.now() : 0; Sim.tick(dt); const snap = Sim.snapshot(), pu = Sim.usedPortals(); syncUsed(pu); applySnapshot(snap); if (Perf.on) Perf.tick(performance.now() - pt);
-      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now, pu }); }
+      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now, ht: Sim.getObstacleTime(), pu }); }
       Sim.drainMelts().forEach(m => { applyMelt(m.id, m.f, m.r); Net.broadcast({ type: 'melt', id: m.id, f: m.f, r: m.r }); });
       // primo traguardo: gli altri hanno un tempo limitato, e lo sanno
       const gl = Sim.graceLeft();
@@ -811,7 +850,11 @@
     const activeWorld = seg && r.x >= seg.start && r.x < seg.end ? seg.world : 'classic';
     if (activeWorld !== aud.world) {
       aud.world = activeWorld;
-      if (activeWorld !== 'classic' && typeof Sfx.biome === 'function') Sfx.biome(activeWorld);
+      if (activeWorld !== 'classic') {
+        if (typeof Sfx.biome === 'function') Sfx.biome(activeWorld);
+        // V18: un'indicazione breve spiega la nuova meccanica senza tutorial invasivi.
+        showNote('world.hint.' + activeWorld, 2900);
+      }
     }
     const dt = aud.t ? Math.max(1, now - aud.t) : 16; aud.t = now;
     const R = wheelR(meta) * (r.sc || 1), gr = Sim.GROUND_Y - Terrain.height(r.rwX) - r.rwY, gf = Sim.GROUND_Y - Terrain.height(r.fwX) - r.fwY;
@@ -1256,6 +1299,7 @@
   // ---- Lentezza: la propria bici va piano per un po' → lampeggia e il pulsante suggerisce di cambiare forma ----
   // px/tick (60 Hz): con il motore al massimo si sta sopra 5; sotto 2.4 si arranca (fango, salita, forma sbagliata). Isteresi per non sfarfallare.
   const SLOW_ON = 2.4, SLOW_OFF = 3.6, SLOW_HOLD_MS = 1500, SLOW_FREE_MS = 12000;   // nei primi 12 s dal VIA mai: all inizio si parte da fermi e non ha senso consigliare un'altra ruota
+  let hazardHostOrigin = null;
   let raceT0 = 0, slowOn = false, slowSince = 0, fastSince = 0, ctrlHintT = 0;
   const jnSeen = {}, jaSeen = {}, lnSeen = {};
   function setSlow(on) {
@@ -1387,6 +1431,10 @@
     if (!inLocalWorld && Terrain.WORLD === 'classic') Props.drawSigns(ctx2d, camX, w, groundY);
     Props.drawFinish(ctx2d, camX, w, groundY, SC);
     Props.drawBridges(ctx2d, camX, w, groundY, SC);
+    // Rendering delle sagome SOLIDE V20, prima dei giocatori (collider host Matter).
+    const obstacleElapsed = Net.isHost ? Sim.getObstacleTime() :
+      Math.max(0, hazardHostOrigin === null ? t0 - raceT0 : t0 - hazardHostOrigin - interpClientMs);
+    DynamicObstacles.draw(ctx2d, camX, w, groundY, obstacleElapsed);
     if (!inLocalWorld && Terrain.WORLD === 'classic') {
       Flora.drawLilies(ctx2d, camX, w, groundY, SC);
       Flora.draw(ctx2d, camX, w, groundY, SC);
@@ -1396,11 +1444,32 @@
     if (trailOn()) { for (const id in latestRacers) trailSample(latestRacers[id]); for (const id in latestRacers) if (raceMeta[id]) drawTrail(ctx2d, camX, groundY, id, raceMeta[id].color); }
     if (Terrain.PORTALS.length) { Props.drawPortals(ctx2d, camX, w, groundY, t0 / 1000, pst, 'back'); drawArrivals(ctx2d, camX, w, groundY, t0, 'back'); }
     // la propria bici per ultima: alla partenza (stesso punto per tutti) resta sopra le altre
+    // In V16 ogni fumetto veniva disegnato durante la propria bici: con cinque
+    // giocatori vicini i fumetti si coprivano. V17 li disegna in un passaggio finale.
+    const emoteAnchors = [];
     Object.entries(latestRacers).sort((a, b) => (a[0] === Net.myId) - (b[0] === Net.myId)).forEach(([id, r]) => {
       const meta = raceMeta[id]; if (!meta) return;
       const cy = (y) => y - Sim.GROUND_Y + groundY, cx = r.x - camX;
       jumpFx(id, r);
       rampLaunchFx(id, r);
+      const active = activeEmotes[id];
+      if (active) {
+        const age = t0 - active.at;
+        if (age >= 0 && age < EMOTE_DURATION) {
+          // Ogni emote ha un'ancora anche se la bici e' molto lontana dal campo visivo.
+          // Specchio: convertiamo le coordinate PRIMA del layout, senza ribaltare PNG e nome.
+          const screenX = (w * 0.5 + mirrorF * (cx - w * 0.5)) * viewScale;
+          const screenY = cy(r.y) * viewScale;
+          const outside = screenX < -85 * viewScale || screenX > cssWv + 85 * viewScale ||
+                          screenY < -90 * viewScale || screenY > cssHv + 90 * viewScale;
+          const side = screenX < 0 ? 'left' : screenX > cssWv ? 'right' :
+                       screenY < 0 ? 'up' : screenY > cssHv ? 'down' : null;
+          emoteAnchors.push({id, x: screenX, y: screenY,
+            drift: Math.min(age / 90, 18), color: meta.color,
+            offscreen: outside, side: outside ? side || (screenX < cssWv / 2 ? 'left' : 'right') : null,
+            name: meta.name});
+        } else delete activeEmotes[id];
+      }
       if (cx < -250 || cx > w + 250) return;
       const blink = slowOn && id === Net.myId; if (blink) { ctx2d.save(); ctx2d.globalAlpha = 0.38 + 0.62 * (0.5 + 0.5 * Math.sin(t0 / 85)); }
       let sc = 1; const ar = arrAt[id];
@@ -1423,8 +1492,6 @@
       if (r.im > 0) drawGlow(ctx2d, cx, cy(r.y), meta.color, r.im, t0, true);
       if (sc !== 1) ctx2d.restore();
       if (blink) ctx2d.restore();
-      drawEmoteBubble(id, cx, cy(r.y), meta.color, t0);
-
       const zk = Terrain.zoneKeyAt(r.x);
       const wet = zk === 'water' && Terrain.isWater(r.x);
       if (r.vx > 1.5 && Terrain.gripAt(r.rwX) === 'sand' && Math.random() > 0.35 && particles.length < 90) particles.push({ x: r.rwX, y: r.rwY + 22, vx: -Math.random() * (r.vx * 0.6) - 0.6, vy: -Math.random() * 3.2 - 0.6, life: 1, size: Math.random() * 3 + 2, col: 'rgba(226,196,126,' });
@@ -1442,7 +1509,30 @@
     Scenery.drawFront(ctx2d);
     WorldFX.drawFore(ctx2d, camX, w, groundY, t0, h);
 
+    // Ripristina la matrice PRIMA di disegnare emote: anche con pista specchiata,
+    // le PNG, le frecce e i nomi devono restare orientati correttamente.
     if (mirrored) ctx2d.restore();
+    // L'emote propria resta sopra la bici; quelle degli avversari fuori campo
+    // diventano indicatori ancorati al bordo e mantengono nome e direzione.
+    if (emoteAnchors.length) {
+      emoteAnchors.sort((a, b) =>
+        Number(b.id === Net.myId) - Number(a.id === Net.myId) ||
+        Number(a.offscreen) - Number(b.offscreen));
+      // Reserve the current DOM controls, including the picker while it is open.
+      // A small indicator must be visible to the receiver, not hidden behind a button.
+      const canvasRect = els.raceCanvas.getBoundingClientRect();
+      const avoid = [els.raceWrap.querySelector('.hud'), els.emoteDock,
+        els.btnJump, els.btnSprint, els.redrawUi].filter(node => node &&
+          getComputedStyle(node).display !== 'none' && node.getClientRects().length)
+        .map(node => { const r = node.getBoundingClientRect(); return {
+          x1:r.left - canvasRect.left - 5, x2:r.right - canvasRect.left + 5,
+          y1:r.top - canvasRect.top - 5, y2:r.bottom - canvasRect.top + 5
+        }; });
+      const placed = EmoteLayout.layout(emoteAnchors, {
+        width: cssWv, height: cssHv, compact: Math.min(cssWv, cssHv) < 520, avoid
+      });
+      for (const a of placed) drawEmoteBubble(a.id, a.x / viewScale, a.y / viewScale, a.color, t0, a);
+    }
     if (t0 - hudAt > 120) { hudAt = t0; updateHud(); updateLastCall(); }
     drawMinimap();
     if (Perf.on) Perf.frame(ts, performance.now() - t0);
@@ -1643,7 +1733,7 @@
     });
   }
 
-  function stopRaceLoops() { closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
+  function stopRaceLoops() { if (connectionStatus) connectionStatus.hidden = true; closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
   I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
   function showResults(st, ch) {

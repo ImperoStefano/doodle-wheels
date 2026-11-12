@@ -52,7 +52,7 @@ const Sim = (() => {
 
   const IMMUNE_MS = 2500;   // dopo un salto (o l'uscita dallo specchio) la bici non attiva portali per un po': chi è in testa non viene rimbalzato di continuo
   let portalUsed = {};   // portali già attraversati da qualcuno: spariscono per tutti (chi arriva per primo li consuma)
-  let engine, world, racers = {}, running = false, timedOut = false, startedAt = 0, accumulator = 0, firstFinishAt = null, timeoutMs = 180000;
+  let engine, world, racers = {}, running = false, timedOut = false, startedAt = 0, accumulator = 0, obstacleClockMs = 0, firstFinishAt = null, timeoutMs = 180000;
   const racerOrder = []; let raceStepNo = 0;
   // ONE shared negative group for every racer: bikes pass through each other (ghost racing) but all
   // collide with the ground (group 0). With a group per racer the grid spacing (200px) is smaller
@@ -76,7 +76,7 @@ const Sim = (() => {
     racers = {}; racerOrder.length = 0; raceStepNo = 0; portalUsed = {};
     running = false;
     timedOut = false;
-    accumulator = 0;
+    accumulator = 0; obstacleClockMs = 0;
     firstFinishAt = null;
     timeoutMs = raceTimeoutMs();
   }
@@ -86,6 +86,7 @@ const Sim = (() => {
     Matter.World.add(world, buildGround());
     Matter.World.add(world, buildWalls());
     Matter.World.add(world, buildFlowers());
+    DynamicObstacles.mount(world);
     resetRaceState();
   }
   // Costruzione del mondo "a fette" (≈4 ms alla volta) durante l'intro: su una pista lunga sono ~1100 corpi statici
@@ -102,6 +103,7 @@ const Sim = (() => {
       if (bodies.length) Matter.World.add(world, bodies);
       if (x < END) { setTimeout(step, 0); return; }
       Matter.World.add(world, buildWalls()); Matter.World.add(world, buildFlowers());
+      DynamicObstacles.mount(world);
       resetRaceState(); prepared = true; if (cb) cb();
     };
     step();
@@ -450,7 +452,7 @@ const Sim = (() => {
   function start() {
     running = true;
     startedAt = performance.now();
-    accumulator = 0;
+    accumulator = 0; obstacleClockMs = 0;
   }
 
   function isWater(x) {
@@ -1167,6 +1169,19 @@ const Sim = (() => {
         const impulse = 0.12 * Math.min(1, lift);
         for (const b of bodies) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.max(-6.5, b.velocity.y - impulse) });
       }
+      // L'anello sospeso premia un salto riuscito, ma la strada a terra resta libera.
+      r.haloHits = r.haloHits || {};
+      for (const q of Terrain.HALO_RINGS) {
+        const dx = Math.abs(x - q.x), altitude = GROUND_Y - Terrain.height(x) - r.chassis.position.y;
+        if (dx >= q.width * 0.55) { r.haloHits[q.id] = false; continue; }
+        if (!r.haloHits[q.id] && altitude >= 65 && altitude <= 155) {
+          for (const b of bodies) Matter.Body.setVelocity(b, {
+            x: Math.min(11, b.velocity.x + q.boost),
+            y: Math.min(b.velocity.y, -q.lift)
+          });
+          r.haloHits[q.id] = true;
+        }
+      }
       r.cloudPadHits = r.cloudPadHits || {};
       for (const q of Terrain.CLOUD_PADS) {
         const near = Math.abs(x - q.x) < q.width * 0.5;
@@ -1177,6 +1192,15 @@ const Sim = (() => {
         }
       }
     } else if (world === 'inferno') {
+      // Raffiche pulsanti, anticipate da una scia visibile per 0,85 s.
+      // Non bloccano una bici già lenta: chi è in difficoltà non resta intrappolato.
+      for (const q of Terrain.ASH_GUSTS) {
+        const phase = ((elapsed / 1000 + q.phase) % q.period + q.period) % q.period;
+        if (phase < q.burst && Math.abs(x - q.x) < q.width * 0.5 &&
+            (r.fw.gapNow < 45 || r.rw.gapNow < 45) && r.chassis.velocity.x > 3.2) {
+          for (const b of bodies) Matter.Body.setVelocity(b, { x: Math.max(3.0, b.velocity.x - q.drag), y: b.velocity.y });
+        }
+      }
       r.geyserHits = r.geyserHits || {};
       const t = elapsed / 1000;
       for (const q of Terrain.GEYSERS) {
@@ -1189,12 +1213,20 @@ const Sim = (() => {
         }
       }
     } else if (world === 'atlantis') {
+      // Correnti percepibili solo nel canale: spingono avanti chi mantiene la linea
+      // bassa, controbilanciando l'attrito dell'acqua senza creare teletrasporti.
+      for (const q of Terrain.TIDAL_CURRENTS) {
+        const phase = ((elapsed / 1000 + q.phase) % q.period + q.period) % q.period;
+        if (phase < q.burst && Math.abs(x - q.x) < q.width * 0.5 && Terrain.isWater(x)) {
+          for (const b of bodies) Matter.Body.setVelocity(b, { x: Math.min(9.5, b.velocity.x + q.push), y: b.velocity.y });
+        }
+      }
       r.bubbleVentHits = r.bubbleVentHits || {};
       for (const q of Terrain.BUBBLE_VENTS) {
         const near = Math.abs(x - q.x) < q.width * 0.5;
         if (!near) { r.bubbleVentHits[q.id] = false; continue; }
         if (!r.bubbleVentHits[q.id] && (r.fw.gapNow < 30 || r.rw.gapNow < 30)) {
-          for (const b of bodies) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.max(-5.4, b.velocity.y - q.power) });
+          for (const b of bodies) Matter.Body.setVelocity(b, { x: b.velocity.x, y: Math.min(b.velocity.y, -q.power) });
           r.bubbleVentHits[q.id] = true;
         }
       }
@@ -1209,6 +1241,19 @@ const Sim = (() => {
         }
       }
     } else if (world === 'neon') {
+      // Shutter laser temporizzati: saltando abbastanza in alto non si prende il
+      // rallentamento. Una sola penalità per attraversamento, mai blocco totale.
+      r.neonGateHits = r.neonGateHits || {};
+      for (const q of Terrain.NEON_GATES) {
+        const near = Math.abs(x - q.x) < q.width * 0.5;
+        if (!near) { r.neonGateHits[q.id] = false; continue; }
+        const phase = ((elapsed / 1000 + q.phase) % q.period + q.period) % q.period;
+        if (phase < q.burst && !r.neonGateHits[q.id] &&
+            (r.fw.gapNow < 36 || r.rw.gapNow < 36) && r.chassis.velocity.x > 3.0) {
+          for (const b of bodies) Matter.Body.setVelocity(b, { x: Math.max(2.8, b.velocity.x * q.slow), y: b.velocity.y });
+          r.neonGateHits[q.id] = true;
+        }
+      }
       r.neonBoostHits = r.neonBoostHits || {};
       for (const q of Terrain.NEON_BOOSTS) {
         const near = Math.abs(x - q.x) < q.width * 0.5;
@@ -1259,9 +1304,14 @@ const Sim = (() => {
       if (f > 0) { const k = 1 - (1 - LAVA_DRAG) * f; Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x * k, y: r.chassis.velocity.y * k }); }
     }
     if (isWater(r.chassis.position.x)) {
+      const seg = Terrain.WORLD_SEGMENT;
+      const atl = seg && seg.world === 'atlantis' && r.chassis.position.x >= seg.start && r.chassis.position.x < seg.end;
+      // Atlantide: acqua bassa, attraversabile anche con ruote non tonde.
+      // L'acqua delle altre zone mantiene il drag originale.
+      const drag = atl ? 0.982 : 0.94;
       Matter.Body.setVelocity(r.chassis, {
-        x: r.chassis.velocity.x * 0.94,
-        y: r.chassis.velocity.y * 0.94
+        x: r.chassis.velocity.x * drag,
+        y: r.chassis.velocity.y * drag
       });
     }
 
@@ -1276,14 +1326,14 @@ const Sim = (() => {
   function tick(dtMs) {
     if (!running) return;
 
-    accumulator += Math.min(dtMs, 100);
+    // Preserve fractional physics time across a stalled host frame. V16 discarded
+    // the entire remainder after 3 steps, introducing irregular small pauses.
+    // Cap total debt so a slow device never enters a spiral of death.
+    accumulator = Math.min(FIXED_DT * 3.999, accumulator + Math.max(0, Math.min(dtMs, 100)));
     const elapsed = performance.now() - startedAt;
-
-    // al massimo 3 passi per chiamata: se il dispositivo non regge, l'arretrato si scarta (leggero rallentatore) invece di innescare la spirale
-    // "più passi → frame più lungo → ancora più passi da recuperare"
     let steps = 0;
-    while (accumulator >= FIXED_DT) {
-      if (++steps > 3) { accumulator = 0; break; }
+    while (accumulator >= FIXED_DT && steps < 3) {
+      steps++;
       // Same fairness as rotating turns, without allocating/shuffling an array each step.
       const n = racerOrder.length, offset = n ? (raceStepNo++ % n) : 0;
       for (let i = 0; i < n; i++) {
@@ -1291,8 +1341,15 @@ const Sim = (() => {
         stepRacer(r, elapsed);
         if (!r.finished) assist(r);
       }
+      // Muoviamo corpi STATICI con traiettorie continue, una volta per substep.
+      // Nessuna collisione fittizia: il solver Matter risolve i contatti con ruote e telaio.
       for (let sub = 0; sub < SUBSTEPS; sub++) {
+        // Each fixed physics substep advances the obstacle by the same fixed dt.
+        // Multiple catch-up steps no longer push the obstacle to identical positions.
+        const nextObstacleTime = obstacleClockMs + FIXED_DT / SUBSTEPS;
+        DynamicObstacles.update(nextObstacleTime);
         Matter.Engine.update(engine, FIXED_DT / SUBSTEPS);
+        obstacleClockMs = nextObstacleTime;
         for (let i = 0; i < n; i++) { const r = racerOrder[i]; antiSink(r.fw); antiSink(r.rw); }
       }
       accumulator -= FIXED_DT;
@@ -1343,7 +1400,7 @@ const Sim = (() => {
 
   return {
     init, addRacer, updateRacerWheel, drainMelts, meltBase, meltVertices, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
-    snapshot, jump, sprint, allFinished, isTimedOut, standings, GROUND_Y, usedPortals: () => Object.keys(portalUsed).map(Number),
+    snapshot, jump, sprint, allFinished, isTimedOut, standings, GROUND_Y, getElapsed: () => running ? performance.now() - startedAt : 0, getObstacleTime: () => obstacleClockMs, usedPortals: () => Object.keys(portalUsed).map(Number),
     get FINISH_X() { return Terrain.FINISH_X; },
     // ms rimasti agli altri dopo che il primo ha tagliato il traguardo (null = nessuno è arrivato)
     graceLeft() { if (firstFinishAt === null || !running) return null; return Math.max(0, GRACE_BASE_MS + firstFinishAt * GRACE_FRAC - (performance.now() - startedAt - firstFinishAt)); },

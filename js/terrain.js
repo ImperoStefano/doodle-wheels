@@ -12,7 +12,7 @@
  */
 const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
-  let SEASON = null, PACE = "classica", WORLD = 'classic', WORLD_SEGMENT = null, ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], INFERNO_ISLANDS = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [];
+  let SEASON = null, PACE = "classica", WORLD = 'classic', WORLD_SEGMENT = null, ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], INFERNO_ISLANDS = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [], HALO_RINGS = [], ASH_GUSTS = [], TIDAL_CURRENTS = [], ROOT_RIDGES = [], NEON_GATES = [], DYNAMIC_OBSTACLES = [];
   const WORLD_KEYS = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'];
   const SEGMENT_WORLDS = ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon'];
   const isSegmentWorld = world => SEGMENT_WORLDS.includes(world);
@@ -436,6 +436,17 @@ const Terrain = (() => {
         picks.sort((a, b) => (LIGHT[a] ? 1 : 0) - (LIGHT[b] ? 1 : 0));   // prima i pezzi lunghi, i corti riempiono gli spazi che restano
       }
       if (WORLD_SEGMENT && overlapsWorldSegment(z)) {
+        // V18: riserva una corsia di avvicinamento realmente leggibile agli ostacoli
+        // caratteristici. La parte 'exit' non viene svuotata perché il mondo speciale
+        // dura solo metà dell'ultima zona, poi torna la pista classica.
+        const sw = WORLD_SEGMENT.world;
+        if (z.specialPart !== 'exit' && (
+          (sw === 'atlantis' && z.key === 'water') ||
+          (sw === 'paradise' && z.key === 'hills') ||
+          (sw === 'inferno' && z.key === 'hills') ||
+          (sw === 'enchanted' && z.key === 'hills') ||
+          (sw === 'neon' && z.key === 'hills')
+        )) picks = [];
         const forbidden = WORLD_SEGMENT.world === 'paradise'
           ? ['ravine', 'gapland', 'pipe', 'mud', 'sand', 'boulders', 'logs', 'holes']
           : WORLD_SEGMENT.world === 'inferno' ? ['ravine', 'gapland', 'pipe', 'mud', 'sand', 'logs', 'holes', 'arch']
@@ -556,60 +567,143 @@ const Terrain = (() => {
     return true;
   }
 
-  // Eventi ambientali deterministici: host e client ricavano le stesse coordinate dal layout.
+  // V18: set-piece deterministici. Non c'è casualità nel loop fisico né nello shader:
+  // le stesse chiavi e lo stesso mondo producono le stesse coordinate per host e client.
   function planWorldEvents(layoutKeys) {
     UPDRAFTS = []; GEYSERS = []; CLOUD_PADS = []; BUBBLE_VENTS = []; NEON_BOOSTS = [];
-    const eventWorld = WORLD_SEGMENT ? WORLD_SEGMENT.world : WORLD;
-    const inWorld = z => !WORLD_SEGMENT || overlapsWorldSegment(z);
-    const rnd = mulberry32(hashStr(layoutKeys.join(',') + '#world-' + eventWorld));
-    ZONES.forEach(z => {
-      if (eventWorld === 'paradise' && inWorld(z) && ['hills', 'ice', 'water', 'ramps'].includes(z.key) && rnd() < 0.82) {
-        UPDRAFTS.push({ id: UPDRAFTS.length, x: Math.round(z.start + z.len * (0.42 + rnd() * 0.16)), width: 230 + Math.round(rnd() * 50), height: 190 + Math.round(rnd() * 45), strength: 1 });
+    HALO_RINGS = []; ASH_GUSTS = []; TIDAL_CURRENTS = []; ROOT_RIDGES = []; NEON_GATES = [];
+    const world = WORLD_SEGMENT ? WORLD_SEGMENT.world : WORLD;
+    const rnd = mulberry32(hashStr(layoutKeys.join(',') + '#world-v18-' + world));
+    const inside = x => !WORLD_SEGMENT || (x >= WORLD_SEGMENT.start + 110 && x <= WORLD_SEGMENT.end - 110);
+    const active = z => !WORLD_SEGMENT || overlapsWorldSegment(z);
+    // Cercatore unico di posizioni guidabili: margine dagli ostacoli, dai canali e
+    // dai bordi della scena speciale, pendenza testata su 100 px di terreno reale.
+    const reserved = [];
+    const find = (z, width, fractions, nearGap = false) => {
+      for (const f of fractions) {
+        const x = Math.round(z.start + f * z.len);
+        if (!inside(x) || x - width / 2 < z.start + 130 || x + width / 2 > z.end - 130) continue;
+        if (!nearGap && z.gap && x > z.gap.g0 - width / 2 - 90 && x < z.gap.g1 + width / 2 + 90) continue;
+        if ((z.patches || []).some(p => x > p.a - width / 2 - 80 && x < p.b + width / 2 + 80)) continue;
+        if (reserved.some(q => Math.abs(x - q.x) < (width + q.width) * 0.5 + 80)) continue;
+        if (Math.abs(height(x + 50) - height(x - 50)) > 23) continue;
+        reserved.push({ x, width });
+        return x;
       }
-      if (eventWorld === 'paradise' && inWorld(z) && ['hills', 'ramps', 'gravel'].includes(z.key) && rnd() < 0.48) {
-        // Le nuvole elastiche devono cadere su un tratto guidabile: mai dentro un lago,
-        // un ostacolo/una rampa già disegnata o una pendenza troppo marcata.
-        const start = Math.floor(rnd() * 9), candidates = Array.from({ length: 9 }, (_, i) => z.start + z.len * (0.24 + i * 0.065));
-        let padX = null;
-        for (let i = 0; i < candidates.length; i++) {
-          const px = Math.round(candidates[(start + i) % candidates.length]);
-          const inGap = z.gap && px > z.gap.g0 - 120 && px < z.gap.g1 + 120;
-          const inPatch = (z.patches || []).some(p => px > p.a - 120 && px < p.b + 120);
-          const slope = Math.abs(height(px + 55) - height(px - 55));
-          if (!inGap && !inPatch && slope < 24) { padX = px; break; }
+      return null;
+    };
+    const slots = [0.28, 0.62, 0.43, 0.77, 0.20, 0.54, 0.35, 0.70];
+
+    for (const z of ZONES) {
+      if (!active(z)) continue;
+      if (world === 'paradise') {
+        if (['hills', 'ramps'].includes(z.key)) {
+          const x = find(z, 220, slots);
+          if (x !== null) UPDRAFTS.push({ id: UPDRAFTS.length, x, width: 260, height: 225, strength: 1 });
+          const padX = find(z, 140, slots.slice().reverse());
+          if (padX !== null) CLOUD_PADS.push({ id: CLOUD_PADS.length, x: padX, width: 124, power: 6.5 });
+          // Anello alto: puoi evitarlo guidando, ma chi salta lo attraversa e ottiene
+          // una piccola spinta verticale. Non viene attivato da una ruota a terra.
+          // L'anello vola sopra la corsia e può coincidere con una corrente ascensionale:
+          // viene cercato separatamente dalle strutture appoggiate a terra.
+          const haloX = [0.46, 0.31, 0.69, 0.55, 0.21].map(f => Math.round(z.start + z.len * f)).find(px =>
+            inside(px) && (!z.gap || px < z.gap.g0 - 80 || px > z.gap.g1 + 80) &&
+            !(z.patches || []).some(p => px > p.a - 110 && px < p.b + 110) &&
+            Math.abs(height(px + 45) - height(px - 45)) < 32
+          );
+          if (haloX !== undefined) HALO_RINGS.push({ id: HALO_RINGS.length, x: haloX, rise: 105, width: 94, lift: 2.6, boost: 0.5 });
         }
-        if (padX !== null) CLOUD_PADS.push({ id: CLOUD_PADS.length, x: padX, width: 112, power: 6.4 });
-      }
-      if (eventWorld === 'inferno' && inWorld(z) && z.key === 'lava' && z.gap && !z.bridge) {
-        const span = z.gap.g1 - z.gap.g0;
-        for (let i = 0; i < 2; i++) {
-          const period = 3.5 + rnd() * 1.2;
-          GEYSERS.push({ id: GEYSERS.length, x: Math.round(z.gap.g0 + span * (i ? 0.655 : 0.355)), width: 94, period, phase: rnd() * period, burst: 0.62, power: 5.8 + rnd() * 0.8 }); // nei canali incandescenti, non sugli appoggi
+      } else if (world === 'inferno') {
+        if (z.key === 'lava' && z.gap && !z.bridge) {
+          const span = z.gap.g1 - z.gap.g0;
+          // Le eruzioni stanno nei canali, non sulla corona fisica dell'isolotto.
+          for (const f of [0.32, 0.72]) {
+            const period = 3.8 + rnd() * 0.7;
+            GEYSERS.push({ id: GEYSERS.length, x: Math.round(z.gap.g0 + span * f), width: 92, period, phase: rnd() * period, burst: 0.70, power: 5.9 + rnd() * 0.6 });
+          }
+        } else if (['hills', 'ramps'].includes(z.key)) {
+          const x = find(z, 240, slots);
+          if (x !== null) {
+            const period = 4.3;
+            ASH_GUSTS.push({ id: ASH_GUSTS.length, x, width: 240, period, phase: rnd() * period, burst: 1.25, warning: 0.85, drag: 0.065 });
+          }
+        }
+      } else if (world === 'atlantis' && z.key === 'water' && z.gap) {
+        // Ogni canale ha una corrente direzionata e una colonna di bolle. In fondo al
+        // bacino la ruota perde un po' di velocità, nel getto la recupera.
+        const mid = Math.round((z.gap.g0 + z.gap.g1) / 2);
+        const period = 3.9;
+        TIDAL_CURRENTS.push({ id: TIDAL_CURRENTS.length, x: mid - 125, width: 300, period, phase: rnd() * period, burst: 2.45, push: 0.12 });
+        BUBBLE_VENTS.push({ id: BUBBLE_VENTS.length, x: mid + 110, width: 180, height: 145, power: 2.7, phase: rnd() * Math.PI * 2 });
+      } else if (world === 'enchanted' && ['hills', 'ramps'].includes(z.key)) {
+        const rootX = find(z, 200, [0.32, 0.66, 0.44, 0.77, 0.23]);
+        if (rootX !== null && z.key === 'hills') ROOT_RIDGES.push({ id: ROOT_RIDGES.length, x: rootX, width: 200, height: 24 + rnd() * 7 });
+        const padX = find(z, 130, slots.slice().reverse());
+        if (padX !== null) CLOUD_PADS.push({ id: CLOUD_PADS.length, x: padX, width: 126, power: 6.8, kind: 'mushroom' });
+      } else if (world === 'neon' && ['hills', 'ramps'].includes(z.key)) {
+        const boostX = find(z, 160, slots);
+        if (boostX !== null) NEON_BOOSTS.push({ id: NEON_BOOSTS.length, x: boostX, width: 150, boost: 2.6 + rnd() * 0.5 });
+        const gateX = find(z, 110, slots.slice().reverse());
+        if (gateX !== null) {
+          const period = 3.7;
+          NEON_GATES.push({ id: NEON_GATES.length, x: gateX, width: 92, period, phase: rnd() * period, burst: 1.05, warning: 0.72, slow: 0.80 });
         }
       }
-      if (eventWorld === 'atlantis' && inWorld(z) && z.key === 'water' && rnd() < 0.92) {
-        BUBBLE_VENTS.push({ id: BUBBLE_VENTS.length, x: Math.round(z.start + z.len * (0.38 + rnd() * 0.24)), width: 170, height: 118 + rnd() * 42, power: 0.10 + rnd() * 0.045, phase: rnd() * Math.PI * 2 });
+    }
+    // Evita che una pista fortunata senza spazi liberi rimuova completamente una
+    // meccanica iconica. In quel caso restano le altre già pianificate, non si
+    // mette un evento sopra una rampa/una voragine.
+  }
+
+  // V20 — solidi veri. Ostacoli progettati dalla stessa lista di zone su host e client.
+  // I body Matter sono creati SOLO dall'host (js/obstacles.js); il rendering si basa
+  // sugli stessi x/kind/phase e sul tempo gara comunicato negli snapshot.
+  function planDynamicObstacles(keys) {
+    DYNAMIC_OBSTACLES = [];
+    const wd = WORLD_SEGMENT ? WORLD_SEGMENT.world : WORLD;
+    const rand = mulberry32(hashStr(keys.join('|') + '#physical-v21-' + wd));
+    const events = [].concat(UPDRAFTS, GEYSERS, CLOUD_PADS, BUBBLE_VENTS, NEON_BOOSTS,
+      HALO_RINGS, ASH_GUSTS, TIDAL_CURRENTS, ROOT_RIDGES, NEON_GATES);
+    const fractions = [0.31, 0.69, 0.49, 0.19, 0.83, 0.40, 0.59];
+    for (const z of ZONES) {
+      if (z.key === 'start' || z.key === 'finish') continue;
+      const special = !!(WORLD_SEGMENT && z.start < WORLD_SEGMENT.end && z.end > WORLD_SEGMENT.start);
+      // Difficulty curve: introduce physical obstacles gradually; the finale can be busier.
+      const progression = Math.max(0, Math.min(1, z.start / Math.max(1, FINISH_X)));
+      if (!special && rand() > 0.54 + 0.23 * progression) continue;
+      const localWorld = special ? wd : 'classic';
+      let kind;
+      if (localWorld === 'paradise') kind = 'bell';
+      else if (localWorld === 'inferno') kind = 'meteor';
+      else if (localWorld === 'atlantis') kind = 'shell';
+      else if (localWorld === 'enchanted') kind = 'log';
+      else if (localWorld === 'neon') kind = 'piston';
+      else kind = ({ hills: 'roller', gravel: 'roller', ice: 'iceblock',
+        water: 'log', lava: 'roller', ramps: 'seesaw' })[z.key] || 'roller';
+      let found = null;
+      const radius = kind === 'seesaw' || kind === 'log' ? 118 : kind === 'bell' || kind === 'meteor' ? 140 : 92;
+      for (const f of fractions) {
+        const x = Math.round(z.start + z.len * f);
+        if (x < z.start + 280 || x > z.end - 280 || x < 1160 || x > FINISH_X - 540) continue;
+        if (special && (x < WORLD_SEGMENT.start + 190 || x > WORLD_SEGMENT.end - 190)) continue;
+        if (z.gap && x > z.gap.g0 - 225 && x < z.gap.g1 + 225) continue;
+        if ((z.patches || []).some(p => x > p.a - 215 && x < p.b + 215)) continue;
+        // Protect the full collision envelope and the approach, not merely the centre.
+        // Otherwise a triangular/star wheel can be squeezed between a moving solid and a hill.
+        const h0=height(x-150), h1=height(x-75), hc=height(x), h2=height(x+75), h3=height(x+150);
+        if (Math.max(h0,h1,hc,h2,h3)-Math.min(h0,h1,hc,h2,h3) > (special ? 62 : 52)) continue;
+        if (Math.abs(h2-h1)>29) continue;
+        if (events.some(e => e.x !== undefined && Math.abs(e.x - x) < (special ? 180 : 235))) continue;
+        if (DYNAMIC_OBSTACLES.some(e => Math.abs(e.x - x) < (special ? 465 : 520))) continue;
+        // PENDOLI: lunghezza 110 e oscillazione fino a 50px, con spazio libero ai lati.
+        if (Math.abs(height(x + radius) - height(x - radius)) > 39) continue;
+        found = x; break;
       }
-      if (eventWorld === 'enchanted' && inWorld(z) && ['hills', 'ramps'].includes(z.key) && rnd() < 0.82) {
-        const candidates = Array.from({ length: 7 }, (_, i) => z.start + z.len * (0.27 + i * 0.075));
-        const start = Math.floor(rnd() * candidates.length); let padX = null;
-        for (let i = 0; i < candidates.length; i++) {
-          const px = Math.round(candidates[(start + i) % candidates.length]);
-          const inGap = z.gap && px > z.gap.g0 - 110 && px < z.gap.g1 + 110;
-          const inPatch = (z.patches || []).some(p => px > p.a - 110 && px < p.b + 110);
-          if (!inGap && !inPatch && Math.abs(height(px + 50) - height(px - 50)) < 22) { padX = px; break; }
-        }
-        if (padX !== null) CLOUD_PADS.push({ id: CLOUD_PADS.length, x: padX, width: 126, power: 7.0, kind: 'mushroom' });
-      }
-      if (eventWorld === 'neon' && inWorld(z) && ['ramps', 'hills'].includes(z.key) && rnd() < 0.9) {
-        const px = Math.round(z.start + z.len * (0.44 + rnd() * 0.18));
-        const inGap = z.gap && px > z.gap.g0 - 110 && px < z.gap.g1 + 110;
-        const inPatch = (z.patches || []).some(p => px > p.a - 100 && px < p.b + 100);
-        if (!inGap && !inPatch && Math.abs(height(px + 48) - height(px - 48)) < 26) {
-          NEON_BOOSTS.push({ id: NEON_BOOSTS.length, x: px, width: 150, boost: 2.6 + rnd() * 0.8 });
-        }
-      }
-    });
+      if (found === null) continue;
+      DYNAMIC_OBSTACLES.push({ id: DYNAMIC_OBSTACLES.length, x: found, kind,
+        biome: localWorld, zone: z.key, period: (kind === 'piston' ? 4.6 : kind === 'bell' || kind === 'meteor' ? 3.8 : 3.4) + rand()*0.55,
+        phase: rand() * 6.283185307179586 });
+    }
   }
 
   // ---- costruzione delle zone ---------------------------------------------------------------
@@ -618,6 +712,7 @@ const Terrain = (() => {
     const segmented = isSegmentWorld(selectedWorld);
     WORLD = segmented ? 'classic' : selectedWorld; // solo il tratto locale cambia mondo; il resto resta il gioco classico
     WORLD_SEGMENT = null;
+    ROOT_RIDGES = []; // V18: non lasciare profili fisici della gara precedente durante planPatches.
     const rawKeys = (layoutKeys && layoutKeys.length ? layoutKeys : generateRandomLayout()).slice();
     const rnd = mulberry32(hashStr(rawKeys.join(',')));
     SEASON = force && force.season ? SEASONS.find(q => q.key === force.season) || SEASONS[0] : (force && (force.crazy || force.only || force.nopatch)) ? SEASONS[0] : seasonOf(rawKeys);   // stagione calcolata sui biomi estratti, prima di inserire il set-piece
@@ -670,8 +765,9 @@ const Terrain = (() => {
     if (!(force && force.nogap)) planGaps(rnd, !!(force && force.crazy));
     planPatches(rnd, force);
     planWorldEvents(keys);
+    planDynamicObstacles(keys);
     PORTALS = []; if (force && force.crazy) planPortals(keys, force.np);
-    FLOWERS = generateFlowers(rnd);
+    FLOWERS = generateFlowers(rnd).filter(f => !DYNAMIC_OBSTACLES.some(o => Math.abs(o.x - f.x) < 180));
     LILIES = generateLilies();
   }
 
@@ -687,8 +783,14 @@ const Terrain = (() => {
 
     ZONES.forEach(z => {
       if (z.key === 'water') {
-        if (overlapsWorldSegment(z)) {
-          // Nei mondi speciali: niente ponte in pietra generico. Passaggio continuo decorato a tema.
+        if (WORLD_SEGMENT && WORLD_SEGMENT.world === 'atlantis' && overlapsWorldSegment(z)) {
+          // V18: due canali poco profondi attraversabili: il fondo e il livello dell'acqua
+          // coincidono in fisica, rendering e gioco multiplayer. Niente bridge generico.
+          const span = Math.min(1120, z.len * 0.49);
+          const mid = z.start + z.len * 0.51;
+          z.gap = { g0: mid - span / 2, g1: mid + span / 2, D: 57, W: 370, atlantis: true };
+          z.bridge = null;
+        } else if (overlapsWorldSegment(z)) {
           z.gap = null; z.bridge = null;
         } else if (wants.get(z)) {
           const span = 520, mid = z.start + z.len * (0.46 + rnd() * 0.08);
@@ -759,6 +861,14 @@ const Terrain = (() => {
       h += win * w * (1 - (z.patches && z.patches.length ? patchMask(z, x) : 0));
     }
     if (z.patches && z.patches.length) h += patchSum(z, x);
+    // Le radici incantate sono una parte della collisione reale, non un overlay grafico.
+    // Profilo C1 ai margini: evita spigoli e picchi di accelerazione ai 60 Hz.
+    if (ROOT_RIDGES.length && WORLD_SEGMENT && WORLD_SEGMENT.world === 'enchanted') {
+      for (const q of ROOT_RIDGES) {
+        const d = Math.abs(x - q.x) / (q.width * 0.5);
+        if (d < 1) { const a = 0.5 + 0.5 * Math.cos(Math.PI * d); h += q.height * a * a; }
+      }
+    }
     return h;
   }
 
@@ -912,7 +1022,7 @@ const Terrain = (() => {
 
   return {
     generateRandomLayout, applyLayout, plainAt, SEASONS, seasonOf, PACES, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
-    get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; },
+    get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get DYNAMIC_OBSTACLES() { return DYNAMIC_OBSTACLES; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; }, get HALO_RINGS() { return HALO_RINGS; }, get ASH_GUSTS() { return ASH_GUSTS; }, get TIDAL_CURRENTS() { return TIDAL_CURRENTS; }, get ROOT_RIDGES() { return ROOT_RIDGES; }, get NEON_GATES() { return NEON_GATES; },
     frictionAt: x => { const f = FRICTION[zoneAt(x).key] || 0.9; return f < 0.9 && onRamp(x) ? 0.9 : f; },   // il piano della rampa tiene sempre (anche nel ghiaccio)
     colorAt: x => zoneAt(x).color || '#059669',
     zoneKeyAt: x => zoneAt(x).key,
