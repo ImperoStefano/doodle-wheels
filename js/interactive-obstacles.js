@@ -6,8 +6,7 @@ const InteractiveObstacles = (() => {
   'use strict';
   const TAU=Math.PI*2, GY=520;
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-  const SPRING_RAMP_RUN=115, TILT_RAMP_RUN=145;
-  const SIZES={boulder:{r:30,rx:78},tilt:{w:282,h:22},spring:{w:170,h:20},shard:{w:114,h:54},clam:{w:148,h:40},bud:{w:114,h:54},servo:{w:125,h:52}};
+    const SIZES={boulder:{r:30,rx:78},tilt:{w:282,h:22},spring:{w:170,h:20},shard:{w:114,h:54},clam:{w:148,h:40},bud:{w:114,h:54},servo:{w:125,h:52}};
   const THEMES={
     classic:{dark:'#514539',mid:'#9a7750',light:'#f4d7a0',edge:'#5d4036',metal:'#e2b15d',glow:'#fff1bb'},
     paradise:{dark:'#5e7999',mid:'#d4bb82',light:'#fff7db',edge:'#8d6e9b',metal:'#e5bc64',glow:'#fff6cf'},
@@ -16,23 +15,29 @@ const InteractiveObstacles = (() => {
     enchanted:{dark:'#284d43',mid:'#628a61',light:'#c4e6a2',edge:'#39523e',metal:'#bde29b',glow:'#b4ff95'},
     neon:{dark:'#191736',mid:'#4749a5',light:'#77fff0',edge:'#fb63df',metal:'#8ca8ff',glow:'#36f2ed'}
   };
-  let host=[], remote=new Map(), drawAt=0, activeRacers=[], pendingSprings=[],pendingVaults=[];
+  let host=[], remote=new Map(), drawAt=0, activeRacers=[], pendingSprings=[],pendingVaults=[],pendingTilts=[];
+  const springVisual = new Map(); // phase-clock per obstacle, only for drawing
   const placements=()=>Terrain.INTERACTIVE_OBSTACLES||[];
   const ground=(x)=>GY-Terrain.height(x);
-  const basePose=(o)=>({x:o.x,y:ground(o.x)-({boulder:30,tilt:20,spring:21,shard:28,clam:26,bud:29,servo:29}[o.kind]||25),a:0,s:0});
+  const basePose=(o)=>({x:o.x,y:ground(o.x)-({boulder:30,tilt:13,spring:21,shard:28,clam:26,bud:29,servo:29}[o.kind]||25),a:0,s:0});
   const nearby=(rs,x,r=230)=>Boolean(rs&&rs.some(q=>q&&!q.finished&&q.chassis&&Math.abs(q.chassis.position.x-x)<r));
   function mount(world){
-    host=[];activeRacers=[];pendingSprings=[];pendingVaults=[];remote=new Map();drawAt=0;
+    host=[];activeRacers=[];pendingSprings=[];pendingVaults=[];pendingTilts=[];remote=new Map();drawAt=0;springVisual.clear();
     for(const config of placements()){
-      const p=basePose(config); let body, joint=null;
+      const p=basePose(config); let body;
       if(config.kind==='boulder'){
         body=Matter.Bodies.circle(p.x,p.y,SIZES.boulder.r,{label:'interactive-boulder',density:.00068,friction:.47,frictionStatic:.48,frictionAir:.020,restitution:.20,slop:.02},32);
         // Broad oval, 156x60, with rounded edges. Actual game tyres have radius 80.
         // Physics ellipse = art ellipse. No invisible cylinder with the wrong silhouette.
         Matter.Body.scale(body,SIZES.boulder.rx/SIZES.boulder.r,1);
       }else if(config.kind==='tilt'){
-        body=Matter.Bodies.rectangle(p.x,p.y,SIZES.tilt.w,SIZES.tilt.h,{label:'interactive-tilt',density:.00135,friction:.74,frictionStatic:.77,frictionAir:.12,restitution:.08,slop:.02});
-        joint=Matter.Constraint.create({pointA:{x:p.x,y:p.y},bodyB:body,pointB:{x:0,y:0},length:0,stiffness:.96,damping:.31,render:{visible:false}});
+        // A flush, reactive plate. A raised, rigid deck and its lead-in ramps
+        // trapped square wheels because traction was measured against the road.
+        // The contact sensor follows Matter's exact 282x22 envelope: riders
+        // keep road traction, while the plate tilts and gives a gentle push.
+        body=Matter.Bodies.rectangle(p.x,p.y,SIZES.tilt.w,SIZES.tilt.h,{
+          label:'interactive-tilt',isStatic:true,isSensor:true,friction:0,slop:.02
+        });
       }else if(['shard','clam','bud','servo'].includes(config.kind)){
         // V24 replaces the disliked sinking 'drop' deck with compact, ground-rooted
         // obstacles. All have consistent collisions with their actual drawn envelope.
@@ -43,58 +48,45 @@ const InteractiveObstacles = (() => {
           frictionStatic:.7,restitution:.07,slop:.02
         });
       }else if(config.kind==='spring'){
-        body=Matter.Bodies.rectangle(p.x,p.y,SIZES.spring.w,SIZES.spring.h,{label:'interactive-spring',isStatic:true,friction:.68,frictionStatic:.79,restitution:.22,slop:.02});
-        body.friction=.68;body.frictionStatic=.79;body.restitution=.22;
+        // The spring is a contact sensor, not a vertical wall for square wheels.
+        // The bounce is a REAL Matter velocity impulse applied to the bike.
+        body=Matter.Bodies.rectangle(p.x,p.y,SIZES.spring.w,SIZES.spring.h,{
+          label:'interactive-spring',isStatic:true,isSensor:true,friction:0,slop:.02
+        });
       }else continue;
       body.interactiveId=config.id;
       // Cooldown PER PLAYER: one rider must not steal another player's bounce.
-      const entry={config,body,joint,original:p,phase:'idle',phaseAt:0,lastTriggerAt:-1e7,reactivations:new WeakMap(),resetAt:-1,ramps:[]};
+      const entry={config,body,original:p,phase:'idle',phaseAt:0,lastTriggerAt:-1e7,reactivations:new WeakMap(),resetAt:-1,springDisarmed:new WeakMap(), tiltDisarmed:new WeakMap(), tiltAngle:0};
       host.push(entry);
-      Matter.World.add(world,joint?[body,joint]:[body]);
-      if(config.kind==='spring'||config.kind==='tilt'){
-        // Both decks MUST be accessible from the road. In V25.2 the tilt
-        // presented a 50px vertical wall; the spring ramp rose 36px in 70px.
-        // Tires naturally jammed before reaching the actual contact surface.
-        // These ramps are real Matter bodies and exactly match the drawn edges.
-        const isSpring=config.kind==='spring', W=isSpring?SIZES.spring.w:SIZES.tilt.w;
-        const H=isSpring?SIZES.spring.h:SIZES.tilt.h;
-        const run=isSpring?SPRING_RAMP_RUN:TILT_RAMP_RUN;
-        const top=p.y-H/2;
-        for(const side of [-1,1]){
-          const edge=config.x+side*W/2, foot=config.x+side*(W/2+run);
-          const footY=ground(foot)-3;
-          const ax=side===-1?foot:edge, ay=side===-1?footY:top;
-          const bx=side===-1?edge:foot, by=side===-1?top:footY;
-          const len=Math.hypot(bx-ax,by-ay);
-          const ramp=Matter.Bodies.rectangle((ax+bx)/2,(ay+by)/2+3,len,6,{
-            isStatic:true,angle:Math.atan2(by-ay,bx-ax),
-            label:'interactive-'+config.kind+'-ramp',
-            friction:.76,frictionStatic:.78,restitution:.055,slop:.02
-          });
-          ramp.friction=.76;ramp.restitution=.055;
-          entry.ramps.push(ramp);Matter.World.add(world,ramp);
-        }
-      }
+      Matter.World.add(world,body);
     }
   }
   function contact(a,b,timeMs){
     const kind=v=>v&&v.label||'';
-    let obstacle=/^interactive-(spring|boulder|shard|clam|bud|servo)$/.test(kind(a))?a:null;
+    let obstacle=/^interactive-(spring|tilt|boulder|shard|clam|bud|servo)$/.test(kind(a))?a:null;
     let rider=obstacle?b:null;
-    if(!obstacle && /^interactive-(spring|boulder|shard|clam|bud|servo)$/.test(kind(b))){obstacle=b;rider=a;}
+    if(!obstacle && /^interactive-(spring|tilt|boulder|shard|clam|bud|servo)$/.test(kind(b))){obstacle=b;rider=a;}
     if(!obstacle || !rider || !['wheel','chassis'].includes(rider.label))return;
     const entry=host.find(q=>q.body===obstacle);if(!entry)return;
     const racer=activeRacers.find(r=>r&&(r.fw===rider||r.rw===rider));
     if(!racer)return;
     const obstacleKind=entry.config.kind;
     if(obstacleKind==='spring'){
-      // A trampoline activates on upper contact only; not from the underside.
+      // A wheel meets the soft launch surface from ABOVE. Each racer triggers
+      // exactly once while crossing, even if the solver emits many contacts.
       if(rider.position.y > obstacle.position.y-17)return;
       if(Math.abs(rider.position.x-obstacle.position.x)>SIZES.spring.w/2+25)return;
-      if(rider.velocity.y < -3.3)return;
-      if(timeMs-(entry.reactivations.get(racer)??-1e7)<850)return;
+      if(rider.velocity.y < -4.5 || entry.springDisarmed.get(racer))return;
+      if(timeMs-(entry.reactivations.get(racer)??-1e7)<900)return;
       if(!pendingSprings.some(q=>q.entry===entry&&q.racer===racer))
         pendingSprings.push({entry,racer,at:timeMs});
+    }else if(obstacleKind==='tilt'){
+      // The tilting board feels the wheel's load, without presenting a rigid
+      // step that can wedge an irregular wheel against the asphalt.
+      if(rider.label!=='wheel' || entry.tiltDisarmed.get(racer))return;
+      if(Math.abs(rider.position.x-obstacle.position.x)>SIZES.tilt.w/2+15)return;
+      if(!pendingTilts.some(q=>q.entry===entry&&q.racer===racer))
+        pendingTilts.push({entry,racer,at:timeMs});
     }else if(obstacleKind==='boulder'){
       // Horizontal oval is jumpable; brisk side impact also gives a small,
       // legible ride-up assist (not an invisible wall). Slow touches do nothing.
@@ -112,9 +104,20 @@ const InteractiveObstacles = (() => {
     for(const entry of host){
       const b=entry.body, home=entry.original;
       if(entry.config.kind==='tilt'){
-        const a=clamp(b.angle,-.11,.11);
-        if(a!==b.angle){Matter.Body.setAngle(b,a);Matter.Body.setAngularVelocity(b,0);}
-        Matter.Body.setAngularVelocity(b,clamp((b.angularVelocity-a*.012)*.94,-.028,.028));
+        // Lean toward the rider's current load, then settle smoothly.
+        // Static sensor angle controls both the displayed deck and contact area.
+        let moment=0,weight=0;
+        for(const r of activeRacers){
+          if(!r || r.finished || !r.chassis)continue;
+          const dx=r.chassis.position.x-home.x;
+          if(Math.abs(dx)<SIZES.tilt.w/2+110){
+            const proximity=clamp(1-Math.max(0,Math.abs(dx)-SIZES.tilt.w/2)/110,0,1);
+            moment+=clamp(dx/(SIZES.tilt.w/2),-1,1)*proximity;weight+=proximity;
+          }
+        }
+        const target=weight>0?clamp(moment/weight*.071,-.071,.071):0;
+        entry.tiltAngle += (target-entry.tiltAngle)*.14;
+        Matter.Body.setAngle(b,entry.tiltAngle);
       }else if(['shard','clam','bud','servo'].includes(entry.config.kind)){
         const type=entry.config.kind,t=nowMs/1000;
         // Slow, clearly telegraphed movement and conservative heights.
@@ -131,6 +134,23 @@ const InteractiveObstacles = (() => {
     }
   }
   function afterStep(nowMs,racers){
+    // Re-arm only after the entire bicycle has left the obstacle corridor.
+    // Prevents repeat launches when both wheels touch the same pad.
+    for(const entry of host)if(entry.config.kind==='spring'||entry.config.kind==='tilt'){
+      const limit=(entry.config.kind==='spring'?SIZES.spring.w:SIZES.tilt.w)/2+195;
+      const map=entry.config.kind==='spring'?entry.springDisarmed:entry.tiltDisarmed;
+      for(const r of racers||[])if(r&&r.chassis&&Math.abs(r.chassis.position.x-entry.config.x)>limit)map.delete(r);
+    }
+    for(const {entry,racer,at} of pendingTilts){
+      if(entry.tiltDisarmed.get(racer))continue;
+      entry.tiltDisarmed.set(racer,true);
+      entry.phase='react';entry.phaseAt=nowMs;
+      // Gentle mechanical release, not a teleport or a speed governor.
+      for(const body of [racer.chassis,racer.fw,racer.rw])if(body){
+        Matter.Body.setVelocity(body,{x:body.velocity.x+.18,y:Math.min(body.velocity.y,-1.7)});
+      }
+    }
+    pendingTilts.length=0;
     // Rounded mobile volume: speed + deliberate approach offers a modest vault.
     // Never applies a boost on an arbitrary collision with its back or underside.
     for(const {entry,racer,at} of pendingVaults){
@@ -148,13 +168,16 @@ const InteractiveObstacles = (() => {
     for(const {entry,racer,at} of pendingSprings){
       if(at-(entry.reactivations.get(racer)??-1e7)<850)continue;
       entry.reactivations.set(racer,at);
+      entry.springDisarmed.set(racer,true);
       entry.phase='spring';entry.phaseAt=nowMs;
       racer.springHits=(racer.springHits||0)+1;
+      racer.rampFly=0;
+      racer.springGraceTicks=24;
       for(const body of [racer.chassis,racer.fw,racer.rw]){
         if(!body)continue;
         Matter.Body.setVelocity(body,{
           x:body.velocity.x+Math.min(.8,Math.max(.1,body.velocity.x*.055)),
-          y:Math.min(body.velocity.y,-20.2)
+          y:Math.min(body.velocity.y,-22.5)
         });
       }
     }
@@ -182,7 +205,7 @@ const InteractiveObstacles = (() => {
       remote.set(a[0],{target:p,view:prev?prev.view:{...p}});
     }
   }
-  function clearClient(){remote=new Map();drawAt=0;}
+  function clearClient(){remote=new Map();drawAt=0;springVisual.clear();}
   function line(ctx,pts){ctx.beginPath();ctx.moveTo(pts[0],pts[1]);for(let i=2;i<pts.length;i+=2)ctx.lineTo(pts[i],pts[i+1]);ctx.stroke();}
   function dot(c,x,y,r,color){c.beginPath();c.arc(x,y,r,0,TAU);if(color)c.fillStyle=color;c.fill();}
   function star(c,x,y,n,out,inn){c.beginPath();for(let i=0;i<n*2;i++){let a=-Math.PI/2+i*Math.PI/n,rr=i%2?inn:out;c.lineTo(x+rr*Math.cos(a),y+rr*Math.sin(a));}c.closePath();}
@@ -375,12 +398,13 @@ const InteractiveObstacles = (() => {
     }
     c.restore();
   }
-  function drawSpring(c,o,p,T,phase,t){
+  function drawSpring(c,o,p,T,phase,t,anticipation,compression){
     const W=SIZES.spring.w,H=SIZES.spring.h;
     // One obvious, collision-accurate jumping surface: themed topper stays
     // INSIDE the 170x20 physical rectangle. Coil mechanism is drawn underneath.
     // Previous mushroom/cloud artwork protruded 30-65px above the real collider.
-    const flash=phase===5 ? .32+.15*Math.sin(t*.02):0;
+    const flash=phase===5 ? .24 + .23 * (compression / 5) : 0;
+    const preGlow=clamp(anticipation||0,0,1);
     c.lineWidth=4.5;c.strokeStyle=T.edge;c.fillStyle=T.dark;
     rounded(c,-W/2,-H/2,W,H,9);c.fill();c.stroke();
     const g=c.createLinearGradient(0,-H/2,0,H/2);
@@ -398,13 +422,22 @@ const InteractiveObstacles = (() => {
       g.addColorStop(0,'#f4e4b5');g.addColorStop(.5,'#cba77b');g.addColorStop(1,'#795b42');
     }
     rounded(c,-W/2+4,-H/2+2,W-8,H-4,6);c.fillStyle=g;c.fill();
+    // Anticipation: a soft band of light tightens as a rider approaches.
+    // The entire graphic stays inside the real 170×20 sensor footprint.
+    if(preGlow>0.01){
+      c.save();c.beginPath();rounded(c,-W/2+5,-H/2+3,W-10,H-6,5);c.clip();
+      c.fillStyle='rgba(255,255,255,'+(0.06+preGlow*0.22)+')';
+      const breathe=1.5*Math.sin(t/125);c.fillRect(-W/2+6,-H/2+3+breathe, W-12,3.5);
+      c.restore();
+    }
     c.save();rounded(c,-W/2+4,-H/2+2,W-8,H-4,6);c.clip();
     c.strokeStyle=o.biome==='inferno'?'#fff0bc':o.biome==='neon'?'#eaffff':o.biome==='enchanted'?'#5d3d6d':T.edge;
     c.lineWidth=3.5;c.lineJoin='round';
     // Large chevrons communicate upward launch without a detached attention icon.
     for(const center of [-49,0,49]){
-      c.beginPath();c.moveTo(center-12,2);c.lineTo(center,-6);c.lineTo(center+12,2);c.stroke();
-      c.beginPath();c.moveTo(center-10,7);c.lineTo(center,0);c.lineTo(center+10,7);c.stroke();
+      const shift=(preGlow*1.2) - (compression*.19);
+      c.beginPath();c.moveTo(center-12,2+shift);c.lineTo(center,-6+shift);c.lineTo(center+12,2+shift);c.stroke();
+      c.beginPath();c.moveTo(center-10,7+shift);c.lineTo(center,0+shift);c.lineTo(center+10,7+shift);c.stroke();
     }
     // Biome-specific inlay: texture within the true collider, no misleading
     // solid mushroom cap or clouds suspended above the hit surface.
@@ -436,22 +469,7 @@ const InteractiveObstacles = (() => {
     if(flash){c.fillStyle='rgba(255,255,255,'+flash+')';rounded(c,-W/2+6,-H/2+3,W-12,H-6,5);c.fill();}
     c.fillStyle=T.metal;for(const x of [-W*.43,W*.43]){c.beginPath();c.arc(x,H*.10,3,0,TAU);c.fill();}
   }
-  function drawApproach(ctx,o,p,theme,kind){
-    const isSpring=kind==='spring', half=(isSpring?SIZES.spring.w:SIZES.tilt.w)/2;
-    const run=isSpring?SPRING_RAMP_RUN:TILT_RAMP_RUN;
-    const top=p.y-(isSpring?SIZES.spring.h:SIZES.tilt.h)/2;
-    for(const side of [-1,1]){
-      const edge=o.x+side*half, foot=o.x+side*(half+run);
-      const fy=ground(foot)-3;
-      ctx.lineCap='round';ctx.strokeStyle=theme.dark;ctx.lineWidth=10;
-      line(ctx,[foot,fy,edge,top]);
-      ctx.strokeStyle=theme.metal;ctx.lineWidth=5;
-      line(ctx,[foot,fy,edge,top]);
-      ctx.strokeStyle=theme.light;ctx.lineWidth=2;
-      line(ctx,[foot,fy-3,edge,top-3]);
-    }
-  }
-  function draw(ctx,camX,viewW,groundY,remoteMode,demoMs,overrideItems){
+  function draw(ctx,camX,viewW,groundY,remoteMode,demoMs,overrideItems,visualRacers){
     const configs=overrideItems||placements();if(!configs.length)return;
     const byId=remoteMode?null:new Map(host.map(e=>[e.config.id,e]));
     const now=typeof performance!=='undefined'?performance.now():0;
@@ -472,12 +490,33 @@ const InteractiveObstacles = (() => {
         else if(['shard','clam','bud','servo'].includes(o.kind)){p.y-=12*(.5+.5*Math.sin(a));if(o.kind==='servo')p.x+=25*Math.sin(a);phase=Math.sin(a)>.5?1:0;}
         else if(o.kind==='spring')phase=Math.sin(a)>0.68?5:0;
       }
+      // Readable approach cue: react only when a bike is actually approaching
+      // the spring from its travel direction. No alert icons or distracting HUD.
+      let anticipation=0;
+      if(o.kind==='spring' && Array.isArray(visualRacers)){
+        for(const racer of visualRacers){
+          if(!racer || racer.finished || !Number.isFinite(racer.x))continue;
+          const sign=racer.dir===-1?-1:1;
+          const ahead=(o.x-racer.x)*sign;
+          if(ahead>75 && ahead<270 && (!Number.isFinite(racer.vx) || racer.vx*sign>=-0.1))
+            anticipation=Math.max(anticipation,clamp((270-ahead)/195,0,1));
+        }
+      }
+      // Snapshot phase=5 is the ONLY confirmation of spring compression.
+      // Use a local phase clock, rather than an unrelated global now % 330.
+      let compression=0;
+      if(o.kind==='spring'){
+        const prev=springVisual.get(o.id);
+        const next=prev&&prev.phase===phase?prev:{phase,since:now};
+        springVisual.set(o.id,next);
+        if(phase===5)compression=5*Math.sin(clamp((now-next.since)/330,0,1)*Math.PI);
+      }
       const groundYLocal=ground(o.x),T=THEMES[o.biome]||THEMES.classic;
       ctx.save();ctx.lineJoin='round';ctx.lineCap='round';
       // Fixed shadow follows the *physical* envelope. No dotted warning/!.
       ctx.fillStyle=o.biome==='paradise'?'rgba(80,111,151,.17)':'rgba(20,25,41,.24)';
       ctx.beginPath();ctx.ellipse(p.x,groundYLocal+4,o.kind==='tilt'?136:o.kind==='spring'?76:o.kind==='boulder'?65:77,7,0,0,TAU);ctx.fill();
-      if(o.kind==='tilt'){pedestal(ctx,o,groundYLocal,T,p);drawApproach(ctx,o,p,T,'tilt');}
+      if(o.kind==='tilt'){pedestal(ctx,o,groundYLocal,T,p);}
       if(['shard','clam','bud','servo'].includes(o.kind)){
         // Fixed in-world anchor: even when the obstacle moves it does not float.
         ctx.strokeStyle=T.dark;ctx.lineWidth=8;ctx.lineCap='round';
@@ -494,12 +533,12 @@ const InteractiveObstacles = (() => {
         }
       }
       if(o.kind==='spring'){
-        // The visible lead-ins coincide with the actual six-pixel physics bodies.
-        drawApproach(ctx,o,p,T,'spring');
+        // The spring pad is a passable contact surface; no rigid ramp to trap wheels.
+        // The pad lies flush with the road: there is NO fake solid lead-in ramp.
         // Exposed elastic mechanism beneath the physically collidable bed.
         // Draw the coils between y=ground and y=p.y+H/2: no fake extra collider.
         const bottom=p.y+SIZES.spring.h/2, gap=Math.max(0,groundYLocal-bottom);
-        const squash=phase===5?Math.sin(Math.min(1,(now%330)/330)*Math.PI)*5:0;
+        const squash=compression;
         ctx.lineWidth=5;ctx.strokeStyle=T.edge;ctx.lineCap='round';
         for(const dx of [-52,0,52]){
           const x=o.x+dx;ctx.beginPath();ctx.moveTo(x,bottom);
@@ -514,7 +553,7 @@ const InteractiveObstacles = (() => {
       if(o.kind==='boulder')drawBoulder(ctx,o,p,T,demoMs||now);
       else if(o.kind==='tilt')drawTilt(ctx,o,p,T,demoMs||now);
       else if(['shard','clam','bud','servo'].includes(o.kind))drawChallenge(ctx,o,p,T,phase,demoMs||now);
-      else if(o.kind==='spring')drawSpring(ctx,o,p,T,phase,demoMs||now);
+      else if(o.kind==='spring')drawSpring(ctx,o,p,T,phase,demoMs||now,anticipation,compression);
       ctx.restore();
     }
     ctx.restore();

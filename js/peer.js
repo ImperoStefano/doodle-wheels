@@ -35,211 +35,228 @@ const SIGNAL_TIMEOUT_MS = 12000;  // connessione al server di segnalazione di Pe
 const JOIN_TIMEOUT_MS = 18000;    // trattativa P2P (ICE/TURN) verso l'host
 
 const Net = (() => {
-  let peer = null;
-  let hostConn = null;          // client -> host connection
-  let connections = {};         // host only: peerId -> connection
-  let isHost = false;
-  let myId = null;
-  let myName = '';
-  let players = {};             // id -> {id, name, color, isHost}
-  const recentlyLeft = new Map(); // preserve identity briefly for reconnecting racers
-  const listeners = {};
+  let peer = null, hostConn = null, isHost = false, myId = null, myName = '';
+  let players = {}, phase = 'lobby', roomCode = '';
+  const connections = Object.create(null);  // transport PeerJS ID -> DataConnection
+  const playerConnections = Object.create(null); // stable game player ID -> DataConnection
+  const peerToPlayer = Object.create(null);  // transport ID -> stable game ID
+  const tokenToPlayer = new Map();            // never broadcast authentication tokens
+  const playerTokens = new Map();
+  const listeners = Object.create(null);
+  const REJOIN_GRACE_MS = 5 * 60 * 1000;
+  const SNAP_QUEUE_LIMIT = 96 * 1024;
 
   function on(type, cb) { (listeners[type] ||= []).push(cb); }
   function emit(type, data) { (listeners[type] || []).forEach(cb => cb(data)); }
-
+  function setPhase(v) { if (['lobby','draw','race','results'].includes(v)) phase = v; }
   function makeCode() {
     const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-    let c = '';
-    for (let i = 0; i < 4; i++) c += letters[Math.floor(Math.random() * letters.length)];
+    let c = ''; for (let i = 0; i < 4; i++) c += letters[Math.floor(Math.random() * letters.length)];
     return c;
   }
-
   function nextColor() {
     const used = Object.values(players).map(p => p.color);
     return PLAYER_COLORS.find(c => !used.includes(c)) || PLAYER_COLORS[0];
   }
+  function safeSend(conn, msg) {
+    if (!conn || !conn.open) return false;
+    try {
+      if (msg.type === 'snap' && conn.dataChannel && conn.dataChannel.bufferedAmount > SNAP_QUEUE_LIMIT) return false;
+      conn.send(msg); return true;
+    } catch (_) { return false; }
+  }
+  function broadcast(msg) { for (const c of Object.values(playerConnections)) safeSend(c, msg); }
+  function sendTo(id, msg) { return safeSend(playerConnections[id], msg); }
+  function send(msg) { if (isHost) broadcast(msg); else safeSend(hostConn, msg); }
+  function broadcastPlayers() { emit('playersChanged', { ...players }); broadcast({ type: 'players', players }); }
 
-  function hostGame(name, attempt = 0) {
-    isHost = true;
-    myName = name;
-    const code = makeCode();
-    peer = new Peer(ROOM_PREFIX + code, { debug: 1, config: ICE_CONFIG });
-
-    // Se il server di segnalazione non risponde entro il timeout, l'utente vedrebbe altrimenti
-    // la schermata restare ferma senza alcun messaggio: meglio un errore esplicito e riprovabile.
-    const signalTimer = setTimeout(() => {
-      emit('error', { message: I18n.t('err.server') });
-      peer.destroy();
-    }, SIGNAL_TIMEOUT_MS);
-
-    peer.on('open', id => {
-      clearTimeout(signalTimer);
-      myId = id;
-      players = {};
-      players[id] = { id, name: myName, color: nextColor(), isHost: true };
-      emit('roomReady', { code, players: { ...players } });
-    });
-
-    peer.on('connection', conn => {
-      conn.on('open', () => {
-        if (Object.keys(players).length >= MAX_PLAYERS) {
-          conn.send({ type: 'full' });
-          setTimeout(() => conn.close(), 200);
-          return;
-        }
-        connections[conn.peer] = conn;
-        conn.on('data', data => handleData(conn.peer, data));
-        conn.on('close', () => {
-          // An old channel may close after a fresh one was already opened.
-          if (connections[conn.peer] !== conn) return;
-          delete connections[conn.peer];
-          if (players[conn.peer]) recentlyLeft.set(conn.peer, { player: players[conn.peer], at: Date.now() });
-          delete players[conn.peer];
-          emit('playersChanged', { ...players });
-          broadcast({ type: 'players', players });
-        });
-      });
-    });
-
-    peer.on('error', err => {
-      clearTimeout(signalTimer);
-      if (err.type === 'unavailable-id' && attempt < 5) {
-        hostGame(name, attempt + 1);
-      } else {
-        emit('error', err);
-      }
-    });
-
-    // Se il server di segnalazione si scollega dopo l'avvio (es. passaggio WiFi -> 4G a metà
-    // partita), riprova da solo invece di lasciare l'host irraggiungibile per tutti.
-    peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
+  function removeExpired(id) {
+    const p = players[id];
+    if (!p || p.connected || p.isHost) return;
+    if (phase === 'race') { setTimeout(() => removeExpired(id), 60000); return; }
+    if (Date.now() - p.offlineAt < REJOIN_GRACE_MS) {
+      setTimeout(() => removeExpired(id), REJOIN_GRACE_MS - (Date.now() - p.offlineAt) + 1000); return;
+    }
+    delete players[id];
+    const token = playerTokens.get(id);
+    if (token) tokenToPlayer.delete(token);
+    playerTokens.delete(id);
+    broadcastPlayers();
+    emit('playerExpired', { id });
   }
 
-  function joinGame(code, name) {
-    isHost = false;
-    myName = name;
-    const targetId = ROOM_PREFIX + code.trim().toUpperCase();
+  function hostGame(name, attempt = 0) {
+    isHost = true; myName = name;
+    const code = makeCode(); roomCode = code;
+    peer = new Peer(ROOM_PREFIX + code, { debug: 1, config: ICE_CONFIG });
+    const currentPeer = peer;
+    const timer = setTimeout(() => {
+      if (peer !== currentPeer) return;
+      emit('error', { message: I18n.t('err.server') }); currentPeer.destroy();
+    }, SIGNAL_TIMEOUT_MS);
+    peer.on('open', id => {
+      clearTimeout(timer); if (peer !== currentPeer) return;
+      myId = id; players = {};
+      players[id] = { id, name: myName, color: nextColor(), isHost: true, connected: true };
+      emit('roomReady', { code, players: { ...players } });
+    });
+    peer.on('connection', conn => {
+      // Do not reject a full room until we read the rejoin token: a returning player
+      // must be able to occupy their reserved slot even when there are five racers.
+      connections[conn.peer] = conn;
+      conn.on('data', data => {
+        if (connections[conn.peer] !== conn) return;
+        if (data && data.type === 'join') {
+          const existing = peerToPlayer[conn.peer];
+          if (existing && playerConnections[existing] === conn) {
+            safeSend(conn, { type: 'welcome', id: existing, code, resumed: true });
+            safeSend(conn, { type: 'players', players });
+            emit('playerJoined', { id: existing, resumed: true });
+            return;
+          }
+          const token = typeof data.token === 'string' && /^[A-Za-z0-9_-]{16,100}$/.test(data.token) ? data.token : '';
+          let id = token && tokenToPlayer.get(token);
+          if (id && !players[id]) { tokenToPlayer.delete(token); id = null; }
+          if (!id && players[conn.peer] && !playerTokens.has(conn.peer)) id = conn.peer;
+          if (!id) {
+            if (['draw','race'].includes(phase) || Object.keys(players).length >= MAX_PLAYERS) {
+              safeSend(conn, { type: ['draw','race'].includes(phase) ? 'raceStarted' : 'full' });
+              setTimeout(() => { try { conn.close(); } catch (_) {} }, 250);
+              return;
+            }
+            id = conn.peer;
+            players[id] = { id, name: String(data.name || '???').slice(0, 14), color: nextColor(), isHost: false, connected: true };
+            if (token) { tokenToPlayer.set(token, id); playerTokens.set(id, token); }
+          }
+          // A second tab using the same device token takes over the existing seat.
+          // Never delete the racer or change its stable ID in the physics simulation.
+          const former = playerConnections[id];
+          if (former && former !== conn) {
+            safeSend(former, { type: 'superseded' });
+            delete peerToPlayer[former.peer];
+            if (connections[former.peer] === former) delete connections[former.peer];
+            setTimeout(() => { try { former.close(); } catch (_) {} }, 200);
+          }
+          peerToPlayer[conn.peer] = id;
+          playerConnections[id] = conn;
+          players[id].connected = true;
+          delete players[id].offlineAt;
+          const resumed = id !== conn.peer || !!data.resume;
+          safeSend(conn, { type: 'welcome', id, code, resumed });
+          safeSend(conn, { type: 'players', players });
+          broadcastPlayers();
+          emit('playerJoined', { id, resumed });
+        } else {
+          const id = peerToPlayer[conn.peer];
+          if (id && playerConnections[id] === conn && data && typeof data.type === 'string') emit('data', { from: id, data });
+        }
+      });
+      const closed = () => {
+        if (connections[conn.peer] !== conn) return;
+        delete connections[conn.peer];
+        const id = peerToPlayer[conn.peer]; delete peerToPlayer[conn.peer];
+        if (!id || playerConnections[id] !== conn) return;
+        delete playerConnections[id];
+        if (players[id]) {
+          players[id].connected = false; players[id].offlineAt = Date.now();
+          broadcastPlayers(); emit('playerDisconnected', { id });
+          setTimeout(() => removeExpired(id), REJOIN_GRACE_MS + 1000);
+        }
+      };
+      conn.on('close', closed);
+      conn.on('error', closed);
+    });
+    peer.on('error', err => {
+      clearTimeout(timer);
+      if (err.type === 'unavailable-id' && attempt < 5) {
+        try { currentPeer.destroy(); } catch (_) {}
+        hostGame(name, attempt + 1);
+      } else emit('error', err);
+    });
+    peer.on('disconnected', () => { if (!peer.destroyed) { try { peer.reconnect(); } catch (_) {} } });
+  }
+
+  function joinGame(code, name, resumeToken = '') {
+    isHost = false; myName = name; roomCode = code.trim().toUpperCase();
+    const targetId = ROOM_PREFIX + roomCode;
     peer = new Peer(undefined, { debug: 1, config: ICE_CONFIG });
     let retryTimer = null, attempts = 0, connectedOnce = false, stopped = false;
-    const connect = () => {
+    function scheduleRetry() {
+      if (stopped || retryTimer) return;
+      if (connectedOnce) emit('reconnecting');
+      if (++attempts > (connectedOnce ? 60 : 8)) {
+        stopped = true;
+        try { peer.destroy(); } catch (_) {}
+        if (connectedOnce) emit('hostLeft');
+        else emit('error', { message: I18n.t('err.host') });
+        return;
+      }
+      retryTimer = setTimeout(() => { retryTimer = null; connect(); }, Math.min(5000, 500 * Math.pow(1.35, Math.min(attempts, 10))));
+    }
+    function connect() {
       if (stopped || !peer || peer.destroyed) return;
       let conn;
-      try { conn = peer.connect(targetId, { reliable: true }); }
-      catch (_) { scheduleRetry(); return; }
+      try { conn = peer.connect(targetId, { reliable: true }); } catch (_) { scheduleRetry(); return; }
       hostConn = conn;
       let opened = false;
-      const timer = setTimeout(() => {
-        if (opened || stopped || hostConn !== conn) return;
+      const timeout = setTimeout(() => {
+        if (stopped || hostConn !== conn || opened) return;
         try { conn.close(); } catch (_) {}
         scheduleRetry();
       }, JOIN_TIMEOUT_MS);
       conn.on('open', () => {
         if (stopped || hostConn !== conn) return;
-        const resuming = connectedOnce;
-        opened = true; connectedOnce = true; attempts = 0;
-        clearTimeout(timer); clearTimeout(retryTimer);
-        safeSend(conn, { type: 'join', name, resume: resuming });
-        if (resuming) emit('reconnected');
+        opened = true; clearTimeout(timeout); clearTimeout(retryTimer);
+        attempts = 0;
+        safeSend(conn, { type: 'join', name, token: resumeToken, resume: connectedOnce });
       });
-      conn.on('data', data => { if (!stopped && hostConn === conn) handleData('host', data); });
-      conn.on('close', () => {
-        clearTimeout(timer);
+      conn.on('data', data => {
+        if (stopped || hostConn !== conn || !data) return;
+        if (data.type === 'welcome') {
+          const wasConnected = connectedOnce;
+          myId = data.id; connectedOnce = true;
+          if (wasConnected || data.resumed) emit('reconnected');
+          emit('joined', { resumed: !!data.resumed, code: data.code, id: myId });
+        } else if (data.type === 'superseded') {
+          stopped = true; clearTimeout(timeout); clearTimeout(retryTimer);
+          emit('sessionMoved');
+          try { conn.close(); } catch (_) {}
+        } else if (data.type === 'full' || data.type === 'raceStarted') {
+          stopped = true; clearTimeout(timeout); clearTimeout(retryTimer);
+          emit('error', { message: data.type === 'full' ? I18n.t('err.full', { n: MAX_PLAYERS }) : I18n.t('net.raceStarted') });
+          try { conn.close(); } catch (_) {}
+        } else if (data.type === 'players') {
+          players = data.players;
+          emit('playersChanged', { ...players });
+        } else emit('data', { from: 'host', data });
+      });
+      const lost = () => {
+        clearTimeout(timeout);
         if (stopped || hostConn !== conn) return;
         scheduleRetry();
-      });
-      conn.on('error', () => {
-        clearTimeout(timer);
-        if (stopped || hostConn !== conn) return;
-        scheduleRetry();
-      });
-    };
-    const scheduleRetry = () => {
-      if (stopped || retryTimer) return;
-      if (connectedOnce) emit('reconnecting');
-      if (++attempts > 5) {
-        stopped = true;
-        if (connectedOnce) emit('hostLeft');
-        else emit('error', { message: I18n.t('err.host') });
-        return;
-      }
-      // Keep the same PeerJS ID: the host can associate the recovering player
-      // with its existing bike instead of creating a duplicate racer.
-      retryTimer = setTimeout(() => { retryTimer = null; connect(); }, Math.min(6500, 350 * Math.pow(1.7, attempts)));
-    };
+      };
+      conn.on('close', lost); conn.on('error', lost);
+    }
     const signalTimer = setTimeout(() => {
       if (!peer || peer.destroyed || connectedOnce || stopped) return;
       emit('error', { message: I18n.t('err.server') });
       stopped = true; try { peer.destroy(); } catch (_) {}
     }, SIGNAL_TIMEOUT_MS);
-    peer.on('open', id => {
-      clearTimeout(signalTimer);
-      myId = id;
-      connect();
-    });
+    peer.on('open', id => { clearTimeout(signalTimer); myId = id; connect(); });
     peer.on('error', err => {
       clearTimeout(signalTimer);
       if (stopped) return;
-      // A transient signalling disconnect does not invalidate an open DataChannel.
       if (connectedOnce && err && err.type === 'network') { scheduleRetry(); return; }
       emit('error', err);
     });
-    peer.on('disconnected', () => { if (!peer.destroyed) peer.reconnect(); });
-  }
-
-  function handleData(fromId, data) {
-    if (isHost) {
-      if (data.type === 'join') {
-        if (!players[fromId] && Object.keys(players).length >= MAX_PLAYERS) {   // due connessioni aperte insieme non possono superare il massimo
-          const c = connections[fromId]; if (c) { try { c.send({ type: 'full' }); } catch (e) {} setTimeout(() => { try { c.close(); } catch (e) {} }, 200); delete connections[fromId]; }
-          return;
-        }
-        const recent = recentlyLeft.get(fromId);
-        const previous = players[fromId] || (recent && Date.now() - recent.at < 45000 ? recent.player : null);
-        recentlyLeft.delete(fromId);
-        players[fromId] = previous || { id: fromId, name: String(data.name || '???').slice(0, 14), color: nextColor(), isHost: false };
-        emit('playersChanged', { ...players });
-        broadcast({ type: 'players', players });
-      } else {
-        emit('data', { from: fromId, data });
-      }
-    } else {
-      if (data.type === 'full') {
-        emit('error', { message: I18n.t('err.full', { n: MAX_PLAYERS }) });
-      } else if (data.type === 'players') {
-        players = data.players;
-        emit('playersChanged', { ...players });
-      } else {
-        emit('data', { from: 'host', data });
-      }
-    }
-  }
-
-  // Snapshots are replaceable: don't build a seconds-long reliable-DataChannel queue
-  // for a player on a slow mobile connection. Events (results, wheel updates, jumps)
-  // are never discarded. The next snapshot contains the authoritative full state.
-  const SNAP_QUEUE_LIMIT = 96 * 1024;
-  function safeSend(conn, msg) {
-    if (!conn || !conn.open) return false;
-    try {
-      if (msg.type === 'snap' && conn.dataChannel &&
-          conn.dataChannel.bufferedAmount > SNAP_QUEUE_LIMIT) return false;
-      conn.send(msg); return true;
-    } catch (err) { return false; }
-  }
-  function broadcast(msg) {
-    for (const c of Object.values(connections)) safeSend(c, msg);
-  }
-
-  function send(msg) {
-    if (isHost) broadcast(msg);
-    else safeSend(hostConn, msg);
+    peer.on('disconnected', () => { if (!peer.destroyed) { try { peer.reconnect(); } catch (_) {} } });
   }
 
   return {
-    hostGame, joinGame, broadcast, send, on,
+    hostGame, joinGame, broadcast, send, sendTo, on, setPhase,
     get isHost() { return isHost; },
     get myId() { return myId; },
     get players() { return players; },
+    get roomCode() { return roomCode; },
   };
 })();

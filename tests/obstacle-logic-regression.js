@@ -26,15 +26,16 @@ c.Terrain.INTERACTIVE_OBSTACLES=[
 const w={bodies:[]};I.mount(w);assert.equal(I.hostBodies.length,4);
 const [spring,tilt,boulder,clam]=I.hostBodies;
 assert.equal(spring.width,170);assert.equal(spring.position.y-spring.height/2,489);
-assert(w.bodies.some(o=>o.pointA&&o.pointA.x===1700),'tilt has real pivot');
-assert(w.bodies.filter(o=>o.label==='interactive-spring-ramp').length===2,'spring has entry ramps');
-assert(w.bodies.filter(o=>o.label==='interactive-tilt-ramp').length===2,'tilt has entry ramps');
+assert(tilt.isSensor && tilt.isStatic,'tilt uses an unblocking contact sensor');
+assert(spring.isSensor && spring.isStatic,'spring uses a contact sensor');
+assert(!w.bodies.some(o=>/interactive-(tilt|spring)-ramp/.test(o.label||'')),'no rigid access ramps remain');
 cases+=5;
 function rider(x){const fw={label:'wheel',position:{x,y:447},velocity:{x:4,y:3}},rw={label:'wheel',position:{x:x-65,y:447},velocity:{x:4,y:3}},chassis={label:'chassis',position:{x,y:427},velocity:{x:4,y:2}};return {fw,rw,chassis,finished:false};}
 const a=rider(835),b=rider(831);I.beforeStep(0,[a,b]);
 I.contact(spring,a.fw,0);I.contact(spring,b.fw,0);I.afterStep(0,[a,b]);
 for(const r of [a,b])for(const part of [r.fw,r.rw,r.chassis])assert(part.velocity.y<=-12.2,'independent spring launch');cases+=6;
-a.fw.velocity={x:4,y:4};I.contact(spring,a.fw,120);I.afterStep(120,[a,b]);assert.equal(a.fw.velocity.y,4,'per-rider cooldown prevents repeat');cases++;
+a.fw.velocity={x:4,y:4};I.contact(spring,a.fw,120);I.afterStep(120,[a,b]);assert.equal(a.fw.velocity.y,4,'per-rider disarming prevents repeat');cases++;
+const tiltBike=rider(1788);tiltBike.fw.velocity.y=0;I.beforeStep(800,[tiltBike]);I.contact(tilt,tiltBike.fw,800);I.afterStep(800,[tiltBike]);assert(tiltBike.fw.velocity.y<0,'tilt provides a gentle contact impulse');for(let n=0;n<20;n++)I.beforeStep(800+n*17,[tiltBike]);assert(Math.abs(I.snapshot()[1][3])>.012,'tilt leans under load');cases+=2;
 I.beforeStep(500,[a,b]);assert.equal(I.snapshot()[0][4],0,'spring animation resets');cases++;
 const d=rider(2375);d.fw.velocity={x:4.3,y:2};I.beforeStep(1300,[d]);I.contact(boulder,d.fw,1300);I.afterStep(1300,[d]);assert(d.fw.velocity.y<=-8,'seed vault assists front wheel');cases++;
 const collision=I.snapshot();assert.equal(collision.length,4);I.receive(collision);I.clearClient();cases++;

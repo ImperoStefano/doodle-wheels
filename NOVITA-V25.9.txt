@@ -1,0 +1,19 @@
+DOODLE WHEELS V25.9 — INTERVENTO MIRATO SUGLI INCASTRI
+
+CORREZIONE SPERIMENTALE
+- Solo ruote spigolose ferme sul terreno: tentativo controllato di sblocco fisico
+  prima del teletrasporto di emergenza (senza cambiare posizione).
+- Esclusi salti, rampe, lava, acqua, ponti e ostacoli veri.
+- Sim.diagnostics() esporta gli eventi di blocco, senza rete multiplayer.
+
+DOVE COLLAUDARE
+https://imperostefano.github.io/doodle-wheels/test-incastri.html?v=259
+- Scegli un mondo o tutti e sei; la pagina confronta V25.8 e V25.9
+  sulla stessa pista con Matter.js reale.
+- Copia il rapporto JSON e invialo in chat.
+- I 13 test precedenti restano in test-fisica.html?v=259.
+
+LIMITI
+- Passati 9 controlli logici di rilascio e i controlli di sintassi.
+- Non eseguita qui una gara reale Matter.js: libreria non installata, CDN non raggiungibile.
+- Nessuna promessa sui nuovi conteggi di anti-blocco senza collaudo reale.

@@ -18,13 +18,20 @@ const shapes={
 };
 // Use the REAL 80px wheel radius of Draw.getNormalizedVertices(), not test-only 40px wheels.
 for(const vertices of Object.values(shapes)){const r=Math.max(...vertices.map(p=>Math.hypot(p.x,p.y))); for(const p of vertices){p.x*=80/r;p.y*=80/r;}}
+
+// IMPORTANTE: i sorgenti vanno eseguiti nello STESSO realm di Matter. Con vm.createContext()
+// gli oggetti letterali del gioco hanno un Object.prototype diverso e Common.extend() di Matter
+// (che controlla constructor===Object) copia collisionFilter per riferimento: category/mask spariscono,
+// canCollide() torna false e le ruote attraversano il terreno (falsi FAIL "anti-stall" in tutti i test).
+function loadGame(now){
+  const src=['terrain.js','obstacles.js','interactive-obstacles.js','physics.js']
+    .map(f=>fs.readFileSync(path.join(root,'js',f),'utf8')).join('\n;\n');
+  return new Function('Matter','performance',src+'\n;return {Terrain,Sim};')(Matter,{now});
+}
 let pass=0,fail=0;const results=[];
 function scenario(shape,kind,withJump){
   let clock=0;
-  const context=vm.createContext({console,Math,Date,Matter,performance:{now:()=>clock},setTimeout,clearTimeout});
-  for(const file of ['terrain.js','obstacles.js','interactive-obstacles.js','physics.js'])
-    vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),context,{filename:file});
-  const Terrain=vm.runInContext('Terrain',context),Sim=vm.runInContext('Sim',context);
+  const {Terrain,Sim}=loadGame(()=>clock);
   // Short, identical neutral approach: no flowers, dynamic obstacles, bridges or patches
   // within the challenge. The full bicycle model and normal host physics tick are used.
   Terrain.applyLayout(['hills','ramps'],{world:'classic',season:'classica',nogap:true,nopatch:true});
@@ -66,10 +73,7 @@ function scenario(shape,kind,withJump){
 // physical spring without shared per-obstacle cooldown blocking the second.
 function concurrentSpring(){
   let clock=0;
-  const context=vm.createContext({console,Math,Date,Matter,performance:{now:()=>clock},setTimeout,clearTimeout});
-  for(const file of ['terrain.js','obstacles.js','interactive-obstacles.js','physics.js'])
-    vm.runInContext(fs.readFileSync(path.join(root,'js',file),'utf8'),context,{filename:file});
-  const T=vm.runInContext('Terrain',context), S=vm.runInContext('Sim',context);
+  const {Terrain:T,Sim:S}=loadGame(()=>clock);
   T.applyLayout(['hills','ramps'],{world:'classic',season:'classica',nogap:true,nopatch:true});
   T.FLOWERS.length=0;T.DYNAMIC_OBSTACLES.length=0;
   T.INTERACTIVE_OBSTACLES.splice(0,T.INTERACTIVE_OBSTACLES.length,{id:0,x:840,kind:'spring',biome:'classic',zone:'start'});

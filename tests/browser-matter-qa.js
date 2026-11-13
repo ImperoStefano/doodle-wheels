@@ -70,7 +70,7 @@
     let pass=results.filter(v=>v.pass).length,fail=results.filter(v=>!v.pass).length;
     totals.textContent=`${pass} superati · ${fail} non superati · ${results.length}/${cases.length} verifiche`;
     out.replaceChildren();for(const o of results){const tr=document.createElement('tr');for(const value of [o.shape,short(o.kind),o.pass?'PASS':'FAIL',o.detail]){const td=document.createElement('td');td.textContent=value;tr.appendChild(td);}tr.children[2].className=o.pass?'good':'bad';out.appendChild(tr);}
-    const obj={suite:'Doodle Wheels QA V25.6',engine:window.Matter?.version||null,location:location.href,startedAt:new Date(startedAt).toISOString(),completed:results.length,expected:cases.length,pass,fail,loadFailure,results};
+    const obj={suite:'Doodle Wheels QA V25.7',engine:window.Matter?.version||null,location:location.href,startedAt:new Date(startedAt).toISOString(),completed:results.length,expected:cases.length,pass,fail,loadFailure,results};
     report.textContent=JSON.stringify(obj,null,2);
   }
   function single(v,files,Matter){

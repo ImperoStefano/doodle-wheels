@@ -1,0 +1,26 @@
+DOODLE WHEELS V26 — RIENTRO RAPIDO NELLA STANZA (13 NOV 2026)
+
+NUOVO:
+- Il giocatore ospite può chiudere/ripristinare la pagina e rientrare dalla home con un solo tocco.
+- Token casuale locale per conservare il posto nella stanza: ID bici, nome, colore e progressi non vengono duplicati.
+- L'host conserva la postazione fino a 5 minuti dalla disconnessione e accetta lo stesso giocatore anche in una stanza di 5 persone.
+- Ritorno alla fase esatta: lobby, disegno, gara in corso, risultati.
+- Quando si riprende una gara: layout, mondo speciale, forme aggiornate, scatti di fusione/lava, ostacoli mobili e stato corrente vengono risincronizzati dall'host.
+- Una nuova persona non può entrare a metà corsa; un giocatore precedente può.
+- Se una persona lascia la fase di disegno, dopo 10 secondi di attesa l'host assegna una ruota base per non lasciare tutti bloccati.
+- Stato offline nella lista della lobby, con traduzioni IT/EN.
+- "Nuova Pista" nei risultati ora mantiene la stanza dell'host e gli amici, invece di ricaricare la pagina e interrompere la partita.
+
+LIMITI INTENZIONALI:
+- Questa release riguarda il rientro dei PARTECIPANTI. Se si chiude la scheda dell'HOST, la sua simulazione Matter.js non è più disponibile: serve una futura migrazione dell'host, non realizzabile con un semplice rientro al codice stanza.
+- Il posto viene conservato per 5 minuti senza connessione; il giocatore può rientrare finché l'host mantiene aperta la stanza.
+- I test sono simulazioni deterministiche di PeerJS e ripristini UI in Chromium. Non certificano un'interruzione reale 4G/5G o una chiusura di Safari iOS; da provare con 2 telefoni reali.
+
+PROVA MANUALE:
+1. Host crea stanza e invita un amico (non serve una nuova stanza).
+2. Amico entra, disegna, avvia gara.
+3. Amico chiude Safari/Chrome o ricarica la pagina.
+4. Riapre lo stesso indirizzo e preme 'Rientra nella stanza · CODICE'.
+5. Verificare stesso nome, stesso colore, stessa bici, nessuna nuova posizione in classifica.
+6. Ripetere durante disegno, durante gara, dopo traguardo, con stanza piena.
+7. Non chiudere la scheda dell'host in questa prova.

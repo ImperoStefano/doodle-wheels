@@ -85,15 +85,56 @@
   let viewScale = 1, viewW = 0, viewH = 0, minimapMetrics = { w: 0, h: 0 };
   let baseVS = 1, gzoom = 1, cssWv = 0, cssHv = 0, dprV = 1, shake = 0, shX = 0, shY = 0;   // zoom dinamico (ruote giganti) e tremolio della telecamera
   // lunghezza della pista scelta dall'host in lobby, e ultima pista giocata (per "Rigioca stessa pista")
-  let trackLen = 'lunga', currentLayout = null, keepTrack = false, crazy = false, currentWorld = 'classic';
+  let trackLen = 'corta', currentLayout = null, keepTrack = false, crazy = false, currentWorld = 'classic';
   let lastCallSent = false, lastCallEnd = 0;
+  let currentRaceStart = 0, drawDeadline = 0;
+  // A room invitation and an unguessable return token survive a closed tab.
+  // The host owns the actual race state: nothing about the physics is trusted from storage.
+  const REJOIN_STORAGE = 'dw_room_resume_v260';
+  function readRejoin() {
+    try { const s = JSON.parse(localStorage.getItem(REJOIN_STORAGE) || 'null');
+      return s && /^[A-Z]{4}$/.test(s.code) && /^[A-Za-z0-9_-]{16,100}$/.test(s.token) &&
+        typeof s.name === 'string' && Date.now() - s.at < 5 * 60000 ? s : null;
+    } catch (_) { return null; }
+  }
+  function makeRejoinToken() {
+    const a = new Uint8Array(20); crypto.getRandomValues(a);
+    return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  function saveRejoin(code, name, token) {
+    try { localStorage.setItem(REJOIN_STORAGE, JSON.stringify({ code, name, token, at: Date.now() })); } catch (_) {}
+  }
+  const btnRejoin = document.getElementById('btn-rejoin');
+  function updateRejoinButton() {
+    if (!btnRejoin) return;
+    const rec = readRejoin();
+    btnRejoin.hidden = !rec;
+    if (rec) btnRejoin.textContent = I18n.t('menu.rejoin') + ' · ' + rec.code;
+  }
+  function connectToRoom(code, name, resumeOnly = false) {
+    const c = String(code || '').trim().toUpperCase();
+    const previous = readRejoin();
+    if (!name || !/^[A-Z]{4}$/.test(c)) { showMenuError(I18n.t('menu.err.namecode')); return; }
+    if (resumeOnly && (!previous || previous.code !== c)) return;
+    let token;
+    try { token = previous && previous.code === c ? previous.token : makeRejoinToken(); }
+    catch (_) { token = ''; }
+    if (token) saveRejoin(c, name, token);
+    els.name.value = name; els.code.value = c;
+    showMenuError(I18n.t('net.reconnecting'));
+    Net.joinGame(c, name, token);
+    updateRejoinButton();
+  }
+  if (btnRejoin) btnRejoin.addEventListener('click', () => {
+    const rec = readRejoin(); if (rec) connectToRoom(rec.code, rec.name, true);
+  });
 
   function showScreen(name) { ['menu', 'lobby', 'draw', 'race', 'results'].forEach(s => els[s].classList.toggle('screen--active', s === name)); document.body.dataset.screen = name; if (typeof Sfx !== 'undefined') Sfx.mood(name === 'race' ? 'drive' : name === 'results' ? 'finale' : 'calm'); if (name === 'lobby' || name === 'menu') refreshInvite(); }
 
-  els.btnHost.addEventListener('click', () => { const name = els.name.value.trim(); if (name) { Net.hostGame(name); try { Sim.warmCalibration && Sim.warmCalibration(); } catch (e) {} } else showMenuError(I18n.t('menu.err.name')); });
+  els.btnHost.addEventListener('click', () => { const name = els.name.value.trim(); if (name) { try { localStorage.removeItem(REJOIN_STORAGE); } catch (_) {} updateRejoinButton(); Net.hostGame(name); try { Sim.warmCalibration && Sim.warmCalibration(); } catch (e) {} } else showMenuError(I18n.t('menu.err.name')); });
   els.btnJoin.addEventListener('click', () => {
     const name = els.name.value.trim(), code = els.code.value.trim();
-    if (!name || code.length !== 4) return showMenuError(I18n.t('menu.err.namecode')); Net.joinGame(code, name);
+    if (!name || code.length !== 4) return showMenuError(I18n.t('menu.err.namecode')); connectToRoom(code, name);
   });
   function showMenuError(msg) { els.menuError.style.color = ''; els.menuError.textContent = msg; }
 
@@ -163,8 +204,29 @@
     }
   });
   Net.on('reconnected', () => { if (connectionStatus) connectionStatus.hidden = true; });
+  Net.on('sessionMoved', () => {
+    stopRaceLoops(); showScreen('menu'); updateRejoinButton();
+    showMenuError(I18n.t('net.sessionMoved'));
+  });
+  Net.on('joined', () => {
+    if (connectionStatus) connectionStatus.hidden = true;
+    showMenuError('');
+    const rec = readRejoin(); if (rec) saveRejoin(rec.code, rec.name, rec.token);
+  });
+  function keepReturnPassFresh() {
+    if (Net.isHost || !Net.myId || document.body.dataset.screen === 'menu') return;
+    // Refresh while connected so a five-minute recovery pass stays valid even
+    // if friends spend an hour playing together before closing the tab.
+    try {
+      const rec = JSON.parse(localStorage.getItem(REJOIN_STORAGE) || 'null');
+      if (rec && rec.code === Net.roomCode && rec.token) saveRejoin(rec.code, rec.name, rec.token);
+    } catch (_) {}
+  }
+  setInterval(keepReturnPassFresh, 20000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') keepReturnPassFresh(); });
+  window.addEventListener('pagehide', keepReturnPassFresh);
   Net.on('hostLeft', () => { if (connectionStatus) connectionStatus.hidden = true; alert(I18n.t('race.hostleft')); location.reload(); });
-  Net.on('roomReady', ({ code }) => { els.roomCode.textContent = code; renderPlayerList(); showScreen('lobby'); refreshInvite(); });
+  Net.on('roomReady', ({ code }) => { Net.setPhase('lobby'); els.roomCode.textContent = code; renderPlayerList(); showScreen('lobby'); refreshInvite(); });
   Net.on('playersChanged', () => {
     renderPlayerList();
     // Only a client still on the menu is moved to the lobby. (Before, ANY update — e.g. someone
@@ -178,7 +240,7 @@
     els.playerList.innerHTML = '';
     Object.values(Net.players).forEach(p => {
       const li = document.createElement('li');
-      li.innerHTML = `<span class="color-dot" style="background:${p.color}"></span><span class="player-name">${escapeHtml(p.name)}</span>${p.isHost ? '<span class="host-badge">HOST</span>' : ''}`;
+      li.innerHTML = `<span class="color-dot" style="background:${p.color}"></span><span class="player-name">${escapeHtml(p.name)}</span>${p.isHost ? '<span class="host-badge">HOST</span>' : ''}${p.connected === false ? `<span class="host-badge" title="${I18n.t('net.offline')}">${I18n.t('net.offline')}</span>` : ''}`;
       els.playerList.appendChild(li);
     });
     const c = Object.keys(Net.players).length;
@@ -253,6 +315,9 @@
   }
 
   I18n.onChange(() => {
+    // Labels for touch controls follow the player's own language.
+    if (els.btnJump) els.btnJump.setAttribute('aria-label', I18n.t('race.jump'));
+    if (els.btnSprint) els.btnSprint.setAttribute('aria-label', I18n.t('race.sprintTip'));
     fmtHintTxt(); if (document.body.dataset.screen === 'results' && lastCh) { try { renderChamp(lastCh); } catch (e) {} }
     els.lenHint.textContent = I18n.t('len.hint.' + trackLen); els.modeHint.textContent = I18n.t('mode.hint.' + (crazy ? 'crazy' : 'normal'));
     if (els.btnRedrawTrigger && els.btnRedrawTrigger.textContent) els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft });
@@ -458,18 +523,100 @@
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => { if (els.btnJump) els.btnJump.addEventListener(ev, () => els.btnJump.classList.remove('press')); });
 
   // Messaggi host-only: i client non possono imporre gara, classifica o snapshot.
-  const HOST_EVENTS = new Set(['goToDraw','allReady','snap','results','lastCall','restartToDraw','wheelUpdated','melt']);
+  const HOST_EVENTS = new Set(['goToDraw','allReady','snap','results','lastCall','restartToDraw','wheelUpdated','melt','resumeState']);
   function validWheelVertices(v) {
     return Array.isArray(v) && v.length >= 3 && v.length <= 256 && v.every(pt => pt &&
       Number.isFinite(pt.x) && Number.isFinite(pt.y) && Math.abs(pt.x) <= 250 && Math.abs(pt.y) <= 250);
   }
   const hostRedrawCount = Object.create(null), hostRedrawAt = Object.create(null);
+  // Host-authoritative state resynchronization. A new browser tab can render the
+  // current race without recreating its physical racer or starting a new room.
+  function sendRoomState(id) {
+    if (!Net.isHost) return;
+    const stage = document.body.dataset.screen || 'lobby';
+    const msg = { type: 'resumeState', stage, code: Net.roomCode, champ: champPublic(),
+      wheel: wheels[id] || null, deadline: drawDeadline };
+    if (stage === 'race' || stage === 'results') {
+      msg.wheels = Object.fromEntries(Object.entries(raceMeta).map(([rid, meta]) => [rid, meta.vertices]));
+      msg.layout = currentLayout;
+      msg.world = currentWorld;
+      msg.crazy = crazy;
+      msg.np = Object.keys(raceMeta).length;
+      msg.startTime = currentRaceStart;
+      msg.season = Terrain.SEASON && Terrain.SEASON.key;
+      msg.redraws = hostRedrawCount[id] ?? redrawsForTrack();
+    }
+    if (stage === 'results') { msg.standings = lastStandings; msg.champResult = lastCh; }
+    Net.sendTo(id, msg);
+    if (stage === 'race' && snapshotLoopHandle) {
+      if (Sim.getAllMeltStates) Net.sendTo(id, { type:'meltSync', melts: Sim.getAllMeltStates() });
+      Net.sendTo(id, { type:'snap', racers: Sim.snapshot(), ts: performance.now(),
+        ht: Sim.getObstacleTime(), io: Sim.getInteractiveState(),
+        obs: Sim.obstacleSnapshot(), pu: Sim.usedPortals() });
+    }
+  }
+  Net.on('playerJoined', ({ id }) => sendRoomState(id));
+  Net.on('playerDisconnected', ({ id }) => {
+    if (!Net.isHost || document.body.dataset.screen !== 'draw' || wheels[id]) return;
+    // Give a drawing player ten seconds to return, then substitute a valid wheel.
+    // Otherwise one closed tab prevents the whole group from ever starting.
+    setTimeout(() => {
+      if (Net.isHost && document.body.dataset.screen === 'draw' &&
+          Net.players[id] && !Net.players[id].connected && !wheels[id]) {
+        receiveWheel(id, preRaceDrawer.fallbackCircle());
+      }
+    }, 10000);
+  });
+  function applyResumeState(d) {
+    if (Net.isHost || !d || !['lobby', 'draw', 'race', 'results'].includes(d.stage)) return;
+    const code = String(d.code || '').replace(/[^A-Z]/g, '').slice(0,4);
+    if (code) { els.code.value = code; els.roomCode.textContent = code; }
+    if (d.stage === 'lobby') { if (document.body.dataset.screen !== 'lobby') showScreen('lobby'); renderPlayerList(); return; }
+    champ = d.champ || null;
+    if (d.stage === 'draw') {
+      if (document.body.dataset.screen !== 'draw') enterDrawPhase(d.deadline);
+      if (validWheelVertices(d.wheel)) {
+        myVertices = d.wheel; clearInterval(drawTimerHandle);
+        els.btnSubmitWheel.disabled = true; els.drawWait.textContent = I18n.t('draw.wait');
+      }
+      return;
+    }
+    if (!Array.isArray(d.layout) || !d.layout.length || !d.wheels) return;
+    wheels = d.wheels; currentLayout = d.layout; crazy = !!d.crazy;
+    currentWorld = ['classic','paradise','inferno','atlantis','enchanted','neon'].includes(d.world) ? d.world : 'classic';
+    const opts = { world: currentWorld };
+    if (crazy) { opts.crazy = true; opts.np = d.np || Object.keys(Net.players).length; }
+    if (d.season && !crazy) opts.season = d.season;
+    Terrain.applyLayout(currentLayout, opts);
+    currentRaceStart = d.startTime;
+    if (d.stage === 'race') {
+      if (document.body.dataset.screen !== 'race') startCountdown(d.startTime, true);
+      for (const [id, v] of Object.entries(d.wheels)) if (raceMeta[id] && validWheelVertices(v)) raceMeta[id].vertices = v;
+      if (Number.isFinite(d.redraws)) {
+        myRedrawsLeft = Math.max(0, d.redraws);
+        els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft });
+        els.redrawUi.style.display = myRedrawsLeft > 0 ? 'flex' : 'none';
+      }
+    } else if (Array.isArray(d.standings)) {
+      raceMeta = {};
+      Object.values(Net.players).forEach(p => {
+        raceMeta[p.id] = { color: p.color, name: p.name, vertices: wheels[p.id] || preRaceDrawer.fallbackCircle() };
+      });
+      Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X, Terrain.WORLD, Terrain.WORLD_SEGMENT);
+      Flora.setTrack();
+      showResults(d.standings, d.champResult);
+    }
+  }
   Net.on('data', ({ from, data }) => {
     if (!data || typeof data.type !== 'string') return;
     if (Net.isHost && HOST_EVENTS.has(data.type)) return;
+    if (data.type === 'resumeState' && !Net.isHost && from === 'host') applyResumeState(data);
+    if (data.type === 'meltSync' && !Net.isHost && from === 'host' && Array.isArray(data.melts)) {
+      data.melts.forEach(m => { if (m && raceMeta[m.id] && Array.isArray(m.f) && Array.isArray(m.r)) applyMelt(m.id,m.f,m.r); });
+    }
     if (data.type === 'goToDraw') { champ = data.champ || null; enterDrawPhase(); }
     if (data.type === 'wheel' && Net.isHost && Net.players[from] && validWheelVertices(data.vertices)) receiveWheel(from, data.vertices);
-    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
+    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentRaceStart = data.startTime; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
     if (data.type === 'snap') { if (!Net.isHost) { InteractiveObstacles.receive(data.io); if (data.obs) DynamicObstacles.setRemoteStates(data.obs); } if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); if (!Net.isHost && Number.isFinite(data.ht) && Number.isFinite(data.ts) && snapOff !== null) { const origin = data.ts + snapOff - data.ht; hazardHostOrigin = hazardHostOrigin === null ? origin : hazardHostOrigin * 0.94 + origin * 0.06; } }
     if (data.type === 'results') showResults(data.standings, data.champ);
     if (data.type === 'lastCall') showLastCall(data.ms);
@@ -531,13 +678,29 @@
     if (firstTip) firstTip.hidden = true;
     try { localStorage.setItem('dw_draw_tip_seen', '1'); } catch (_) {}
   });
-  function enterDrawPhase() {
+  function enterDrawPhase(deadline) {
     if (firstTip) { try { firstTip.hidden = localStorage.getItem('dw_draw_tip_seen') === '1'; }
       catch (_) { firstTip.hidden = false; } }
     requestWakeLock();
+    if (Net.isHost) Net.setPhase('draw');
+    drawDeadline = Number.isFinite(deadline) ? deadline : Date.now() + 30000;
     stopRaceLoops(); raceStarting = false; preRaceDrawer.clear(); myVertices = null; els.btnSubmitWheel.disabled = true; els.drawWait.textContent = ''; updateChampBanner(); showScreen('draw');
-    let t = 30; els.drawTimer.textContent = t; clearInterval(drawTimerHandle);
-    drawTimerHandle = setInterval(() => { t--; els.drawTimer.textContent = Math.max(t, 0); if (t <= 0) { clearInterval(drawTimerHandle); if (!myVertices) submitWheel(true); } }, 1000);
+    if (Net.isHost) {
+      // Offline seats are reserved for a returning friend; a permanently absent
+      // participant must never strand everybody at the drawing countdown.
+      for (const [id, player] of Object.entries(Net.players)) if (!player.connected && !wheels[id]) {
+        setTimeout(() => {
+          if (document.body.dataset.screen === 'draw' && Net.players[id] &&
+              !Net.players[id].connected && !wheels[id]) receiveWheel(id, preRaceDrawer.fallbackCircle());
+        }, 10000);
+      }
+    }
+    els.drawTimer.textContent = Math.max(0, Math.ceil((drawDeadline - Date.now()) / 1000)); clearInterval(drawTimerHandle);
+    drawTimerHandle = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((drawDeadline - Date.now()) / 1000));
+      els.drawTimer.textContent = remaining;
+      if (remaining <= 0) { clearInterval(drawTimerHandle); if (!myVertices) submitWheel(true); }
+    }, 250);
   }
 
   function submitWheel(forced) {
@@ -561,7 +724,7 @@
     els.drawWait.textContent = I18n.t('draw.ready', { got, n: ids.length });
     if (ids.length > 0 && got >= ids.length) {
       raceStarting = true;
-      const start = Date.now() + 3500 + 1500;  // breve attesa (la fisica finisce di prepararsi), poi 3-2-1
+      const start = Date.now() + 3500 + 1500; currentRaceStart = start;  // breve attesa (la fisica finisce di prepararsi), poi 3-2-1
       // "Rigioca stessa pista" riusa il percorso appena giocato; altrimenti ne nasce uno nuovo della lunghezza scelta
       const season = champ && !crazy ? champ.seasons[champ.i] : null;
       const replaying = keepTrack && currentLayout;
@@ -588,8 +751,10 @@
   // Più la gara è lunga, più cambi forma hai: corta 2, media 4, lunga 6 (le zone vere sono ZONES meno partenza e arrivo)
   function redrawsForTrack() { const n = Math.max(0, (Terrain.ZONES ? Terrain.ZONES.length : 0) - 2); return n <= 7 ? 2 : n <= 11 ? 4 : 6; }
 
-  function startCountdown(startTime) {
-    showScreen('race'); if (typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'flex';
+  function startCountdown(startTime, returning = false) {
+    currentRaceStart = startTime;
+    if (Net.isHost) Net.setPhase('race');
+    showScreen('race'); if (!returning && typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'flex';
     if (els.btnJump) els.btnJump.style.display = 'flex'; if (els.btnSprint) { els.btnSprint.style.display = 'flex'; els.btnSprint.style.setProperty('--p', 1); els.btnSprint.classList.add('ready'); els.btnSprint.classList.remove('on', 'cool'); } resetSlow(); for (const k in jnSeen) delete jnSeen[k]; for (const k in jaSeen) delete jaSeen[k]; for (const k in lnSeen) delete lnSeen[k];
     for (const id in activeEmotes) delete activeEmotes[id];
     for (const id in lastEmoteById) delete lastEmoteById[id];
@@ -611,6 +776,10 @@
     startRenderLoop();
 
     showSeasonTag(); resetPortals(); resetTrails(); let lastCd = -2; aud.fin = false; aud.y = null; aud.air = false; aud.wet = false; aud.ang = undefined; aud.world = 'classic';
+    if (returning && Date.now() > startTime + 1500) {
+      els.countdown.textContent = ''; raceT0 = performance.now(); hideSeasonTagNow();
+      return;
+    }
     const tick = setInterval(() => {
       const left = startTime - Date.now();
       const cd = left > 3000 ? -1 : left > 2000 ? 3 : left > 1000 ? 2 : left > 0 ? 1 : 0;
@@ -1410,7 +1579,18 @@
       const wy = wx === r.fwX ? r.fwY : r.rwY;
       for (let q = 0; q < 5 && particles.length < 190; q++) particles.push({ x: wx + (Math.random() - 0.5) * 50, y: wy + 46, vx: (Math.random() - 0.5) * 3.2, vy: -Math.random() * 1.6, g: -0.01, dl: 0.03, life: 0.9, size: 7 + Math.random() * 11, col: DUST });
     }
-    if (id === Net.myId && typeof Sfx !== 'undefined' && Sfx.jump) { try { Sfx.jump(); } catch (e) {} }
+    if (id === Net.myId) {
+      // UX V27: confirmation ONLY after the host's jump counter changes.
+      // Tapping the button is not proof the input was accepted.
+      if (els.btnJump) {
+        els.btnJump.classList.remove('jump-confirmed');
+        void els.btnJump.offsetWidth;
+        els.btnJump.classList.add('jump-confirmed');
+        clearTimeout(els.btnJump._jumpConfirmTimer);
+        els.btnJump._jumpConfirmTimer = setTimeout(() => els.btnJump.classList.remove('jump-confirmed'), 210);
+      }
+      if (typeof Sfx !== 'undefined' && Sfx.jump) { try { Sfx.jump(); } catch (e) {} }
+    }
   }
 
   // Ogni rampa, inclusi i kicker piccoli, manda un evento all'animazione della gara.
@@ -1483,7 +1663,9 @@
     const obstacleElapsed = Net.isHost ? Sim.getObstacleTime() :
       Math.max(0, hazardHostOrigin === null ? t0 - raceT0 : t0 - hazardHostOrigin - interpClientMs);
     DynamicObstacles.draw(ctx2d, camX, w, groundY, obstacleElapsed);
-    InteractiveObstacles.draw(ctx2d, camX, w, groundY, !Net.isHost);
+    // Pass already synchronized bike poses for a subtle, local anticipation cue.
+    // This is drawing-only; clients do not alter obstacles or collision bodies.
+    InteractiveObstacles.draw(ctx2d, camX, w, groundY, !Net.isHost, undefined, undefined, Object.values(latestRacers));
     if (!inLocalWorld && Terrain.WORLD === 'classic') {
       Flora.drawLilies(ctx2d, camX, w, groundY, SC);
       Flora.draw(ctx2d, camX, w, groundY, SC);
@@ -1786,7 +1968,7 @@
   let lastStandings = null;
   I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
   function showResults(st, ch) {
-    lastStandings = st; lastCh = ch || null; stopRaceLoops(); releaseWakeLock();
+    lastStandings = st; lastCh = ch || null; if (Net.isHost) Net.setPhase('results'); stopRaceLoops(); releaseWakeLock();
     if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0);
     try { drawFinalTrace(st, true); } catch (e) { console.warn(e); }
     els.resultsList.innerHTML = '';
@@ -1827,6 +2009,15 @@
     else keepTrack = true;
     Net.broadcast({ type: 'restartToDraw', champ: champPublic() }); enterDrawPhase();
   });
-  els.btnBackMenu.addEventListener('click', () => location.reload()); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
-  document.body.dataset.screen = 'menu'; I18n.init(); applyInvite(); if (typeof Sfx !== 'undefined') Sfx.init();
+  els.btnBackMenu.addEventListener('click', () => {
+    if (Net.isHost && document.body.dataset.screen === 'results') {
+      // Party game: 'Nuova Pista' should not destroy everyone's room.
+      // Start a fresh track in the SAME room, with all friends still connected.
+      wheels = {}; keepTrack = false;
+      if (champ) startChamp();
+      Net.broadcast({ type: 'restartToDraw', champ: champPublic() });
+      enterDrawPhase();
+    } else location.reload();
+  }); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
+  document.body.dataset.screen = 'menu'; I18n.init(); applyInvite(); updateRejoinButton(); const lastRoom = readRejoin(); if (lastRoom && !els.code.value) els.code.value = lastRoom.code; if (lastRoom && !els.name.value) els.name.value = lastRoom.name; if (typeof Sfx !== 'undefined') Sfx.init();
 })();

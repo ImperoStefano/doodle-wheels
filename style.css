@@ -792,3 +792,71 @@ body[data-screen="race"] .page {
   .screen--active:not(#screen-race) { align-items:flex-start; }
   #screen-draw .draw-canvas { max-height:min(42vh, 220px); width:auto; }
 }
+
+/* V26: one-tap return to an existing party room; no sign-in required. */
+#btn-rejoin[hidden]{display:none!important}
+.rejoin-btn{display:block;width:100%;max-width:420px;margin:10px auto 4px;border-style:dashed}
+
+/* === V27 · Mobile-first UX: a game to open with friends === */
+/* Frequent input: immediate feedback, no perpetual UI motion. */
+.sprint-btn.ready { animation: uxSprintReady .42s ease-out 1 both; }
+@keyframes uxSprintReady {
+  0% { filter: drop-shadow(0 0 0 rgba(236,189,111,0)); }
+  55% { filter: drop-shadow(0 0 8px rgba(236,189,111,.82)); }
+  100% { filter: none; }
+}
+.slow-hint {animation: uxSlowAppear .35s ease-out 1 both;}
+.redraw-ui .btn.blink {animation:uxSlowButton 1.4s ease-in-out 2;}
+@keyframes uxSlowAppear {from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes uxSlowButton {50%{background:#f6d272;box-shadow:0 6px 0 var(--ochre-d),0 0 0 4px rgba(250,193,92,.18)}}
+/* Host-confirmed jump: 190 ms accent only when the physics accepted the input. */
+.jump-btn.jump-confirmed {box-shadow:0 5px 0 var(--sun-d),0 0 0 5px rgba(245,195,88,.30);}
+.jump-label,.sprint-label {pointer-events:none;position:absolute;bottom:8px;
+  font:800 10px/1 'Space Grotesk',system-ui,sans-serif;letter-spacing:.055em;
+  text-transform:uppercase;color:var(--cream-2)}
+.jump-btn svg {width:47%;height:47%;margin-top:-12px}
+.sprint-btn svg {width:42%;height:42%;transform:translateY(-6px)}
+.sprint-label {font-size:8px;bottom:8px}
+.sprint-btn.cool .sprint-label {opacity:.35}
+.sprint-btn.on .sprint-label {color:var(--sun)}
+.sprint-btn .sprint-cd {z-index:3}
+/* Actual interactive hit surface, not an invisible pseudo-element. */
+@media (max-width:768px) and (pointer:coarse){
+  .jump-btn {width:92px;height:92px;left:calc(15px + env(safe-area-inset-left,0px));
+    bottom:calc(16px + env(safe-area-inset-bottom,0px));}
+  .sprint-btn {width:66px;height:66px;
+    left:calc(28px + env(safe-area-inset-left,0px));
+    bottom:calc(125px + env(safe-area-inset-bottom,0px));}
+  .sprint-tip {left:calc(111px + env(safe-area-inset-left,0px));
+    bottom:calc(145px + env(safe-area-inset-bottom,0px));}
+}
+/* Low landscape: controls side by side, each with a distinct hit area. */
+@media (max-height:600px) and (orientation:landscape) and (pointer:coarse){
+  .jump-btn {width:86px;height:86px;left:calc(15px + env(safe-area-inset-left,0px));
+    bottom:calc(13px + env(safe-area-inset-bottom,0px));}
+  .sprint-btn {width:66px;height:66px;
+    left:calc(118px + env(safe-area-inset-left,0px));
+    bottom:calc(23px + env(safe-area-inset-bottom,0px));}
+  .sprint-tip {left:calc(195px + env(safe-area-inset-left,0px));
+    bottom:calc(42px + env(safe-area-inset-bottom,0px));}
+}
+@media(max-width:360px) and (orientation:portrait){
+  .jump-btn {width:85px;height:85px;}
+  .sprint-btn {width:61px;height:61px;bottom:calc(116px + env(safe-area-inset-bottom,0px));}
+}
+.btn:focus-visible,.jump-btn:focus-visible,.sprint-btn:focus-visible {outline:3px solid #27a0a4;outline-offset:3px;}
+@media(prefers-reduced-motion:reduce){
+  .sprint-btn.ready,.redraw-ui .btn.blink,.slow-hint,.jump-btn.jump-confirmed {animation:none!important;transition:none!important}
+  .portal-flash.go,.portal-note.pop {animation:none!important}
+}
+/* Portrait mode is fully playable: orientation is a short, unobtrusive tip,
+   not an overlay across the sprint button or the rider. */
+@media (max-width:768px) and (pointer:coarse) and (orientation:portrait){
+  #orientation-warning {
+    top:calc(198px + env(safe-area-inset-top,0px));bottom:auto;
+    z-index:990;max-width:min(270px,calc(100vw - 34px));
+    white-space:normal;text-align:center;font-size:.72rem;
+    padding:6px 11px;animation:hintfade 3.5s forwards;
+  }
+  #orientation-warning span {animation:none;}
+}

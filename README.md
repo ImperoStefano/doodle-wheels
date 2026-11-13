@@ -1,6 +1,6 @@
 # 🖊️ Doodle Wheels
 
-**Versione documentata: V22 — 12 novembre 2026** · Gioco web multiplayer per GitHub Pages.
+**Versione: V25.8 — 13 novembre 2026** (documentazione dettagliata sotto riferita alla V22; vedi `NOVITA-V25.8.txt` per lo stato dei collaudi) · Gioco web multiplayer per GitHub Pages.
 
 ### Novità della V22 in breve
 
@@ -87,7 +87,7 @@ Poi su GitHub: **Settings → Pages → Source: `main` branch, cartella `/ (root
 - **Bilanciamento per forme irregolari** (tonda, triangolo, quadrato, stella, ovale, forme libere): completare gare con ogni tipo di ostacolo, verificando incastri, recuperi e vantaggi indebiti.
 - **Prestazioni mobile**: monitorare FPS e costo del rendering in Paradiso e negli altri mondi con molte particelle.
 - **Accessibilità degli ostacoli**: controllare che siano riconoscibili senza indicatori «!», che la loro sagoma coincida con il collider e che rimangano superabili o sfruttabili.
-- **Modalità spettatore e riconnessione**: da sviluppare o verificare separatamente prima di descriverle come funzionalità consolidate.
+- **Modalità spettatore e migrazione dell’host**: ancora da sviluppare. Il rientro degli ospiti è introdotto in V26 (vedi sezione finale), ma la chiusura dell’host resta una limitazione.
 
 ## Struttura principale del progetto (V22)
 
@@ -620,3 +620,68 @@ In seguito al rapporto QA V25.2 (1/10 PASS; nove spostamenti esatti di 90/180 px
 - Testo informativo aggiornato nella lobby e nei dizionari italiano/inglese; versioni degli script aggiornate per evitare cache obsolete di GitHub Pages.
 - Interfaccia mobile: menu, lobby, disegno e risultati possono scorrere verticalmente; gara a schermo intero con tocchi di salto preservati; modale di ridisegno con scorrimento proprio. La pagina QA aggiorna il rapporto a scatti per non bloccare l'interfaccia.
 - Le correzioni fisiche successive alla V25.3 sono incluse come codice in sviluppo; il risultato dell'ultimo test pubblico noto era **9/13** (4 casi ancora da collaudare con Matter.js dopo la pubblicazione). Non considerare quei quattro scenari superati finché non si esegue il nuovo rapporto.
+
+
+## V25.7 — Salto più intuitivo e pedane/trampolini senza blocchi rigidi
+
+Il collaudo QA V25.6 aveva **9/13 successi**: i tre tipi di ruota superavano la massa, ma la ruota quadrata/irregolare rimaneva intrappolata in pedane/trampolini. **Nella V25.7 questa è una modifica sperimentale da convalidare con `test-fisica.html` su GitHub Pages**, non un 13/13 già verificato.
+
+- **Salto manuale:** velocità verticale 16 → 19.1, buffer 240 → 330 ms, coyote time 110 → 150 ms, cooldown 500 → 440 ms, tolleranza da terra 22 → 27 px. La gravità extra di controllo del rotolamento si riduce temporaneamente durante il decollo; non cambia il contatto normale.
+- **Trampolini:** area di contatto Matter sensorizzata (`isSensor`) a filo pista, non un muro solido; il contatto applica un impulso fisico verso l'alto da −22.5 alla bici intera. Una sola attivazione per attraversamento per giocatore; la riattivazione richiede di uscire dall'area. Due giocatori ricevono impulsi indipendenti.
+- **Bilance:** superficie di contatto Matter sensorizzata senza rampe solide, che non intrappola le ruote squadrate. L'inclinazione è proporzionale alla posizione/peso del giocatore, con leggero impulso alla prima traversata. **Non è più una pedana rigida portante:** la bici mantiene il contatto con il terreno sottostante. Il perno e il supporto grafico sono mantenuti.
+- **Masse:** meccanica e collider invariati rispetto alla V25.6, poiché tutte e tre le forme li superavano senza recuperi nel QA precedente.
+- **QA:** `test-fisica.html?v=257` esegue ancora 13 scenari con Matter.js 0.19.0. Il motore non è stato raggiungibile nell'ambiente di sviluppo, quindi il risultato effettivo va misurato online; sono stati completati controlli di geometria, generazione, logica dei contatti e disegno.
+
+
+
+## V25.9 — Recuperi fisici e diagnosi degli incastri (13 novembre 2026)
+
+- Preservata la fisica V25.8 tranne una misura mirata per ruote spigolose ferme sul terreno.
+- Prima del teletrasporto anti-blocco (2,5 s senza progresso sufficiente), al massimo **una volta per tratto di arresto**, una ruota spigolosa con bici quasi ferma e almeno una ruota a terra riceve un impulso fisico moderato in avanti e verso l'alto. Non cambia posizione direttamente e Matter.js continua a gestire collisioni e vincoli.
+- La misura **non** interviene sulla ruota tonda, in aria, durante un salto/rampa, in acqua/lava, sui ponti o vicino ad ostacoli interattivi/mobili. Il teletrasporto d'emergenza resta attivo se necessario.
+- `Sim.diagnostics()` riporta `cornerReleases` e `stallEvents`, con coordinate, bioma, zona, tratto di terreno, velocità, distanza delle ruote dal terreno e ostacoli vicini. Questi dati **non** vengono trasmessi nel multiplayer.
+- **Nuovo test live:** `test-incastri.html`, che confronta le fisiche V25.8 e V25.9 con **Matter.js reale**, su **identiche piste** e con le quattro forme tonda/quadrata/triangolo/stella. Mostra recuperi, nuovi rilasci, tempi, arrivi e dettaglio dei punti problematici. Può testare uno o tutti i sei mondi. La pagina richiede l'accesso ai CDN Matter.js e poly-decomp.
+- **Test unitario:** `node tests/corner-release-unit.js`, 9/9 controlli di logica, senza motore Matter.
+- **Test Matter.js online preesistente:** `test-fisica.html`, invariato nella sostanza.
+- **Attenzione:** in questo ambiente Matter.js non è installato e il registry npm non è raggiungibile. I nuovi recuperi **non sono ancora validati in una gara completa con Matter.js**; i risultati V25.8 di 48/48 arrivi e recuperi (20/30/36/78) sono la baseline riportata, non nuove misure. Eseguire il confronto live e inviare il JSON per verificare l'effetto, evitando dichiarazioni non supportate di miglioramento.
+
+## V26 — Rientro rapido per gli ospiti (13 novembre 2026)
+
+- **Riconnessione dopo aver chiuso la pagina:** un token casuale privato viene salvato sul dispositivo insieme al codice stanza e al nome. Entro cinque minuti dalla disconnessione, dal menu si può scegliere **«Rientra nella stanza · CODICE»**, senza ridisegnare o entrare come sesto giocatore.
+- **ID di gara stabile:** una nuova connessione PeerJS non sostituisce l'identità della bicicletta nel motore Matter.js. L'host riassocia il nuovo canale allo stesso giocatore, conservando nome, colore, ruota e risultati; la postazione resta prenotata temporaneamente.
+- **Ripristino autorevole:** l'host invia la fase corrente (lobby, disegno, gara o risultati), layout e mondo, forme delle ruote dopo i pit-stop, stato di lava e ostacoli, risorse di cambio forma residue e uno snapshot. Il client riprende il rendering senza creare una seconda simulazione.
+- **Stanza piena e sicurezza:** chi conosce soltanto il codice non può occupare la postazione di un amico disconnesso; per farlo serve il token memorizzato sul dispositivo. Non si accettano nuovi partecipanti durante disegno/gara.
+- **Disegno senza attese infinite:** quando un ospite offline non ha inviato la forma, dopo dieci secondi l'host può assegnare una ruota di base e lasciare partire gli altri.
+- **Nuova Pista senza perdere gli amici:** dai risultati, l’host può avviare un tracciato diverso conservando la stanza e tutti i partecipanti. Prima il pulsante ricaricava l’intero sito e chiudeva la stanza.
+- **Senza server aggiuntivi né account.** Funziona con lo stesso PeerJS già utilizzato in V25.9.
+
+**Limite:** si tratta del rientro degli ospiti. Chiudendo la pagina dell'**host** si interrompe la simulazione autoritativa; il trasferimento del ruolo di host richiede una funzione distinta. Sono stati eseguiti test di protocollo PeerJS simulato e test browser per le quattro fasi, non un collaudo completo su telefoni fisici e reti mobili. Vedi `NOVITA-V26.txt` per la prova manuale.
+
+
+## V27 — UX Party Game (13 novembre 2026)
+
+Questa versione rende più immediato giocare con amici su telefono senza cambiare
+la fisica, la sincronizzazione host-authoritative o il rientro nella stanza.
+
+- **Pista corta preselezionata** quando l’host crea una nuova gara. La scelta tra
+  corta, media e lunga resta disponibile.
+- **Salta e Scatto** hanno etichette IT/EN e superfici touch reali più ampie,
+  con disposizione affiancata negli schermi orizzontali bassi.
+- Il tocco invia subito il comando; la breve luce sul pulsante Salta appare
+  **soltanto quando il contatore jump dell’host cambia** (non al semplice tocco).
+- L’animazione dello Scatto pronto viene eseguita **una sola volta** anziché
+  continuamente; ridotti anche i movimenti ripetitivi del richiamo Cambia forma.
+- I trampolini illustrano l’avvicinamento con un lieve effetto entro il collider;
+  il movimento grafico di compressione segue la fase reattiva comunicata dall’host.
+  **Non cambiano posizione e collisioni reali**.
+- Ridotte le animazioni se il dispositivo richiede “movimento ridotto”.
+- Il suggerimento sulla rotazione del telefono è più breve e lontano dai comandi.
+
+**Collaudi eseguiti:** cinque layout browser simulati (390×844, 844×390,
+360×740, 320×568, 1280×720); rientro in lobby/disegno/gara/risultati;
+inoltro del comando di salto e conferma via snapshot host simulato;
+357 verifiche logiche degli ostacoli, nove controlli dell’anti-incastro e verifica
+PeerJS simulata.
+
+**Limite:** non sono state eseguite in questo ambiente gare Matter.js con
+più smartphone reali. L’aggiornamento V27 è soprattutto visuale e UI.

@@ -44,6 +44,12 @@ const Sim = (() => {
   // in a dip, driving backwards...) is lifted and moved a little forward so nobody can hold the
   // whole race hostage until the timeout.
   const STALL_MS = 2500;
+  // V25.9: before the emergency teleport, attempt a small *continuous* wheel release.
+  // A low-speed polygon caught on a terrain lip receives a short, bounded push; it
+  // still has to roll/clear the terrain via Matter's solver. No position is changed.
+  const CORNER_RELEASE_MS = 1350;
+  const CORNER_RELEASE_COOLDOWN_MS = 1350;
+  const CORNER_RELEASE_VX = 3.6, CORNER_RELEASE_VY = -3.8;
   const STALL_MIN_PROGRESS = 60;   // px per STALL_MS (24 px/s): legit slow bikes on ice still do far more
   const HOP_X = 90, HOP_MAX_X = 450, HOP_Y = 140; // hop distance grows while the racer keeps failing to move
   const SPAWN_H = 140;        // px above the ground line where wheels/chassis spawn (drop height)
@@ -308,7 +314,9 @@ const Sim = (() => {
     racers[id] = {
       chassis, fw, rw, axF, axR, color, name,
       finished: false, finishTime: null,
-      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0, stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
+      bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0,
+      cornerReleases: 0, releaseAt: -1e9, releaseTriedFor: -1, stallEvents: [],
+      stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
     meltInit(racers[id], id, vertices);
@@ -457,6 +465,14 @@ const Sim = (() => {
     const out = [];
     for (const id in racers) { const r = racers[id]; if (!r.meltOut) continue; r.meltOut = false; out.push({ id, f: Array.from(r.mF, v => Math.round(v * 100)), r: Array.from(r.mR, v => Math.round(v * 100)) }); }
     return out;
+  }
+
+  function getAllMeltStates() {
+    return Object.entries(racers).filter(([id,r]) => r.mF && r.mR &&
+      (r.mF.some(v=>v>0) || r.mR.some(v=>v>0))).map(([id,r]) => ({
+      id, f:Array.from(r.mF, v=>Math.round(v*100)),
+      r:Array.from(r.mR, v=>Math.round(v*100))
+    }));
   }
 
   function start() {
@@ -620,12 +636,15 @@ const Sim = (() => {
   function assist(r, H) {
     H = H || Terrain.height;
     const kk = r.rampFly > 0;   // nessun freno artificiale quando una rampa ha provocato il decollo
+    const grace=((r.jumpGraceUntil||0)>(performance.now()-startedAt))||(r.springGraceTicks||0)>0;
+    if(r.springGraceTicks>0)r.springGraceTicks--;
+    const down=grace?.22:TUNE.downAcc;
     const launchGravity = r.rampSmall ? TUNE.rampDownSmall : TUNE.rampDown;
     for (const w of [r.fw, r.rw]) {
       const g = w.gapNow; if (g === undefined) continue;
       const v = w.velocity;
       if (g > TUNE.airGap) {
-        Matter.Body.setVelocity(w, { x: v.x, y: v.y + (kk ? launchGravity : TUNE.downAcc) });
+        Matter.Body.setVelocity(w, { x: v.x, y: v.y + (kk ? launchGravity : down) });
       } else if (g < TUNE.hold && g > TUNE.holdMin && !kk && !(Terrain.onRamp && Terrain.onRamp(w.position.x))) {
         // Nei piccoli kicker le ruote possono saltellare e ruotare naturalmente: non incollarle al piano.
         const x = w.position.x, s = (H(x + 3) - H(x - 3)) / 6;           // pendenza della strada (y verso il basso: la normale va in su e indietro)
@@ -637,7 +656,7 @@ const Sim = (() => {
     // telaio: se tutte e due le ruote sono in aria cade con la stessa gravità extra
     if (kk && TUNE.flyCtl && !r.rampSmall) flightPitch(r); // niente blocco dell'assetto sui kicker piccoli
     else if (kk && r.rw.gapNow <= TUNE.airGap && TUNE.rampPitch < 1) Matter.Body.setAngularVelocity(r.chassis, Matter.Body.getAngularVelocity(r.chassis) * TUNE.rampPitch);   // il pilota tiene il muso: finché la ruota dietro è ancora sulla rampa la bici non si pianta di muso
-    if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + (kk ? launchGravity : TUNE.downAcc) });
+    if (r.fw.gapNow > TUNE.airGap && r.rw.gapNow > TUNE.airGap) Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x, y: r.chassis.velocity.y + (kk ? launchGravity : down) });
   }
 
   // Safety net: the terrain profile is known exactly, so if a wheel corner ever ends up more
@@ -676,7 +695,72 @@ const Sim = (() => {
     }
   }
 
+  // V25.9 diagnostic snapshot of the exact terrain/context where a rider is blocked.
+  // Only available to local QA; never added to multiplayer snapshots.
+  function stallContext(r, elapsed, type) {
+    const x = r.chassis.position.x;
+    const z = Terrain.zoneAt(x);
+    const segment = Terrain.WORLD_SEGMENT;
+    const worldName = segment && x >= segment.start && x <= segment.end ? segment.world : 'classic';
+    const patch = Terrain.patchAt ? Terrain.patchAt(x) : null;
+    const near = [];
+    for (const o of Terrain.INTERACTIVE_OBSTACLES || []) if (Math.abs(o.x - x) < 260) near.push('interactive:' + o.kind);
+    for (const o of Terrain.DYNAMIC_OBSTACLES || []) if (Math.abs(o.x - x) < 260) near.push('dynamic:' + o.kind);
+    const record = {
+      type, ms: Math.round(elapsed), x: Math.round(x),
+      world: worldName, zone: z && z.key || 'unknown',
+      patch: patch && patch.kind || '',
+      vx: Math.round(r.chassis.velocity.x * 100) / 100,
+      vy: Math.round(r.chassis.velocity.y * 100) / 100,
+      frontGap: Math.round((r.fw.gapNow ?? 999) * 10) / 10,
+      rearGap: Math.round((r.rw.gapNow ?? 999) * 10) / 10,
+      spike: Math.round((r.spike || 0) * 100) / 100,
+      nearby: near.slice(0, 5)
+    };
+    r.stallEvents = r.stallEvents || [];
+    r.stallEvents.push(record);
+    if (r.stallEvents.length > 24) r.stallEvents.shift();
+  }
+
+  // A conservative physical unhook for a spinning polygon that has stopped moving
+  // on regular ground. This is not a teleport, does not skip an obstacle, and does
+  // not change the bike's angle or wheel shape. One attempt per stalled stretch.
+  function releaseCorner(r, elapsed) {
+    if ((r.dir || 1) !== 1 || r.finished || r.righting || r.rampFly || r.airJ ||
+        (r.spike || 0) < 0.12 ||
+        elapsed - (r.releaseAt || -1e9) < CORNER_RELEASE_COOLDOWN_MS ||
+        r.releaseTriedFor === r.progressAt) return false;
+    const x = r.chassis.position.x;
+    const z = Terrain.zoneAt(x);
+    if (!z || z.key === 'start' || z.key === 'finish' ||
+        Terrain.isWater(x) || Terrain.isLava(x) ||
+        (Terrain.onRamp && Terrain.onRamp(x)) ||
+        (Terrain.ravineAt && Terrain.ravineAt(x)) ||
+        (Terrain.bridgeAt && Terrain.bridgeAt(x))) return false;
+    // Avoid pushing through an actual obstacle: this intervention targets
+    // terrain-corner snagging, not authored barriers or multiplayer collisions.
+    if ((Terrain.INTERACTIVE_OBSTACLES || []).some(o => Math.abs(o.x - x) < 190) ||
+        (Terrain.DYNAMIC_OBSTACLES || []).some(o => Math.abs(o.x - x) < 190)) return false;
+    // Must be close to the rideable ground, NOT falling / flying over a gap.
+    const g1 = r.fw.gapNow, g2 = r.rw.gapNow;
+    if (!Number.isFinite(g1) || !Number.isFinite(g2) ||
+        Math.min(g1, g2) > 12 || Math.max(g1, g2) > 80) return false;
+    if (r.chassis.velocity.x > 1.8 || r.chassis.velocity.x < -1.2 ||
+        Math.abs(r.chassis.velocity.y) > 4.5) return false;
+    for (const b of [r.chassis, r.fw, r.rw]) {
+      const vx = Math.max(b.velocity.x, CORNER_RELEASE_VX);
+      const vy = Math.min(b.velocity.y, CORNER_RELEASE_VY);
+      Matter.Body.setVelocity(b, { x: vx, y: vy });
+    }
+    r.releaseTriedFor = r.progressAt;
+    r.releaseAt = elapsed;
+    r.cornerReleases = (r.cornerReleases || 0) + 1;
+    stallContext(r, elapsed, 'corner-release');
+    return true;
+  }
+
   function unstick(r) {
+    stallContext(r, performance.now() - startedAt, 'teleport');
     const dist = Math.min(HOP_MAX_X, HOP_X * (1 + r.stallStreak)) * (r.dir || 1);   // in retromarcia il salto è all'indietro
     const cx = r.chassis.position.x + dist, cy = r.chassis.position.y - HOP_Y;
     Matter.Body.setPosition(r.chassis, { x: cx, y: cy });
@@ -1021,15 +1105,15 @@ const Sim = (() => {
   // ---- Salto (comando del giocatore) ---------------------------------------------------------------------------------------------
   // Un colpo verso l'alto a bici e ruote insieme. Funziona solo con almeno una ruota vicino al suolo (niente doppi salti in aria)
   // e con una pausa fra un salto e l'altro, così non si "vola" tenendo premuto. Le ruote giganti saltano un po' più forte.
-  const JUMP_V = 16;         // px/tick verso l'alto (≈ 100 px di salto sopra la quota di marcia, con la gravità extra in volo)
-  const JUMP_GAP = 22;       // px: distanza massima dal suolo per poter saltare (un attimo di tolleranza dopo un dosso)
-  const JUMP_COOLDOWN = 500; // ms
-  const JUMP_RISE_CAP = 4;   // px/tick: se già si sta salendo (rampa, lancio) il salto si somma, ma al massimo di tanto oltre la spinta normale
+  const JUMP_V = 19.1;         // px/tick verso l'alto; più margine per scavalcare ostacoli a ruote irregolari
+  const JUMP_GAP = 27;       // px: distanza massima dal suolo per poter saltare (un attimo di tolleranza dopo un dosso)
+  const JUMP_COOLDOWN = 440; // ms
+  const JUMP_RISE_CAP = 5;   // px/tick: se già si sta salendo (rampa, lancio) il salto si somma, ma al massimo di tanto oltre la spinta normale
   const DJ_MIN_MS = 130;     // doppio salto: un secondo salto in aria, non prima di tanto dal primo
   const DJ_POWER = 0.95;     // e un filo meno potente
   const PORTAL_SKIP_H = 34; // px: si scavalca un portale se il fondo delle ruote passa a quest'altezza dal suolo o più (un salto ben tempestivo arriva a ~128, il doppio salto a ~225); l'anello è alto 2·PORTAL_RY + 3
-  const JUMP_BUF_MS = 240;   // un tocco "troppo presto" (pausa dopo un salto, doppio salto prematuro, atterraggio imminente) viene ricordato e parte appena si può
-  const COYOTE_MS = 110;     // pochi istanti dopo aver lasciato il suolo (dosso, bordo di rampa) si può ancora fare il primo salto
+  const JUMP_BUF_MS = 330;   // un tocco "troppo presto" (pausa dopo un salto, doppio salto prematuro, atterraggio imminente) viene ricordato e parte appena si può
+  const COYOTE_MS = 150;     // pochi istanti dopo aver lasciato il suolo (dosso, bordo di rampa) si può ancora fare il primo salto
   function jumpTry(r, elapsed) {
     const grounded = r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP;
     if (grounded) r.lastGroundAt = elapsed;
@@ -1062,7 +1146,7 @@ const Sim = (() => {
       Matter.Body.setVelocity(b, { x: vx, y: vy });
     }
     if (thorn) { r.ln = (r.ln || 0) + 1; r.ls = 2; } // stessa animazione di un grande lancio
-    r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = air ? 2 : 1; if (air) r.ja = (r.ja || 0) + 1;
+    r.jumpGraceUntil = elapsed + 350; r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = air ? 2 : 1; if (air) r.ja = (r.ja || 0) + 1;
     return 1;
   }
   function sprintStep(r) {
@@ -1290,9 +1374,15 @@ const Sim = (() => {
       r.bestX = px;
       r.progressAt = elapsed;
       if (px > r.hopBaseX + 250) r.stallStreak = 0; // reset only after real driving
-    } else if (elapsed - r.progressAt > STALL_MS) {
-      unstick(r);
-      r.progressAt = elapsed;
+    } else {
+      const stalledFor = elapsed - r.progressAt;
+      // Intervene before the last-resort teleport only if the bike is almost
+      // stationary and actually touching ground. Do not restart the stall clock.
+      if (stalledFor > CORNER_RELEASE_MS && stalledFor < STALL_MS) releaseCorner(r, elapsed);
+      if (stalledFor > STALL_MS) {
+        unstick(r);
+        r.progressAt = elapsed;
+      }
     }
 
     if (Terrain.isLava && (Terrain.isLava(r.fw.position.x) || Terrain.isLava(r.rw.position.x))) {
@@ -1402,13 +1492,15 @@ const Sim = (() => {
   }
 
   return {
-    init, addRacer, updateRacerWheel, drainMelts, meltBase, meltVertices, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
+    init, addRacer, updateRacerWheel, drainMelts, getAllMeltStates, meltBase, meltVertices, start, tick, calibrate, calibrateSync, prepareAsync, ensureWorld, warmCalibration: calPoolInit, _calTrial: (v, k, ph) => drain(calTrial(v, [k, k, k, k], ph)),
     // Local QA diagnostics only. Never added to network snapshots.
     diagnostics: () => racerOrder.map(r => ({
       id: Object.keys(racers).find(k=>racers[k]===r),
       hops:r.hops||0, rampRescues:r.rampRescues||0, springHits:r.springHits||0,
       lastUnstickX:r.lastUnstickX??null,
-      lastUnstickAt:r.lastUnstickAt??null
+      lastUnstickAt:r.lastUnstickAt??null,
+      cornerReleases:r.cornerReleases||0,
+      stallEvents:(r.stallEvents||[]).slice()
     })),
     snapshot, jump, sprint, allFinished, isTimedOut, standings, GROUND_Y, getElapsed: () => running ? performance.now() - startedAt : 0, getObstacleTime: () => obstacleClockMs, getInteractiveState: () => InteractiveObstacles.snapshot(), obstacleSnapshot:()=>DynamicObstacles.snapshot(), usedPortals: () => Object.keys(portalUsed).map(Number),
     get FINISH_X() { return Terrain.FINISH_X; },
