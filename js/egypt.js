@@ -935,7 +935,7 @@ const EgyptWorld = (() => {
     });
   }
   // Real layered linen: ribbons tighten across the actual deformed ring as
-  // the physical curse progresses, then unwind while it returns to normal.
+  // the physical curse progresses, then stay wrapped at full strength until the finish.
   // All in wheel-local coordinates, so the pattern rotates with the bike.
   function drawBandages(c,vertices,level){
     if(!(level>.01)||!vertices||vertices.length<3)return;

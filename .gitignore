@@ -1,0 +1,25 @@
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Temporary builds and archives
+node_modules/
+dist/
+build/
+*.log
+*.tmp
+
+# Local secrets and credentials (never deploy these)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+credentials.json

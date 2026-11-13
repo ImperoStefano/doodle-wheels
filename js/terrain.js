@@ -200,15 +200,22 @@ const Terrain = (() => {
     }
   }
 
-  // Rampa vera: salita netta fino a un picco, poi una discesa più ripida che scende sotto la
-  // quota base (un piccolo distacco prima dell'atterraggio), poi un ritorno dolce alla quota
-  // base prima della rampa successiva. Costanti già validate con la fisica.
-  const RAMP_PERIOD = 500, RAMP_RISE = 220, RAMP_DROP = 140, RAMP_PEAK = 70, RAMP_GAP = 15, RAMP_LEAD = 300;
+  // V32 Ramp Flow: ingresso curvo, salita con pendenza residua al labbro,
+  // breve discesa di atterraggio. Il vecchio smoothstep annullava la pendenza
+  // al punto più alto e trasformava la rampa in un dosso senza decollo.
+  const RAMP_PERIOD = 610, RAMP_RISE = 260, RAMP_DROP = 165, RAMP_PEAK = 88, RAMP_GAP = 10, RAMP_LEAD = 300;
+  const RAMP_BLEND_IN = 52;
   function rampProfile(x) {
     if (x < 0) return 0;
     const u = x % RAMP_PERIOD;
-    if (u < RAMP_RISE) return smooth(u / RAMP_RISE) * RAMP_PEAK;
-    if (u < RAMP_RISE + RAMP_DROP) { const t = (u - RAMP_RISE) / RAMP_DROP; return RAMP_PEAK * (1 - smooth(t)) - RAMP_GAP * smooth(t); }
+    if (u < RAMP_RISE) {
+      const slope = RAMP_PEAK / (RAMP_RISE - RAMP_BLEND_IN * 0.5);
+      return u < RAMP_BLEND_IN ? slope * u * u / (2 * RAMP_BLEND_IN) : slope * (u - RAMP_BLEND_IN * .5);
+    }
+    if (u < RAMP_RISE + RAMP_DROP) {
+      const t = (u - RAMP_RISE) / RAMP_DROP;
+      return RAMP_PEAK - (RAMP_PEAK + RAMP_GAP) * smooth(t);
+    }
     const t = (u - RAMP_RISE - RAMP_DROP) / (RAMP_PERIOD - RAMP_RISE - RAMP_DROP);
     return -RAMP_GAP * (1 - smooth(t));
   }
@@ -544,16 +551,65 @@ const Terrain = (() => {
     spread(shifts, 'shift', x => freeS(x - 120, x + 120) ? [x - 120, x + 120, 0, [x]] : null, x => PORTALS.push({ id: id++, kind: 'shift', x: Math.round(x) }));
     PORTALS.sort((a, b) => a.x - b.x);
   }
-  // la rampa (kicker, trampolino del fossato, rampa del burrone) di cui x è sul piano inclinato o appena oltre il labbro
-  function rampAt(x, before, after) {
-    const z = zoneAt(x); if (!z || !z.patches) return null;
-    for (const p of z.patches) if (p.th !== undefined && x >= p.a + p.u1 - (before === undefined ? 110 : before) && x <= p.a + p.u1 + (after === undefined ? 30 : after)) return p;
-    return null;
+  // V32: every launchable geometric lip is represented in the same form.
+  // Includes the nested kicker ramps inside twin / drop-in patches. Coordinates
+  // are world coordinates, so cues, input timing and the host's physics agree.
+  function patchLaunchLips(p) {
+    const out=[];
+    const collect=(q, origin, parent)=>{
+      if(q.th!==undefined && Number.isFinite(q.u1)){
+        out.push({kind:q.kind, parent, a:origin, u1:q.u1, s:q.s||0,
+          lip:origin+q.u1, tier:q.tier||0, th:q.th});
+      }
+      if(q.parts) for(const [child,offset] of q.parts) collect(child,origin+offset,parent);
+    };
+    collect(p,p.a,p.kind);
+    return out;
   }
-  // x sta sul piano della rampa (dove l'attrito è quello del legno/pietra, anche sul ghiaccio)
-  function onRamp(x) {
-    const z = zoneAt(x); if (!z || !z.patches) return false;
-    for (const p of z.patches) if (p.th !== undefined && x >= p.a + p.s && x <= p.a + p.u1 + 20) return true;
+  function zoneLaunchLips(z) {
+    if(z._launchLips)return z._launchLips;
+    const out=[];
+    if(z.patches) for(const p of z.patches)out.push(...patchLaunchLips(p));
+    if(z.key==='ramps'){
+      for(let i=0;i<Math.ceil(z.len/RAMP_PERIOD)+1;i++){
+        const lip=z.start+RAMP_LEAD+i*RAMP_PERIOD+RAMP_RISE;
+        if(lip>z.end-150)break;
+        if(z.patches&&z.patches.some(p=>lip>=p.a-90&&lip<=p.b+90))continue;
+        out.push({kind:'wave',parent:'wave',a:lip-RAMP_RISE,u1:RAMP_RISE,lip,tier:0,th:Math.atan(RAMP_PEAK/(RAMP_RISE-RAMP_BLEND_IN*.5))});
+      }
+    }
+    return (z._launchLips=out);
+  }
+  function rampAt(x,before=110,after=30){
+    const z=zoneAt(x);
+    if(!z)return null;
+    let result=null, best=Infinity;
+    for(const q of zoneLaunchLips(z)){
+      const d=q.lip-x;
+      if(d < -after || d > before)continue;
+      if(Math.abs(d)<best){best=Math.abs(d);result=q;}
+    }
+    return result;
+  }
+  function takeoffAt(x,before=90,after=35){return rampAt(x,before,after);}
+  function rampLipsIn(lo,hi){
+    const hits=[];
+    for(const z of ZONES){
+      if(z.end<lo-120||z.start>hi+120)continue;
+      for(const lip of zoneLaunchLips(z)){
+        if(lip.lip>=lo&&lip.lip<=hi)hits.push({x:lip.lip,kind:lip.kind,tier:lip.tier});
+      }
+    }
+    return hits;
+  }
+  // Increase grip when climbing a launch, even if that launch is nested inside
+  // a compound patch or is the rhythmic ramp background itself.
+  function onRamp(x){
+    const z=zoneAt(x);if(!z)return false;
+    for(const q of zoneLaunchLips(z)){
+      const start=q.kind==='wave'?q.a:q.a+q.s;
+      if(x>=start&&x<=q.lip+15)return true;
+    }
     return false;
   }
   // il burrone (patch 'ravine') in cui si trova x, se x è nel vuoto o sulla parete di arrivo
@@ -1213,7 +1269,7 @@ const Terrain = (() => {
     LENGTHS,
     get SEASON() { return SEASON; }, get PACE() { return PACE; }, get ZONES() { return ZONES; }, get FINISH_X() { return FINISH_X; }, get TRACK_END() { return TRACK_END; },
     get TRACK_START() { return TRACK_START; }, get FLOWERS() { return FLOWERS; }, get LILIES() { return LILIES; },
-    get BRIDGES() { return BRIDGES; }, get INFERNO_ISLANDS() { return INFERNO_ISLANDS; }, get PATCHES() { return PATCHES; }, get PORTALS() { return PORTALS; }, PORTAL_RY: 88, landOk, ravineAt, rampAt, onRamp, makePatch, mkRamp, rampY,
+    get BRIDGES() { return BRIDGES; }, get INFERNO_ISLANDS() { return INFERNO_ISLANDS; }, get PATCHES() { return PATCHES; }, get PORTALS() { return PORTALS; }, PORTAL_RY: 88, landOk, ravineAt, rampAt, takeoffAt, rampLipsIn, onRamp, makePatch, mkRamp, rampY,
     // tipo di presa speciale sotto la ruota: 'mud' (fango), 'ice' (ghiaccio) o null
     // N lati della strada ad archi sotto la ruota (0 se non è una strada ad archi): serve a chi ha esattamente N punte
     gripN: x => { const z = zoneAt(x); if (z.patches) for (const p of z.patches) if (p.kind === 'arch' && x >= p.a && x <= p.b) return p.n; return 0; },

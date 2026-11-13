@@ -322,7 +322,7 @@ const Sim = (() => {
       finished: false, finishTime: null,
       bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0,
       cornerReleases: 0, releaseAt: -1e9, releaseTriedFor: -1, stallEvents: [],
-      curseAt:-1,curseStage:0,curseLevel:0,curseHits:{},curseClearing:false,
+      curseAt:-1,curseStage:0,curseLevel:0,curseHits:{},
       stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
@@ -456,7 +456,7 @@ const Sim = (() => {
     if (r.sc && r.sc > 1.001) Matter.Body.setDensity(nw, nw.density / (r.sc * r.sc));
     // La maledizione cambia il profilo ma non modifica all'improvviso massa
     // e inerzia effettiva tramite un salto di densita' del nuovo collider.
-    if(key==='rw' && (r.curseLevel>0 || r.curseClearing)) Matter.Body.setDensity(nw,old.mass/Math.max(1,nw.area));   // ruota gigante: stessa massa di prima (4,8 volte più pesante farebbe esplodere i vincoli con il telaio leggero)
+    if(key==='rw' && r.curseLevel>0) Matter.Body.setDensity(nw,old.mass/Math.max(1,nw.area));   // ruota gigante: stessa massa di prima (4,8 volte più pesante farebbe esplodere i vincoli con il telaio leggero)
     Matter.Body.setPosition(nw, pos); Matter.Body.setAngle(nw, ang);   // (setPosition: difesa se la scomposizione in pezzi lascia il corpo altrove)
     nw.deltaTime = old.deltaTime; nw.deltaTimePrev = old.deltaTimePrev; nw.positionPrev.x = pos.x - (old.position.x - old.positionPrev.x); nw.positionPrev.y = pos.y - (old.position.y - old.positionPrev.y);
     nw.anglePrev = nw.angle - (old.angle - old.anglePrev); nw.velocity.x = old.velocity.x; nw.velocity.y = old.velocity.y; nw.angularVelocity = old.angularVelocity; nw.speed = old.speed; nw.angularSpeed = old.angularSpeed;
@@ -1160,13 +1160,23 @@ const Sim = (() => {
     const ahead = !air && [...(Terrain.INTERACTIVE_OBSTACLES || []), ...(Terrain.DYNAMIC_OBSTACLES || [])]
       .some(o => { const d = (o.x - px) * dir; return d >= -70 && d <= 340; });
     const forward = Math.max(0, dir * r.chassis.velocity.x);
-    const launchDx = ahead ? Math.min(3.5, Math.max(0, 5.8 - forward)) : 0;
+    // V32: il premio è VOLONTARIO. Il salto al labbro con una corsa
+    // abbastanza veloce dà una traiettoria appena più lunga, non un volo
+    // automatico arbitrario. Vale anche per le rampe ritmiche del bioma.
+    const takeoff = !air && dir===1 && !thorn && Terrain.takeoffAt
+      ? Terrain.takeoffAt(r.fw.position.x, 100, 20) : null;
+    const distance=takeoff?(takeoff.a+takeoff.u1-r.fw.position.x):1e9;
+    const perfect=!!takeoff&&forward>=3.8&&distance>=-12&&distance<=75;
+    if(perfect) v*=1.07;
+    const launchDx = (ahead ? Math.min(3.5, Math.max(0, 5.8 - forward)) : 0)
+      + (perfect ? Math.min(1.25,Math.max(0,(forward-3.8)*.42)) : 0);
     for (const b of [r.chassis, r.fw, r.rw]) {
       let vx = b.velocity.x + dir * launchDx, vy = air ? Math.min(b.velocity.y, -v) : Math.max(-(v + JUMP_RISE_CAP), Math.min(b.velocity.y, 0) - v);
       if (thorn) { vx = Math.max(vx, 16.0); vy = Math.min(vy, -29.0); }
       Matter.Body.setVelocity(b, { x: vx, y: vy });
     }
     if (thorn) { r.ln = (r.ln || 0) + 1; r.ls = 2; } // stessa animazione di un grande lancio
+    if (perfect) { r.ln=(r.ln||0)+1; r.ls=3; } // conferma client: salto al labbro, non input presunto
     r.jumpGraceUntil = elapsed + 350; r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = air ? 2 : 1; if (air) r.ja = (r.ja || 0) + 1;
     return 1;
   }
@@ -1208,32 +1218,49 @@ const Sim = (() => {
     r.lx = r.chassis.position.x; r.pitAt = -1; r.bestX = dir * tx; r.hopBaseX = dir * tx; r.progressAt = elapsed; r.stallStreak = 0;
   }
 
-  // V27.3 — Rampa = GEOMETRIA, non una sequenza di boost invisibili.
-  // L'animazione di decollo e il secondo salto si armano solo se TUTTE E DUE
-  // le ruote lasciano realmente il terreno dopo aver passato il labbro.
-  function rampStep(r, elapsed) {
-    const fx=r.fw.position.x, previous=r.rfx;
+  // V32: the lip is determined by procedural geometry, including kicker,
+  // jump, ravine, halfpipe, gapland and nested twin / drop-in ramps.
+  // Only the authoritative host adds a small bounded vertical impulse when
+  // actually crossing the lip with a wheel on the ground. No position changes.
+  const RAMP_KINDS=new Set(['kicker','jump','ravine','pipe','gapland','wave']);
+  function rampStep(r,elapsed){
+    const fx=r.fw.position.x,previous=r.rfx;
     r.rfx=fx;
     if(r.rampFly>0){
       r.rfT=(r.rfT||0)+1;
-      const reallyAirborne=r.fw.gapNow>12 && r.rw.gapNow>12;
-      if(!r.rampLaunched && reallyAirborne && !r.airJ){
+      const airborne=r.fw.gapNow>12&&r.rw.gapNow>12;
+      if(!r.rampLaunched&&airborne&&!r.airJ){
         r.rampLaunched=true;
-        r.airJ=1; r.jumpAt=elapsed;
+        r.airJ=1;r.jumpAt=elapsed;
         r.ln=(r.ln||0)+1;r.ls=r.rampSmall?1:2;
       }
-      if((r.rfT>14 && !reallyAirborne && r.rampLaunched) || r.rfT>90){
-        r.rampFly=0; r.rampLaunched=false;
+      if((r.rfT>14&&!airborne&&r.rampLaunched)||r.rfT>90){
+        r.rampFly=0;r.rampLaunched=false;
       }
       return;
     }
-    if(previous===undefined || (r.dir||1)!==1 || r.airJ)return;
-    const p=Terrain.rampAt?Terrain.rampAt(fx,60,60):null;
-    if(!p || (p.kind!=='kicker'&&p.kind!=='pipe'&&p.kind!=='gapland'))return;
-    const lip=p.a+p.u1;
-    if(!(previous<lip && fx>=lip))return;
-    // Niente setVelocity, setPosition o setAngle: la parabola e' fisica.
-    r.rampFly=1;r.rampLaunched=false;r.rampSmall=p.kind==='kicker'&&p.tier===0;r.rfT=0;
+    if(previous===undefined||(r.dir||1)!==1||r.airJ||r.righting)return;
+    const lipInfo=Terrain.takeoffAt?Terrain.takeoffAt(fx,80,70):null;
+    if(!lipInfo||!RAMP_KINDS.has(lipInfo.kind))return;
+    const lip=lipInfo.lip;
+    if(!(previous<lip&&fx>=lip))return;
+    const speed=Math.max(0,r.chassis.velocity.x);
+    const grounded=Math.min(r.fw.gapNow,r.rw.gapNow)<32;
+    const big=lipInfo.kind==='pipe'||lipInfo.kind==='ravine'||lipInfo.kind==='gapland'||lipInfo.tier>=1;
+    // A gentle, speed-proportional takeoff. This supplements rather than
+    // replaces the actual slope response; different wheel shapes retain their
+    // traction differences and heavy/tricky wheels retain their inertia.
+    if(speed>4.0&&grounded){
+      const minY=big?3.5:2.9;
+      const cap=big?7.0:5.4;
+      const launchY=-Math.min(cap,minY+(speed-4)*.75);
+      for(const body of [r.chassis,r.fw,r.rw]){
+        if(body.velocity.y>launchY)
+          Matter.Body.setVelocity(body,{x:body.velocity.x,y:launchY});
+      }
+    }
+    r.rampFly=1;r.rampLaunched=false;
+    r.rampSmall=!big;r.rfT=0;
   }
 
   // Correnti del Paradiso e geyser dell'Inferno: vengono applicati solo dall'host,
@@ -1339,10 +1366,11 @@ const Sim = (() => {
     }
   }
 
-  // Antico Egitto — una fascia che passa DAVVERO vicino alla ruota posteriore
-  // trasforma gradualmente il profilo Matter. Nessuna riduzione forzata della
-  // velocità: la differenza di guida deriva soltanto dalla forma fisica.
-  const CURSE_MS=5800, CURSE_RISE_MS=900, CURSE_FADE_MS=1000;
+  // Antico Egitto — maledizione permanente per la gara corrente.
+  // Una benda che colpisce DAVVERO la ruota posteriore comprime il profilo
+  // Matter in dieci stadi: raggiunto il triangolo, resta cosi' fino al traguardo.
+  // La partita successiva ricrea la ruota originale in addRacer().
+  const CURSE_RISE_MS=900;
   function egyptCurseStep(r,clockMs){
     const segment=Terrain.WORLD_SEGMENT;
     const inEgypt=segment&&segment.world==='egypt'&&r.chassis.position.x>=segment.start-250&&r.chassis.position.x<=segment.end+300;
@@ -1369,17 +1397,16 @@ const Sim = (() => {
       }
     }
     if(r.curseAt<0)return;
-    const age=clockMs-r.curseAt;
-    const level=age>=CURSE_MS?0:age<CURSE_RISE_MS?age/CURSE_RISE_MS:
-      age>CURSE_MS-CURSE_FADE_MS?(CURSE_MS-age)/CURSE_FADE_MS:1;
-    const stage=Math.round(Math.max(0,Math.min(1,level))*10);
+    // Anche dopo l'uscita dall'Egitto il tempo continua, ma l'effetto
+    // non diminuisce: 0 → 10 stadi, poi triangolo e bende permanenti.
+    const age=Math.max(0,clockMs-r.curseAt);
+    const level=Math.min(1,age/CURSE_RISE_MS);
+    const stage=Math.round(level*10);
     if(stage!==r.curseStage){
-      r.curseStage=stage;r.curseLevel=stage/10;
-      r.curseClearing=stage===0;
+      r.curseStage=stage;
+      r.curseLevel=stage/10;
       rebuildWheel(r,'rw',r.mR);
-      r.curseClearing=false;
     }
-    if(age>=CURSE_MS){r.curseAt=-1;r.curseLevel=0;r.curseStage=0;}
   }
 
   function stepRacer(r, elapsed) {

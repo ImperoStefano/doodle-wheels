@@ -1578,17 +1578,35 @@
     }
   }
 
+  // Tre piccole tacche prima del labbro: rendono chiaro QUANDO toccare
+  // Salto, anche su smartphone. Sono disegnate solo su rampe vere.
+  function drawRampTakeoffCues(c,camX,w,groundY){
+    if(!Terrain.rampLipsIn)return;
+    const lips=Terrain.rampLipsIn(camX-30,camX+w+90);
+    c.save();c.lineWidth=2.8;c.lineCap='round';c.lineJoin='round';
+    for(const q of lips){
+      const wx=q.x;
+      for(const d of [86,52,22]){
+        const x=wx-d,xx=x-camX;
+        if(xx<-30||xx>w+30)continue;
+        const y=groundY-Terrain.height(x)-8;
+        c.strokeStyle='rgba(68,50,35,.44)';c.beginPath();c.moveTo(xx-7,y-1);c.lineTo(xx,y-7);c.lineTo(xx+7,y-1);c.stroke();
+        c.strokeStyle=d===22?'#fff9d5':'#e9c782';c.beginPath();c.moveTo(xx-7,y-4);c.lineTo(xx,y-10);c.lineTo(xx+7,y-4);c.stroke();
+      }
+    }
+    c.restore();
+  }
   // Ogni rampa, inclusi i kicker piccoli, manda un evento all'animazione della gara.
   // Piccolo = sbuffo leggero e rotazione libera; grande = scia più ampia. Tutto locale e a costo limitato.
   function rampLaunchFx(id, r) {
     const n = r.ln || 0, old = lnSeen[id]; lnSeen[id] = n;
     if (old === undefined || !n || n === old) return;
-    const big = (r.ls || 1) > 1, count = big ? 12 : 6;
+    const perfect=(r.ls||0)===3, big=(r.ls||1)>1, count=perfect?18:(big?12:6);
     for (let i = 0; i < count && particles.length < 190; i++) {
       const wx = i % 2 ? r.fwX : r.rwX, wy = i % 2 ? r.fwY : r.rwY;
       particles.push({ x: wx + (Math.random() - 0.5) * 22, y: wy + 37,
         vx: -0.5 - Math.random() * (big ? 4.2 : 2.0), vy: -1.0 - Math.random() * (big ? 3.2 : 1.5),
-        g: 0.04, dl: big ? 0.027 : 0.045, life: 0.85, size: big ? 5 + Math.random() * 7 : 3 + Math.random() * 4, col: DUST });
+        g: 0.04, dl: big ? 0.027 : 0.045, life: 0.85, size: big ? 5 + Math.random() * 7 : 3 + Math.random() * 4, col: perfect?'rgba(255,205,98,':DUST });
     }
   }
 
@@ -1637,6 +1655,7 @@
     Scenery.drawWorldEffects(ctx2d, camX, w, groundY, Math.max(0, t0 - raceT0));
     WorldFX.drawGround(ctx2d, camX, w, groundY, t0);
     if (Terrain.WORLD_SEGMENT && Terrain.WORLD_SEGMENT.world==='egypt') EgyptWorld.drawGround(ctx2d,camX,w,groundY);
+    drawRampTakeoffCues(ctx2d,camX,w,groundY);
 
     Props.drawPatches(ctx2d, camX, w, groundY, SC);
     Props.drawRamps(ctx2d, camX, w, groundY);
@@ -1699,7 +1718,9 @@
       if (bigB) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(gs, gs); ctx2d.translate(-cx, -cy(r.y)); }
       if (bigB) ctx2d.restore();
       const hR = wheelHeat(id, 'r', r.rwX, r.rwY), hF = wheelHeat(id, 'f', r.fwX, r.fwY);
-      drawWheel(r.rwX - camX, cy(r.rwY), r.rwAngle, meta.vr || meta.vertices, meta.color, id === Net.myId, hR, meta.vr ? meta.mr : null, id, r.sc, r.cu||0);
+      const egyptSeg=Terrain.WORLD_SEGMENT;
+      const bandagesVisible=!!(egyptSeg&&egyptSeg.world==='egypt'&&r.x>=egyptSeg.start&&r.x<egyptSeg.end);
+      drawWheel(r.rwX - camX, cy(r.rwY), r.rwAngle, meta.vr || meta.vertices, meta.color, id === Net.myId, hR, meta.vr ? meta.mr : null, id, r.sc, r.cu||0,bandagesVisible);
       drawWheel(r.fwX - camX, cy(r.fwY), r.fwAngle, meta.vf || meta.vertices, meta.color, id === Net.myId, hF, meta.vf ? meta.mf : null, id, r.sc);
       lavaDrips(id, r, meta, hR, hF);
       if (bigB) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(gs, gs); ctx2d.translate(-cx, -cy(r.y)); }
@@ -1838,7 +1859,7 @@
     for (let i = 0; i < n; i++) { const p = v[i], q = v[(i + 1) % n]; ctx2d.quadraticCurveTo(p.x, p.y, (p.x + q.x) / 2, (p.y + q.y) / 2); }
     ctx2d.closePath();
   }
-  function drawWheel(x, y, a, v, c, isMe, heat, mArr, id, sc, curse = 0) {
+  function drawWheel(x, y, a, v, c, isMe, heat, mArr, id, sc, curse = 0, showBandages = true) {
     if(curse>0) v=EgyptWorld.morph(v,curse);
     ctx2d.save(); ctx2d.translate(x, y); ctx2d.rotate(a);
     if (sc && sc !== 1) ctx2d.scale(sc, sc);   // portale gigante: stessa forma, più grande (i tratti restano della stessa grossezza)
@@ -1872,7 +1893,7 @@
       }
       ctx2d.restore();
     }
-    if(curse>0) EgyptWorld.drawBandages(ctx2d,v,curse);
+    if(curse>0 && showBandages) EgyptWorld.drawBandages(ctx2d,v,curse);
     // 5) mozzo: disco crema con un punto d'ardesia
     ctx2d.beginPath(); ctx2d.arc(0, 0, 10, 0, TAU2); ctx2d.fillStyle = CREAM; ctx2d.fill(); ctx2d.beginPath(); ctx2d.arc(0, 0, 4.6, 0, TAU2); ctx2d.fillStyle = SLATE; ctx2d.fill(); ctx2d.restore();
   }
