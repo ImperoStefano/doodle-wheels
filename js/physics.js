@@ -1140,8 +1140,18 @@ const Sim = (() => {
         }
       }
     }
+    // V27.2: jumping higher alone did not help a bike that had already slowed
+    // against a mass or moving obstacle.  When a solid obstacle is immediately
+    // ahead, carry a modest FORWARD launch speed into the jump, keeping all
+    // three bodies together.  Regular jumps and jumps at full speed are unchanged.
+    const dir = r.dir || 1;
+    const px = r.chassis.position.x;
+    const ahead = !air && [...(Terrain.INTERACTIVE_OBSTACLES || []), ...(Terrain.DYNAMIC_OBSTACLES || [])]
+      .some(o => { const d = (o.x - px) * dir; return d >= -70 && d <= 340; });
+    const forward = Math.max(0, dir * r.chassis.velocity.x);
+    const launchDx = ahead ? Math.min(3.5, Math.max(0, 5.8 - forward)) : 0;
     for (const b of [r.chassis, r.fw, r.rw]) {
-      let vx = b.velocity.x, vy = air ? Math.min(b.velocity.y, -v) : Math.max(-(v + JUMP_RISE_CAP), Math.min(b.velocity.y, 0) - v);
+      let vx = b.velocity.x + dir * launchDx, vy = air ? Math.min(b.velocity.y, -v) : Math.max(-(v + JUMP_RISE_CAP), Math.min(b.velocity.y, 0) - v);
       if (thorn) { vx = Math.max(vx, 16.0); vy = Math.min(vy, -29.0); }
       Matter.Body.setVelocity(b, { x: vx, y: vy });
     }

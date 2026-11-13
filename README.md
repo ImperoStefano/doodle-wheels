@@ -1,5 +1,13 @@
 # 🖊️ Doodle Wheels
 
+## V27.2 — colori mondi speciali e salto più efficace
+
+- Pista finale: palette dei cinque mondi presa dai rispettivi paesaggi (Paradiso oro/avorio, Inferno corallo, Atlantide turchese, Bosco verde foglia, Neon ciano). Nessuna scritta stampata dentro le fasce.
+- Nel tooltip dei tratti speciali si mostra solo il **nome del mondo speciale**, non il bioma normale sottostante.
+- Salto: senza aumentare ancora l'altezza, un piccolo slancio **orizzontale** è disponibile solo quando si salta vicino a un ostacolo fisico e si è già rallentati. Senza bonus sui rettilinei o nei doppi salti in aria.
+- La fisica completa Matter.js in partite reali resta da collaudare su dispositivi; i controlli unitari non la sostituiscono.
+
+
 **Versione: V25.8 — 13 novembre 2026** (documentazione dettagliata sotto riferita alla V22; vedi `NOVITA-V25.8.txt` per lo stato dei collaudi) · Gioco web multiplayer per GitHub Pages.
 
 ### Novità della V22 in breve

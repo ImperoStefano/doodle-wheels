@@ -30,14 +30,16 @@ async def main():
     const r=id=>{const x=document.querySelector(id).getBoundingClientRect(); return {x:x.left,y:x.top,w:x.width,h:x.height,right:x.right,bottom:x.bottom}};
     const overlap=(a,b)=>Math.max(0,Math.min(a.right,b.right)-Math.max(a.x,b.x))*Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.y,b.y));
     const jump=r('#btn-jump'),sprint=r('#btn-sprint'),emote=r('#btn-emote'),hud=r('.hud');
-    return {jump,sprint,emote,hud,overlapJumpSprint:overlap(jump,sprint),overlapJumpEmote:overlap(jump,emote),overlapJumpHud:overlap(jump,hud),jumpLabel:document.querySelector('.jump-label').textContent,sprintLabel:document.querySelector('.sprint-label').textContent, selectedLen:document.querySelector('.seg-btn--on[data-len]').dataset.len}
+    return {jump,sprint,emote,hud,overlapJumpSprint:overlap(jump,sprint),overlapJumpEmote:overlap(jump,emote),overlapJumpHud:overlap(jump,hud),jumpLabel:document.querySelector('#btn-jump').getAttribute('aria-label'),sprintLabel:document.querySelector('#btn-sprint').getAttribute('aria-label'), selectedLen:document.querySelector('.seg-btn--on[data-len]').dataset.len}
    }''')
    assert result['selectedLen']=='corta',result
    assert result['jump']['w']>=80 and result['sprint']['w']>=55,result
    assert result['overlapJumpSprint']==0,result
    assert result['overlapJumpHud']==0,result
    assert result['overlapJumpEmote']==0,result
-   assert result['jumpLabel'].lower()=='salta' and result['sprintLabel'].lower()=='scatto',result
+   assert result['jumpLabel'].lower()=='salta' and result['sprintLabel'].lower() in ('scatto','sprint'),result
+   assert await page.locator('.jump-label,.sprint-label').count()==0
+   assert await page.locator('#sprint-cd').inner_text()==''
    assert not errors,errors
    await page.screenshot(path=str(P/'tests'/f'ux-v27-{W}x{H}.png'))
    print('OK',W,H,'jump',result['jump']['w'],'sprint',result['sprint']['w'],'no overlap','errors',len(errors))

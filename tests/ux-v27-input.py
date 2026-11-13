@@ -32,9 +32,10 @@ async def main():
   assert not await page.locator('#btn-jump').evaluate("e=>e.classList.contains('jump-confirmed')"),'confirmation did not clear'
   # English translation must preserve SVG and show the correct label.
   await page.evaluate("I18n.set('en')")
-  assert await page.locator('.jump-label').text_content()=='Jump'
+  assert await page.locator('#btn-jump').get_attribute('aria-label')=='Jump'
   assert await page.locator('#btn-jump svg').count()==1
-  assert await page.locator('.sprint-label').text_content()=='Sprint'
+  assert await page.locator('#btn-sprint').get_attribute('aria-label')=='Sprint'
+  assert await page.locator('.jump-label,.sprint-label').count()==0
   assert not errors, errors
   print('PASS jump immediate request; confirmation only on host snapshot; 210ms clear; IT/EN labels; no JS errors')
   await browser.close()

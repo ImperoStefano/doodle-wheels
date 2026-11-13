@@ -519,9 +519,10 @@ input[type="text"]:focus { border-color: var(--teal); }
 }
 .sprint-btn::before {   /* anello di carica: sottile, fuori dal tondo */
   content: ''; position: absolute; inset: -9px; border-radius: 50%; pointer-events: none;
-  background: conic-gradient(var(--ochre) calc(var(--p) * 360deg), rgba(45, 62, 72, 0.16) 0);
+  background: conic-gradient(var(--ochre) calc(var(--p) * 360deg), rgba(45, 62, 72, 0.16) 0); opacity:0; transition:opacity .18s ease;
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px)); mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
 }
+.sprint-btn.cool::before {opacity:1;} /* La ghiera appare solo durante la vera ricarica. */
 .sprint-btn svg { position: relative; display: block; width: 46%; height: 46%; fill: var(--cream-2); stroke: var(--cream-2); stroke-width: 5; stroke-linejoin: round; pointer-events: none; }
 .sprint-btn.ready { animation: sprintPulse 1.2s ease-in-out infinite; }
 .sprint-btn.on { background: var(--yellow); box-shadow: 0 2px 0 var(--ochre-d), 0 0 0 0 transparent; transform: translateY(4px); }
@@ -811,14 +812,9 @@ body[data-screen="race"] .page {
 @keyframes uxSlowButton {50%{background:#f6d272;box-shadow:0 6px 0 var(--ochre-d),0 0 0 4px rgba(250,193,92,.18)}}
 /* Host-confirmed jump: 190 ms accent only when the physics accepted the input. */
 .jump-btn.jump-confirmed {box-shadow:0 5px 0 var(--sun-d),0 0 0 5px rgba(245,195,88,.30);}
-.jump-label,.sprint-label {pointer-events:none;position:absolute;bottom:8px;
-  font:800 10px/1 'Space Grotesk',system-ui,sans-serif;letter-spacing:.055em;
-  text-transform:uppercase;color:var(--cream-2)}
-.jump-btn svg {width:47%;height:47%;margin-top:-12px}
-.sprint-btn svg {width:42%;height:42%;transform:translateY(-6px)}
-.sprint-label {font-size:8px;bottom:8px}
-.sprint-btn.cool .sprint-label {opacity:.35}
-.sprint-btn.on .sprint-label {color:var(--sun)}
+/* V27.1: icon-only controls; text remains accessible via aria-label. */
+.jump-btn svg {width:54%;height:54%;margin-top:0}
+.sprint-btn svg {width:46%;height:46%;transform:none}
 .sprint-btn .sprint-cd {z-index:3}
 /* Actual interactive hit surface, not an invisible pseudo-element. */
 @media (max-width:768px) and (pointer:coarse){

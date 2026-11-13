@@ -1,0 +1,16 @@
+DOODLE WHEELS V27.2 — PALETTE MONDI SPECIALI E SALTI LEGGIBILI
+
+TRACCIATO FINALE:
+- Nessuna scritta dentro le fasce, anche per i cinque mondi speciali.
+- Il tooltip mostra solo Paradiso / Inferno / Atlantide / Bosco Incantato / Città Neon, non il terreno sottostante.
+- Hover/touch evidenzia l'intero tratto speciale, anche quando attraversa più biomi normali.
+- Colori estratti dalle palette dei mondi: oro/avorio Paradiso, corallo Inferno, turchese Atlantide, verde foglia Bosco, ciano Neon.
+- Pennellate dei giocatori e biomi normali conservati.
+
+SALTO:
+- Nessun altro aumento dell'altezza.
+- Solo quando l'ostacolo fisico si trova entro 340 px davanti e la bici ha perso velocità, il salto da terra recupera fino a 3,5 px/tick di slancio orizzontale (tetto ~5,8 px/tick).
+- Nessun nuovo bonus nei salti in aria, sui rettilinei liberi o a velocità già sufficiente; supportata anche la retromarcia dei portali.
+- Richiesta conferma con test Matter.js e una prova su smartphone in gara.
+
+La V27.1 (pulsanti solo icone, cooldown non visibile al via, rientro multiplayer) rimane come base.
