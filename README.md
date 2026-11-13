@@ -2,7 +2,7 @@
 
 **Multiplayer 2D browser game** — disegna le ruote della tua bici, affronta rampe e ostacoli, gareggia con gli amici attraverso mondi diversi.
 
-Questo pacchetto è basato su **Doodle Wheels V32 — Ramp Flow**. Il nome del gioco resta **Doodle Wheels**. Le meccaniche, la grafica e le probabilità dei biomi della V32 non sono state modificate dal presente pacchetto.
+Questa è la versione **Doodle Wheels V33 — Natural Flight**. Mantiene il nome **Doodle Wheels**, la grafica egiziana approvata, le funzioni multiplayer e le probabilità dei biomi (Classico 35%, Egitto 15%, altri speciali 10% ciascuno). Migliora le rampe, l’interazione tra rampa e Salto, il recupero dalle voragini e la fusione delle ruote triangolari nel Vulcano. La gara non viene rallentata.
 
 ## Avvio e pubblicazione
 

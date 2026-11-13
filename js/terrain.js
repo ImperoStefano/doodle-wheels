@@ -344,7 +344,7 @@ const Terrain = (() => {
       case 'jump': {   // trampolino vero + fossato di due taglie: basso (si vola o si scende e si risale), medio (la risalita è lunga ma si sente)
         const tier = rnd() < 0.5 ? 0 : 1, big = tier === 1;
         const H = big ? 52 + Math.round(rnd() * 14) : 32 + Math.round(rnd() * 10), D = big ? 78 + Math.round(rnd() * 34) : 38 + Math.round(rnd() * 12), pw = (big ? 150 : 120) + Math.round(rnd() * 40);
-        const rp = mkRamp(H, big ? 22 : 17, big ? 150 : 110), s = 60, u1 = Math.round(s + rp.run), ex = big ? 70 : 85, u2 = u1 + ex + pw, rr = big ? Math.round(150 + D * 1.3) : 110;
+        const rp = mkRamp(H, big ? 22 : 17, big ? 150 : 110), s = 60, u1 = Math.round(s + rp.run), ex = big ? 76 : 85, u2 = u1 + ex + pw, rr = big ? Math.round(175 + D * 1.15) : 130;
         return Object.assign({ kind, len: u2 + rr + 70, D, pw, s, u1, ex, u2, rr, tier }, rp);
       }
       case 'kicker': {   // rampa di lancio isolata, a tre altezze: la piccola è un dosso da salto, la grande lancia davvero (più alta = più ripida e più lunga)
@@ -370,12 +370,12 @@ const Terrain = (() => {
       }
       case 'gapland': {   // rampa, vuoto largo, parete, cresta e discesa: il volo deve arrivare sulla pendenza. Chi cade viene riportato sulla cresta
         const tier = 1, H = tier === 1 ? 60 + Math.round(rnd() * 24) : 100 + Math.round(rnd() * 30), rp = mkRamp(H, tier === 1 ? 29 : 32, tier === 1 ? 160 : 210);
-        const s = 70, u1 = Math.round(s + rp.run), ex = 34, pw = (tier === 1 ? 190 : 240) + Math.round(rnd() * 50), D = 110 + Math.round(rnd() * 50), Hl = Math.round(H * 0.45), rr = 40, u2 = u1 + ex + pw, u3 = u2 + rr + 60, dl = Math.round(Hl / Math.tan(18 * Math.PI / 180));
+        const s = 70, u1 = Math.round(s + rp.run), ex = 56, pw = (tier === 1 ? 180 : 220) + Math.round(rnd() * 45), D = 105 + Math.round(rnd() * 45), Hl = Math.round(H * 0.45), rr = 165 + Math.round(rnd() * 30), u2 = u1 + ex + pw, u3 = u2 + rr + 60, dl = Math.round(Hl / Math.tan(18 * Math.PI / 180));
         return Object.assign({ kind, len: u3 + dl + 130, D, pw, s, u1, ex, u2, rr, u3, dl, Hl, tier }, rp);
       }
       case 'ravine': {   // burrone vero: rampa di lancio ripida, vuoto profondo SENZA ponte, parete di arrivo ripida. Si scavalca saltando (rampa + salto/doppio salto); chi cade viene riportato sul bordo dopo un po'
-        const H = 50 + Math.round(rnd() * 14), D = 130 + Math.round(rnd() * 140), pw = RAVINE_W + Math.round(rnd() * 50);
-        const rp = mkRamp(H, 26, 160), s = 70, u1 = Math.round(s + rp.run) + 10, ex = 34, u2 = u1 + ex + pw, rr = 38;
+        const H = 50 + Math.round(rnd() * 14), D = 110 + Math.round(rnd() * 115), pw = RAVINE_W + Math.round(rnd() * 45);
+        const rp = mkRamp(H, 26, 160), s = 70, u1 = Math.round(s + rp.run) + 10, ex = 55, u2 = u1 + ex + pw, rr = 165 + Math.round(rnd() * 45);
         return Object.assign({ kind, len: u2 + rr + 100, D, pw, s, u1, ex, u2, rr }, rp);
       }
       case 'drop': { const D = 40 + Math.round(rnd() * rnd() * 80 + rnd() * 14), s = 70, ex = 120, pl = 200 + Math.round(rnd() * 60), s2 = s + ex + pl, rr = Math.round(210 + D * 2.2); return { kind, len: s2 + rr + 70, D, s, ex, s2, rr }; }

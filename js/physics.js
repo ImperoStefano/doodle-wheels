@@ -406,18 +406,24 @@ const Sim = (() => {
     r.hot = base.map((p, i) => 0.2 + 0.8 * Math.pow(0.5 + 0.5 * Math.sin(2 * Math.PI * lobes * i / n + ph), 1.3));   // 0.2..1: dove il materiale cede più volentieri
   }
   function meltWheel(r, w, m, dtSec) {
-    const x0 = w.position.x, y0 = w.position.y, L0 = Terrain.lavaLevel(x0);
-    if (!(L0 > -1e8)) return false;
-    const yTest = GROUND_Y - L0 - 10, ca = Math.cos(w.angle), sa = Math.sin(w.angle), n = r.base.length, mm = new Float32Array(n);
-    // posizione attuale dei punti = forma sciolta (senza ricentrare: basta l'ordine di grandezza)
-    let any = false;
-    for (let i = 0; i < n; i++) {
-      const k = (1 - m[i]) * (r.sc || 1), bx = r.base[i].x * k, by = r.base[i].y * k, wx = x0 + ca * bx - sa * by, wy = y0 + sa * bx + ca * by;
-      if (wy < yTest) continue;
-      if (!Terrain.isLava(wx)) continue;
-      const d = wy - (GROUND_Y - Terrain.lavaLevel(wx)); if (d <= 0) continue;
-      const dm = MELT_RATE * dtSec * smooth01(d / MELT_DEPTH) * (1 + 1.3 * r.tip[i]) * r.hot[i];
-      if (m[i] < MELT_MAX) { m[i] = Math.min(MELT_MAX, m[i] + dm); any = true; }
+    const x0=w.position.x,y0=w.position.y,scale=r.sc||1;
+    // V33: il vulcano deve consumare la ruota REALE, anche dopo la mummia.
+    // Prima si fonde il materiale, poi si applica la forma triangolare:
+    // lo stesso ordine usato da rebuildWheel() e dal client grafico.
+    if(!Terrain.nearLava(x0,140*scale))return false;
+    const n=r.base.length, ca=Math.cos(w.angle),sa=Math.sin(w.angle);
+    const melted=meltVertices(r.base,m);
+    const shape=(w===r.rw&&r.curseLevel>0)
+      ? EgyptWorld.morph(melted,r.curseLevel):melted;
+    let any=false;
+    for(let i=0;i<n;i++){
+      const bx=shape[i].x*scale,by=shape[i].y*scale;
+      const wx=x0+ca*bx-sa*by,wy=y0+sa*bx+ca*by;
+      if(!Terrain.isLava(wx))continue;
+      const d=wy-(GROUND_Y-Terrain.lavaLevel(wx));
+      if(d<=0)continue;
+      const dm=MELT_RATE*dtSec*smooth01(d/MELT_DEPTH)*(1+1.3*r.tip[i])*r.hot[i];
+      if(m[i]<MELT_MAX){m[i]=Math.min(MELT_MAX,m[i]+dm);any=true;}
     }
     return any;
   }
@@ -1165,11 +1171,13 @@ const Sim = (() => {
     // automatico arbitrario. Vale anche per le rampe ritmiche del bioma.
     const takeoff = !air && dir===1 && !thorn && Terrain.takeoffAt
       ? Terrain.takeoffAt(r.fw.position.x, 100, 20) : null;
-    const distance=takeoff?(takeoff.a+takeoff.u1-r.fw.position.x):1e9;
-    const perfect=!!takeoff&&forward>=3.8&&distance>=-12&&distance<=75;
-    if(perfect) v*=1.07;
+    const distance=takeoff?(takeoff.lip-r.fw.position.x):1e9;
+    const perfect=!!takeoff&&forward>=3.8&&distance>=-12&&distance<=72;
+    // Sweet spot at the same distance indicated by the lone golden arrow.
+    const quality=perfect?Math.max(0,1-Math.abs(distance-42)/58):0;
+    if(perfect) v*=1+.09+.055*quality;
     const launchDx = (ahead ? Math.min(3.5, Math.max(0, 5.8 - forward)) : 0)
-      + (perfect ? Math.min(1.25,Math.max(0,(forward-3.8)*.42)) : 0);
+      + (perfect ? Math.min(1.5,Math.max(0,(forward-3.5)*(.30+.09*quality))) : 0);
     for (const b of [r.chassis, r.fw, r.rw]) {
       let vx = b.velocity.x + dir * launchDx, vy = air ? Math.min(b.velocity.y, -v) : Math.max(-(v + JUMP_RISE_CAP), Math.min(b.velocity.y, 0) - v);
       if (thorn) { vx = Math.max(vx, 16.0); vy = Math.min(vy, -29.0); }
@@ -1202,20 +1210,37 @@ const Sim = (() => {
   // V27.3: nessuna velocita' minima forzata in salita, nessun lancio
   // aggiunto al labbro. L'unico sistema di recupero rimane l'anti-blocco
   // generale, con diagnostica: la rampa non teletrasporta piu' la bici.
-  const RAVINE_RESCUE_MS = 1500;
+  const RAVINE_ASSIST_MS = 1900, RAVINE_RESCUE_MS = 6500;
   function ravineStep(r, elapsed) {
-    const p = Terrain.ravineAt ? Terrain.ravineAt(r.chassis.position.x) : null;
-    if (!p) { r.pitAt = -1; return; }
-    const rim = Terrain.height(p.a + p.u2 + p.rr + 10), low = GROUND_Y - Math.max(r.fw.bounds.max.y, r.rw.bounds.max.y);
-    if (low >= rim - p.D * 0.55) { r.pitAt = -1; return; }   // non è davvero giù nel vuoto
-    if (!(r.pitAt >= 0)) { r.pitAt = elapsed; return; }
-    if (elapsed - r.pitAt < RAVINE_RESCUE_MS) return;
-    const dir = r.dir || 1, tx = dir === 1 ? p.a + p.u2 + p.rr + 70 : p.a + p.s - 120;
-    teleport(r, tx - r.chassis.position.x);
-    Matter.Body.setAngle(r.chassis, 0);
-    { const c = r.chassis.position, k = 80 * (r.sc || 1); Matter.Body.setPosition(r.fw, { x: c.x + k, y: c.y }); Matter.Body.setPosition(r.rw, { x: c.x - k, y: c.y }); }
-    for (const b of [r.chassis, r.fw, r.rw]) { Matter.Body.setVelocity(b, { x: 0, y: 0 }); Matter.Body.setAngularVelocity(b, 0); }
-    r.lx = r.chassis.position.x; r.pitAt = -1; r.bestX = dir * tx; r.hopBaseX = dir * tx; r.progressAt = elapsed; r.stallStreak = 0;
+    const p=Terrain.ravineAt?Terrain.ravineAt(r.chassis.position.x):null;
+    if(!p){r.pitAt=-1;r.pitBoostAt=-1e9;return;}
+    const rim=Terrain.height(p.a+p.u2+p.rr+10);
+    const low=GROUND_Y-Math.max(r.fw.bounds.max.y,r.rw.bounds.max.y);
+    if(low>=rim-p.D*.55){r.pitAt=-1;return;}
+    if(!(r.pitAt>=0)){r.pitAt=elapsed;r.pitBoostAt=-1e9;return;}
+    // If trapped below a lip, a small continuous rescue gives the tyres a
+    // chance to climb the new, gentler exit slope without teleporting.
+    const trappedFor=elapsed-r.pitAt;
+    if(trappedFor>RAVINE_ASSIST_MS&&elapsed-r.pitBoostAt>1350&&
+       r.chassis.velocity.x<2.8&&
+       Math.min(r.fw.gapNow,r.rw.gapNow)<22){
+      for(const body of [r.chassis,r.fw,r.rw])
+        Matter.Body.setVelocity(body,{x:Math.max(3.8,body.velocity.x),y:Math.min(-7.3,body.velocity.y)});
+      r.pitBoostAt=elapsed;
+    }
+    if(trappedFor<RAVINE_RESCUE_MS)return;
+    // Absolute multiplayer safeguard, only after several failed climbs.
+    const dir=r.dir||1,tx=dir===1?p.a+p.u2+p.rr+70:p.a+p.s-120;
+    teleport(r,tx-r.chassis.position.x);
+    Matter.Body.setAngle(r.chassis,0);
+    {const c=r.chassis.position,k=80*(r.sc||1);
+     Matter.Body.setPosition(r.fw,{x:c.x+k,y:c.y});
+     Matter.Body.setPosition(r.rw,{x:c.x-k,y:c.y});}
+    for(const body of [r.chassis,r.fw,r.rw]){
+      Matter.Body.setVelocity(body,{x:0,y:0});Matter.Body.setAngularVelocity(body,0);
+    }
+    r.lx=r.chassis.position.x;r.pitAt=-1;r.bestX=dir*tx;
+    r.hopBaseX=dir*tx;r.progressAt=elapsed;r.stallStreak=0;
   }
 
   // V32: the lip is determined by procedural geometry, including kicker,
@@ -1247,13 +1272,15 @@ const Sim = (() => {
     const speed=Math.max(0,r.chassis.velocity.x);
     const grounded=Math.min(r.fw.gapNow,r.rw.gapNow)<32;
     const big=lipInfo.kind==='pipe'||lipInfo.kind==='ravine'||lipInfo.kind==='gapland'||lipInfo.tier>=1;
-    // A gentle, speed-proportional takeoff. This supplements rather than
-    // replaces the actual slope response; different wheel shapes retain their
-    // traction differences and heavy/tricky wheels retain their inertia.
-    if(speed>4.0&&grounded){
-      const minY=big?3.5:2.9;
-      const cap=big?7.0:5.4;
-      const launchY=-Math.min(cap,minY+(speed-4)*.75);
+    // Ramp geometry supplies the energy. The bounded impulse follows the
+    // current forward speed and the lip slope, so quick approaches fly farther
+    // and odd-shaped wheels keep their real traction penalties.
+    // Do not change game time or force orientation; no slow motion.
+    if(speed>3.7&&grounded){
+      const slope=Math.max(.24,Math.min(.82,Math.sin(Math.abs(lipInfo.th||.30))));
+      const strength=big?2.1:1.65;
+      const lift=2.9+(big?1.0:0)+(speed-3.7)*slope*strength;
+      const launchY=-Math.min(big?10.2:7.5,lift);
       for(const body of [r.chassis,r.fw,r.rw]){
         if(body.velocity.y>launchY)
           Matter.Body.setVelocity(body,{x:body.velocity.x,y:launchY});
@@ -1437,7 +1464,8 @@ const Sim = (() => {
       // Intervene before the last-resort teleport only if the bike is almost
       // stationary and actually touching ground. Do not restart the stall clock.
       if (stalledFor > CORNER_RELEASE_MS && stalledFor < STALL_MS) releaseCorner(r, elapsed);
-      if (stalledFor > STALL_MS) {
+      if (stalledFor > STALL_MS &&
+          !(Terrain.ravineAt && Terrain.ravineAt(r.chassis.position.x))) {
         unstick(r);
         r.progressAt = elapsed;
       }

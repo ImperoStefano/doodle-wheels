@@ -1578,22 +1578,50 @@
     }
   }
 
-  // Tre piccole tacche prima del labbro: rendono chiaro QUANDO toccare
-  // Salto, anche su smartphone. Sono disegnate solo su rampe vere.
-  function drawRampTakeoffCues(c,camX,w,groundY){
+  // V33: un solo segnale di salto, illustrato a mano, vicino al labbro
+  // davanti al giocatore. Leggibile sul telefono, senza tre frecce ripetute,
+  // senza animazioni che rallentino il multiplayer o coprano la pista.
+  function drawRampTakeoffCues(c,camX,w,groundY,timeMs){
     if(!Terrain.rampLipsIn)return;
-    const lips=Terrain.rampLipsIn(camX-30,camX+w+90);
-    c.save();c.lineWidth=2.8;c.lineCap='round';c.lineJoin='round';
-    for(const q of lips){
-      const wx=q.x;
-      for(const d of [86,52,22]){
-        const x=wx-d,xx=x-camX;
-        if(xx<-30||xx>w+30)continue;
-        const y=groundY-Terrain.height(x)-8;
-        c.strokeStyle='rgba(68,50,35,.44)';c.beginPath();c.moveTo(xx-7,y-1);c.lineTo(xx,y-7);c.lineTo(xx+7,y-1);c.stroke();
-        c.strokeStyle=d===22?'#fff9d5':'#e9c782';c.beginPath();c.moveTo(xx-7,y-4);c.lineTo(xx,y-10);c.lineTo(xx+7,y-4);c.stroke();
-      }
-    }
+    const me=latestRacers[Net.myId];
+    if(!me||me.finished||(me.dir||1)<0)return;
+    const frontX=me.fwX;
+    if(!Number.isFinite(frontX))return;
+    // Front wheel: the exact position used by the host timing check.
+    const near=Terrain.rampLipsIn(frontX-8,frontX+280)
+      .filter(q=>q.x-frontX>-18&&q.x-frontX<255)
+      .sort((a,b)=>a.x-b.x);
+    if(!near.length)return;
+    const lip=near[0],distance=lip.x-frontX;
+    const xx=lip.x-46-camX;
+    if(xx<-28||xx>w+28)return;
+    // Hover just over the ramp's surface. The bike is rendered AFTER this
+    // layer, so even a giant wheel will never be covered by the marker.
+    const yy=groundY-Terrain.height(lip.x-46)-94;
+    const incoming=Math.min(1,(255-distance)/75);
+    const outgoing=Math.min(1,(distance+18)/35);
+    const alpha=Math.max(0,Math.min(1,incoming,outgoing));
+    if(alpha<.04)return;
+    const sweet=distance>=-12&&distance<=72;
+    const pulse=0.5+0.5*Math.sin((timeMs||0)/140);
+    c.save();c.translate(xx,yy-1.5*pulse);
+    c.globalAlpha*=alpha;
+    // Gentle halo + a compact ivory-gold medallion: one distinct cue.
+    c.fillStyle=`rgba(255,230,147,${sweet?(.14+.08*pulse):.12})`;
+    c.beginPath();c.ellipse(0,3,23,21,0,0,Math.PI*2);c.fill();
+    c.shadowColor='rgba(95,58,35,.40)';c.shadowBlur=4;c.shadowOffsetY=3;
+    c.beginPath();c.arc(0,0,15,0,Math.PI*2);
+    c.fillStyle='#ffedbd';c.fill();c.shadowColor='transparent';c.shadowBlur=0;c.shadowOffsetY=0;
+    c.lineWidth=2.5;c.strokeStyle=sweet?'#ad793f':'#bb8f56';c.stroke();
+    // Arrow angled up and forward. A bright carved highlight gives depth.
+    c.lineJoin='round';c.lineCap='round';
+    c.beginPath();c.moveTo(-7,6);c.lineTo(4,-5);c.lineTo(-1,-6);
+    c.moveTo(4,-5);c.lineTo(4,2);
+    c.strokeStyle='#8e603c';c.lineWidth=4.5;c.stroke();
+    c.strokeStyle=sweet?'#fffdf0':'#f7cf75';c.lineWidth=2.1;c.stroke();
+    // Small gold sparkle, not an additional arrow.
+    c.strokeStyle='#fff6cb';c.lineWidth=1.5;
+    c.beginPath();c.moveTo(11,-14);c.lineTo(11,-8);c.moveTo(8,-11);c.lineTo(14,-11);c.stroke();
     c.restore();
   }
   // Ogni rampa, inclusi i kicker piccoli, manda un evento all'animazione della gara.
@@ -1655,7 +1683,7 @@
     Scenery.drawWorldEffects(ctx2d, camX, w, groundY, Math.max(0, t0 - raceT0));
     WorldFX.drawGround(ctx2d, camX, w, groundY, t0);
     if (Terrain.WORLD_SEGMENT && Terrain.WORLD_SEGMENT.world==='egypt') EgyptWorld.drawGround(ctx2d,camX,w,groundY);
-    drawRampTakeoffCues(ctx2d,camX,w,groundY);
+    drawRampTakeoffCues(ctx2d,camX,w,groundY,t0);
 
     Props.drawPatches(ctx2d, camX, w, groundY, SC);
     Props.drawRamps(ctx2d, camX, w, groundY);
