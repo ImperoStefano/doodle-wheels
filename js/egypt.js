@@ -15,9 +15,23 @@ const EgyptWorld = (() => {
   function pyramid(c,x,y,w,h){c.save();c.translate(x,y);path(c,[[-w*.5,0],[0,-h],[w*.5,0]],'#d69b61','#a76b47',2);path(c,[[0,-h],[w*.5,0],[w*.03,0]],'#a96848');c.strokeStyle='rgba(255,232,172,.52)';c.lineWidth=1.2;for(let j=1;j<7;j++){const yy=-h*j/7;c.beginPath();c.moveTo(-(w/2)*(1-j/7),yy);c.lineTo((w/2)*(1-j/7),yy);c.stroke();}c.restore();}
   function dune(c,w,gy,cam,par,base,amp,color){const drift=cam*par;let x=-120;const mod=drift%680;c.beginPath();c.moveTo(-150,gy+80);for(let i=0;i<Math.ceil((w+360)/80);i++){const xx=-120+i*80;const yy=base+Math.sin((xx+drift)*0.0048+par*3)*amp+Math.cos((xx+drift)*0.011)*amp*.23;c.lineTo(xx,yy);}c.lineTo(w+150,gy+80);c.closePath();c.fillStyle=color;c.fill();}
   function column(c,x,base,k=1,glow=false){c.save();c.translate(x,base);c.scale(k,k);
-    rect(c,-18,-158,36,160,'#c99360','#9f6248',4);rect(c,-29,-166,58,15,'#e5bc7e','#a86c47',3);rect(c,-33,-15,66,17,'#c78e58','#9f6248',3);
-    c.strokeStyle='#865d40';c.lineWidth=1.7;for(let j=0;j<5;j++){c.beginPath();c.moveTo(-8,-145+j*24);c.lineTo(8,-145+j*24);c.stroke();}for(let j=0;j<3;j++)jewel(c,0,-133+j*47,.45);
-    if(glow){rect(c,-19,-168,38,5,'#d3ab5b');}c.restore();}
+    // Sculpted papyrus column, with separate shaft, flutes and lotus capital.
+    c.fillStyle='rgba(62,39,35,.15)';c.beginPath();c.ellipse(3,1,33,6,0,0,TAU);c.fill();
+    rect(c,-28,-16,56,15,'#d6aa77','#8c5b44',2);
+    rect(c,-21,-169,42,155,'#cd9867','#986448',2);
+    rect(c,-15,-168,16,151,'#e9bd83');
+    rect(c,8,-168,10,151,'#b88158');
+    c.strokeStyle='#ab744b';c.lineWidth=1.25;
+    for(const dx of [-13,-6,4,13]){c.beginPath();c.moveTo(dx,-151);c.lineTo(dx,-29);c.stroke();}
+    for(const yy of [-146,-132,-45,-32])rect(c,-21,yy,42,6,yy<-100?'#284d7e':'#d9ac6b','#ab7951',1);
+    // Papyrus / lotus blooming capital, recognisable silhouette at racing speed.
+    path(c,[[-20,-163],[-30,-179],[-37,-196],[-30,-211],[-18,-206],[-10,-189],[-5,-203],[0,-215],[5,-203],[11,-189],[21,-207],[32,-211],[38,-196],[30,-179],[20,-163]],'#d5a572','#88583f',2);
+    c.strokeStyle='#30537e';c.lineWidth=2.5;
+    for(const dx of [-26,-13,0,13,26]){c.beginPath();c.moveTo(dx*.55,-167);c.quadraticCurveTo(dx,-189,dx,-201);c.stroke();}
+    rect(c,-40,-218,80,9,'#e6bd84','#945d43',1);
+    rect(c,-35,-224,70,6,'#285181','#d5ad65',1);
+    for(const xx of [-13,13])jewel(c,xx,-218,.26);
+    if(glow)rect(c,-20,-172,40,3,'#f2d095');c.restore();}
   function palm(c,x,base,k=1){
     c.save();c.translate(x,base);c.scale(k,k);
     // Trunk leans slightly with the desert wind and widens at the sand line.
@@ -34,54 +48,339 @@ const EgyptWorld = (() => {
     }
     c.beginPath();c.arc(8,-168,8,0,TAU);c.fillStyle='#a78853';c.fill();c.restore();
   }
-  function sphinx(c,x,base,k=1){c.save();c.translate(x,base);c.scale(k,k);
-    // Distinct Egyptian limestone Sphinx silhouette: lion haunches, recumbent
-    // body, forepaws, human face, royal striped nemes and royal cobra.
-    c.fillStyle='rgba(93,58,43,.18)';c.beginPath();c.ellipse(7,3,215,19,0,0,TAU);c.fill();
-    rect(c,-197,-17,413,21,'#b47c51','#80503b',5);
-    rect(c,-182,-72,285,69,'#c99765','#996241',26);
-    // Lion's hindquarters and tail curl against the raised body.
-    c.fillStyle='#d2a371';c.strokeStyle='#965f43';c.lineWidth=3;
-    c.beginPath();c.ellipse(-133,-58,70,55,-.12,0,TAU);c.fill();c.stroke();
-    c.strokeStyle='#9a684b';c.lineWidth=10;c.lineCap='round';c.beginPath();
-    c.moveTo(-183,-63);c.bezierCurveTo(-240,-93,-230,-25,-194,-24);c.stroke();
-    for(const xx of [30,109]){
-      rect(c,xx,-28,83,26,'#d5a773','#9a674a',11);
-      rect(c,xx+7,-16,68,16,'#e3b987','#ad7651',6);
-      c.strokeStyle='#a16e4e';c.lineWidth=2;
-      for(let i=1;i<4;i++){c.beginPath();c.moveTo(xx+12+i*14,-11);c.lineTo(xx+12+i*14,-4);c.stroke();}
+  function sphinx(c,x,base,k=1){
+    c.save();c.translate(x,base);c.scale(k,k);
+    // V29: the Giza Sphinx as an aged single limestone monolith, informed by
+    // the player's original photograph (not a copied photograph/texture).
+    // All artwork is deterministic Canvas geometry; no bitmap or image asset.
+    const edge='#8f694c', seam='#8d7458', sun='#f5d7a5';
+    const grad=(x1,y1,x2,y2,stops)=>{const g=c.createLinearGradient(x1,y1,x2,y2);for(const [s,col] of stops)g.addColorStop(s,col);return g;};
+    const stone=grad(-230,-300,270,50,[[0,'#f2d7a4'],[.35,'#e5c38f'],[.68,'#d1a879'],[1,'#b98a60']]);
+    const faceStone=grad(94,-344,216,-226,[[0,'#f5ddb0'],[.35,'#e5c597'],[.75,'#cda276'],[1,'#ab7856']]);
+    const shadowStone=grad(-280,-150,160,5,[[0,'#b48b64'],[.6,'#d5ad7d'],[1,'#b68660']]);
+    const sculpt=(draw,fill,stroke=edge,lw=1.55)=>{
+      c.beginPath();draw();c.closePath();c.fillStyle=fill;c.fill();
+      if(stroke){c.strokeStyle=stroke;c.lineWidth=lw;c.lineJoin='round';c.stroke();}
+    };
+    const line=(draw,color=seam,w=1.3)=>{c.beginPath();draw();c.strokeStyle=color;c.lineWidth=w;c.lineCap='round';c.lineJoin='round';c.stroke();};
+    const texture=(clip,seed,count,xmin,xmax,ymin,ymax,strata=true)=>{
+      c.save();c.beginPath();clip();c.closePath();c.clip();
+      // Strata through the body: the actual Giza statue retains horizontal
+      // bedding, distressed edges and block restoration seams.
+      if(strata) for(let j=0;j<13;j++){
+        const yy=ymin+18+j*(ymax-ymin-36)/12;
+        c.strokeStyle=j%3===0?'rgba(114,85,57,.21)':'rgba(255,235,190,.24)';
+        c.lineWidth=j%3===0?2.8:1.7;
+        c.beginPath();c.moveTo(xmin-30,yy);
+        for(let z=0;z<9;z++){
+          const xx=xmin-30+(xmax-xmin+60)*(z+1)/9;
+          c.lineTo(xx,yy+2.6*Math.sin(z*2.45+j*1.6));
+        }
+        c.stroke();
+      }
+      // Small stone cuts and erosion, visually distinct from hieroglyphs.
+      for(let j=0;j<count;j++){
+        const r=hash(j*9.17+seed), q=hash(j*21.73+seed*6.39);
+        const px=xmin+r*(xmax-xmin), py=ymin+q*(ymax-ymin);
+        const len=4+hash(j+seed*17)*20;
+        c.strokeStyle=j%3===0?'rgba(255,235,191,.36)':'rgba(106,73,50,.24)';
+        c.lineWidth=j%4===0?1.65:.85;
+        c.beginPath();c.moveTo(px,py);c.lineTo(px+len,py+(j%7===0?3:0));c.stroke();
+        if(j%13===0){c.beginPath();c.moveTo(px+len*.7,py);c.lineTo(px+len*.68,py+5);c.stroke();}
+      }
+      c.restore();
+    };
+    // Subtle ground shadow and buried lower courses — no floating baseline.
+    c.fillStyle='rgba(83,56,37,.20)';c.beginPath();c.ellipse(-2,7,335,23,0,0,TAU);c.fill();
+    sculpt(()=>{c.moveTo(-343,-19);c.lineTo(315,-19);c.lineTo(328,-6);c.lineTo(319,7);c.lineTo(-339,7);},'#a77c57','#8a6349',1.5);
+    sculpt(()=>{c.moveTo(-327,-36);c.lineTo(306,-36);c.lineTo(320,-19);c.lineTo(-335,-19);},'#d6ad7d','#9a6e4d',1.4);
+    for(const yy of [-31,-22,-12])line(()=>{c.moveTo(-322,yy);c.lineTo(313,yy+1)},'rgba(101,69,49,.35)',1.25);
+    // Small chipped blocks in the ancient lower enclosure.
+    for(let j=0;j<20;j++){
+      let xx=-316+j*31, yy=-14+(j%3)*4;
+      line(()=>{c.moveTo(xx,yy);c.lineTo(xx+17,yy+.8)},'rgba(245,218,167,.36)',1.3);
+      if(j%2===1)line(()=>{c.moveTo(xx+15,-19);c.lineTo(xx+13,-9)},'rgba(112,77,53,.26)',1);
     }
-    // Place the human bust over the lion forequarters, not at the back.
-    c.save();c.translate(56,-5);c.scale(.94,.94);
-    // Chin and ceremonial beard anchor the otherwise elevated bust.
-    path(c,[[-50,-90],[-66,-148],[-45,-193],[10,-204],[46,-176],[56,-106],[37,-68],[-42,-67]],'#c89a68','#956344',3);
-    path(c,[[-67,-145],[-81,-207],[-54,-242],[-29,-250],[35,-250],[59,-234],[80,-198],[53,-139],[39,-132],[-54,-131]],'#294a83','#caa366',3);
-    // Alternating gold-striped nemes headdress, following the side drapes.
-    c.strokeStyle='#d9b46b';c.lineWidth=6;
-    for(let j=0;j<5;j++){
-      let yy=-226+j*18;
-      c.beginPath();c.moveTo(-70+j*2,yy);c.lineTo(-39+j*.75,yy+3);c.moveTo(38-j*.4,yy+2);c.lineTo(68-j*2,yy);c.stroke();
+    // The rear flank is strongly rounded, but cut by weathered limestone beds.
+    const bodyClip=()=>{
+      c.moveTo(-312,-44);
+      c.bezierCurveTo(-329,-77,-308,-127,-279,-147);
+      c.bezierCurveTo(-251,-174,-205,-186,-155,-181);
+      c.bezierCurveTo(-98,-178,-52,-169,-18,-171);
+      c.bezierCurveTo(36,-180,83,-166,112,-140);
+      c.bezierCurveTo(131,-122,144,-80,133,-42);
+      c.lineTo(95,-33);c.lineTo(-309,-33);
+    };
+    sculpt(bodyClip,stone,'#9c7858',2);
+    // Backlit shoulder ridge and lower eroded volume.
+    sculpt(()=>{c.moveTo(-307,-72);c.bezierCurveTo(-299,-127,-269,-150,-230,-164);
+      c.bezierCurveTo(-181,-186,-123,-170,-88,-165);
+      c.bezierCurveTo(-176,-153,-240,-134,-276,-86);c.closePath();},
+      grad(-240,-173,-260,-54,[[0,'#f6dba7'],[1,'#d2a779']]),null);
+    sculpt(()=>{c.moveTo(-294,-70);c.bezierCurveTo(-237,-95,-187,-102,-130,-100);
+      c.bezierCurveTo(-40,-96,47,-101,124,-89);c.lineTo(123,-39);c.lineTo(-290,-39);},
+      'rgba(147,104,70,.19)',null);
+    texture(bodyClip,33,84,-316,137,-183,-31);
+    // Upper back weathering: limestone seams are deliberately uneven, not bricks.
+    for(const [yy,sh] of [[-154,0],[-135,9],[-115,-7],[-94,4],[-75,-8],[-57,6]]){
+      line(()=>{c.moveTo(-290+Math.abs(yy+140)*.35,yy);
+        c.bezierCurveTo(-241+sh,yy+5,-192-sh,yy-6,-128,yy+2);
+        c.bezierCurveTo(-70,yy+3,-21,yy+5,65,yy+4);},
+        yy%2===0?'rgba(117,83,58,.33)':'rgba(251,228,179,.38)',yy===-115?3:1.8);
     }
-    rect(c,-43,-221,83,14,'#d4a55e','#8e6346',3);
-    path(c,[[-37,-204],[37,-204],[36,-155],[20,-139],[-26,-139],[-37,-160]],'#dcb17b','#9a674b',4);
-    // Noble, readable face rather than a mascot emoji.
-    c.strokeStyle='#694632';c.lineWidth=3;c.lineCap='round';
-    for(const xx of [-19,19]){
-      c.beginPath();c.moveTo(xx-8,-184);c.quadraticCurveTo(xx,-189,xx+8,-184);c.stroke();
-      c.fillStyle='#3d3530';c.beginPath();c.arc(xx,-182,2.6,0,TAU);c.fill();
+    // Hip joint is a large semi-circular carved mass, never a cartoon spiral.
+    sculpt(()=>{c.moveTo(-307,-55);c.bezierCurveTo(-316,-97,-288,-137,-253,-144);
+      c.bezierCurveTo(-219,-154,-170,-138,-154,-112);
+      c.bezierCurveTo(-139,-88,-157,-54,-181,-36);
+      c.lineTo(-292,-37);},'rgba(157,110,73,.16)',null);
+    line(()=>{c.moveTo(-297,-98);c.bezierCurveTo(-271,-137,-239,-146,-212,-139);
+      c.bezierCurveTo(-187,-131,-176,-115,-177,-94);},'rgba(246,218,170,.35)',2.4);
+    line(()=>{c.moveTo(-172,-81);c.bezierCurveTo(-182,-72,-202,-69,-219,-72)},'rgba(118,85,59,.27)',1.6);
+    // Stone-block restoration below hip, like the user's original photograph.
+    for(const [x1,y1,x2,y2] of [[-298,-68,-252,-65],[-273,-52,-207,-52],[-205,-69,-160,-69],[-295,-39,-209,-39]]){
+      line(()=>{c.moveTo(x1,y1);c.lineTo(x2,y2)},'rgba(107,73,53,.33)',2.5);
     }
-    path(c,[[-3,-177],[4,-161],[-2,-157]],null,'#9d6a4c',2.6);
-    c.beginPath();c.moveTo(-13,-151);c.quadraticCurveTo(0,-144,13,-151);c.stroke();
-    path(c,[[-11,-139],[-8,-111],[3,-90],[15,-112],[12,-139]],'#bf8b5b','#875a40',2.5);
-    // Uraeus above the brow (a royal emblem in gold).
-    c.strokeStyle='#e4bb70';c.lineWidth=3;c.beginPath();c.moveTo(0,-238);c.bezierCurveTo(-9,-259,12,-264,6,-244);c.stroke();
-    jewel(c,2,-224,.42);
-    // Faience stripes inspired by the striped blue-and-gold royal masks.
-    lapisInlay(c,-48,-225,86,13);
+    // Shoulder-to-chest volume: massive, sloped and organically joined to head.
+    const chestClip=()=>{
+      c.moveTo(34,-45);c.bezierCurveTo(19,-93,33,-145,55,-188);
+      c.bezierCurveTo(76,-226,109,-234,140,-207);
+      c.bezierCurveTo(171,-175,178,-112,160,-46);
+      c.lineTo(154,-30);c.lineTo(37,-30);
+    };
+    sculpt(chestClip,grad(30,-226,177,-30,[[0,'#e8c395'],[.44,'#d8ae81'],[1,'#b68962']]),'#a77c59',1.7);
+    texture(chestClip,67,42,30,176,-205,-32);
+    line(()=>{c.moveTo(61,-179);c.bezierCurveTo(43,-137,45,-85,63,-48)},'rgba(255,234,190,.55)',4.7);
+    for(let j=0;j<4;j++)line(()=>{const yy=-122+j*25;c.moveTo(48,yy);c.bezierCurveTo(80,yy+4,123,yy+4,161,yy+9)},'rgba(139,92,59,.29)',2);
+    // Two forward lion paws are deep reliefs, a key recognisable Giza feature.
+    sculpt(()=>{c.moveTo(95,-82);c.bezierCurveTo(135,-85,160,-68,173,-62);
+      c.lineTo(291,-61);c.quadraticCurveTo(312,-60,316,-45);
+      c.lineTo(313,-29);c.lineTo(89,-29);c.closePath();},'#b88b64','#a07755',1.8);
+    sculpt(()=>{c.moveTo(84,-91);c.bezierCurveTo(131,-100,164,-77,175,-68);
+      c.lineTo(288,-67);c.quadraticCurveTo(310,-67,312,-52);
+      c.lineTo(313,-42);c.lineTo(91,-42);c.closePath();},
+      grad(105,-94,255,-37,[[0,'#efcea0'],[.65,'#d0a075'],[1,'#b98e64']]),'#9d7656',1.55);
+    line(()=>{c.moveTo(117,-76);c.lineTo(289,-76)},'rgba(255,234,195,.54)',2);
+    line(()=>{c.moveTo(94,-50);c.lineTo(305,-50)},'rgba(120,84,55,.32)',2);
+    for(let j=0;j<4;j++)line(()=>{const xx=272+j*10;c.moveTo(xx,-58);c.quadraticCurveTo(xx+2,-49,xx-1,-41)},'rgba(116,82,59,.48)',1.6);
+    // Lower leg extends across the plinth to emphasize enormous length.
+    sculpt(()=>{c.moveTo(96,-43);c.lineTo(299,-42);c.quadraticCurveTo(319,-39,320,-27);
+      c.lineTo(317,-18);c.lineTo(91,-18);},'#bb916c','#9a7657',1.2);
+    for(let j=0;j<4;j++)line(()=>{c.moveTo(279+j*9,-36);c.lineTo(276+j*9,-19)},'rgba(94,67,48,.3)',1.3);
+    // Separate head proportions: smaller, integrated into the monumental chest.
+    c.save();c.translate(36,-31);c.scale(.83,.88);
+    // V29.7 — Giza royal nemes: flat crown, carved angular shoulders, stone pleats.
+    // Following the actual Great Sphinx silhouette (including the player's
+    // own photo): this is a squared-off royal headdress, NOT a rounded hood.
+    // The head and face are unchanged. The rear lappet falls to the shoulders.
+    const hoodClip=()=>{
+      c.moveTo(68,-224);
+      c.lineTo(57,-269);         // straight rear cloth fall
+      c.lineTo(56,-310);
+      c.lineTo(70,-349);         // angular upper fold
+      c.lineTo(96,-371);
+      c.lineTo(153,-371);        // distinctive nearly FLAT top
+      c.lineTo(173,-363);
+      c.lineTo(185,-345);
+      c.lineTo(189,-316);        // angular temple frame
+      c.lineTo(186,-275);
+      c.lineTo(177,-233);
+      c.lineTo(181,-214);
+      c.lineTo(202,-187);        // projecting lappet over shoulder
+      c.lineTo(161,-168);
+      c.lineTo(145,-195);
+      c.quadraticCurveTo(124,-204,105,-190);
+      c.lineTo(85,-185);
+      c.lineTo(68,-224);
+    };
+    sculpt(hoodClip,grad(52,-370,202,-170,[[0,'#f1d8aa'],[.45,'#dbb78b'],[1,'#ab7d5c']]),'#946e50',2.2);
+    // Broad planar facet of the cloth along the rear upper fold: distinct
+    // straight segments replace the earlier semi-circular halo.
+    sculpt(()=>{
+      c.moveTo(57,-308);c.lineTo(70,-348);c.lineTo(96,-371);
+      c.lineTo(118,-371);c.lineTo(88,-336);
+      c.lineTo(83,-291);c.lineTo(91,-234);
+      c.lineTo(108,-191);c.lineTo(85,-185);
+      c.lineTo(68,-224);c.lineTo(57,-269);
+    },grad(59,-363,103,-195,[[0,'rgba(255,245,207,.71)'],[.58,'rgba(232,194,141,.26)'],[1,'rgba(170,120,78,.19)']]),null);
+    // Flat top plane and sharp edge from the quarrying, NOT a rounded turban.
+    sculpt(()=>{
+      c.moveTo(97,-371);c.lineTo(153,-371);c.lineTo(173,-363);
+      c.lineTo(160,-357);c.lineTo(108,-356);c.lineTo(81,-349);
+    },'rgba(255,239,200,.23)',null);
+    line(()=>{c.moveTo(95,-370);c.lineTo(151,-371);c.lineTo(174,-362)},'rgba(255,247,210,.70)',2.0);
+    line(()=>{c.moveTo(57,-309);c.lineTo(70,-348);c.lineTo(95,-370)},'rgba(120,89,64,.47)',1.8);
+    // The real nemes has a wide chiseled side lappet; shallow parallel
+    // pleats descend from the squared shoulder, consistent with limestone.
+    c.save();c.beginPath();hoodClip();c.closePath();c.clip();
+    for(let j=0;j<8;j++){
+      const startY=-319+j*16.5;
+      line(()=>{
+        c.moveTo(59+(j>5?(j-5)*2:0),startY);
+        c.lineTo(80+j*.9,startY+19);
+        c.lineTo(95+j*.7,startY+25);
+      },j%3===0?'rgba(117,88,64,.50)':'rgba(127,98,72,.37)',j%3===0?2.0:1.35);
+      line(()=>{c.moveTo(63,startY+3);c.lineTo(84+j*.8,startY+22)},
+        'rgba(255,234,191,.26)',.95);
+    }
     c.restore();
-    // Small geometric base relief connects the statue to the monumental site.
-    hieroglyphFrieze(c,-170,-4,340,.72);
-    c.restore();}
+    texture(hoodClip,91,29,54,198,-360,-182,false);
+    // Rear edge has the strong trapezoidal profile visible in Giza photographs.
+    line(()=>{c.moveTo(65,-222);c.lineTo(83,-185);c.lineTo(106,-191)},
+      'rgba(112,79,54,.49)',1.65);
+    // V29.3 — Portrait restoration pass based on the photographed Great Sphinx.
+    // The nose is intentionally BROKEN, the eyes are low-relief chisel work,
+    // and every colour is a limestone plane, never painted cosmetics.
+    // Directional light comes from the upper left; sculptural shadows form
+    // below brows, the nasal bridge, the cheek and beneath the mouth.
+    const faceClip=()=>{
+      c.moveTo(111,-331);
+      c.bezierCurveTo(129,-345,161,-338,176,-318); // high forehead
+      c.bezierCurveTo(183,-309,185,-293,184,-277);
+      c.bezierCurveTo(185,-269,187,-267,188,-263); // broken nose root
+      c.lineTo(187,-259);c.lineTo(181,-256);c.lineTo(186,-251);
+      c.bezierCurveTo(189,-248,187,-245,184,-242); // nostril remnant
+      c.lineTo(183,-238);
+      c.quadraticCurveTo(188,-235,187,-233); // deeply incised, restrained lip
+      c.bezierCurveTo(185,-229,180,-225,175,-224);
+      c.bezierCurveTo(174,-217,169,-213,160,-212); // broad, firm chin
+      c.bezierCurveTo(145,-207,128,-215,120,-233);
+      c.bezierCurveTo(113,-253,107,-296,111,-331);
+    };
+    sculpt(faceClip,faceStone,'#977051',1.75);
+
+    // Frontal plane and forehead: broad light, narrow rear temple.
+    sculpt(()=>{c.moveTo(114,-322);c.bezierCurveTo(127,-339,155,-338,167,-326);
+      c.bezierCurveTo(157,-313,154,-303,156,-287);
+      c.lineTo(146,-256);c.lineTo(132,-243);
+      c.bezierCurveTo(122,-264,112,-301,114,-322);},
+      grad(109,-332,162,-228,[[0,'rgba(255,244,208,.53)'],[.64,'rgba(245,211,165,.23)'],[1,'rgba(172,123,82,.03)']]),null);
+    // Flat temple recedes behind the stone cheekbone.
+    sculpt(()=>{c.moveTo(116,-290);c.lineTo(135,-297);c.quadraticCurveTo(141,-282,146,-272);
+      c.lineTo(146,-236);c.bezierCurveTo(131,-251,121,-267,116,-290);},
+      'rgba(143,99,69,.12)',null);
+
+    // V29.5 — eyes carved IN limestone, not painted ON a cartoon face.
+    // Reference: the user's photograph of the Giza Sphinx. A weathered royal
+    // almond eye with a projecting brow, tucked shadow, light-catching lower
+    // lid and no black pupil/white sclera. A second eye only glances around
+    // the receding plane of the face; both remain part of the same monolith.
+    // Temple plane projects around the nearest eye socket.
+    sculpt(()=>{c.moveTo(145,-293);c.bezierCurveTo(159,-303,172,-302,181,-293);
+      c.lineTo(183,-283);c.bezierCurveTo(172,-290,159,-286,148,-279);
+      c.quadraticCurveTo(147,-286,145,-293);},
+      grad(148,-301,181,-279,[[0,'rgba(255,238,200,.58)'],[.40,'rgba(233,198,151,.55)'],[1,'rgba(148,103,72,.33)']]),null);
+    // Carved crease in the stone above the eyelid, broken by erosion.
+    line(()=>{c.moveTo(148,-289);c.bezierCurveTo(159,-295,175,-295,182,-287)},
+      'rgba(132,94,69,.50)',1.35);
+    line(()=>{c.moveTo(151,-290);c.quadraticCurveTo(167,-298,178,-290)},
+      'rgba(255,235,196,.63)',1.55);
+    // The almond-shaped depression is slightly raised at the outer corner.
+    sculpt(()=>{c.moveTo(153,-281);c.bezierCurveTo(162,-286,174,-287,181,-281);
+      c.bezierCurveTo(173,-276.1,163,-275.3,155,-278.7);
+      c.quadraticCurveTo(154,-280,153,-281);},
+      grad(166,-286,165,-275,[[0,'rgba(111,80,58,.41)'],[.55,'rgba(157,119,86,.29)'],[1,'rgba(221,183,137,.15)']]),null);
+    // Upper lid is the sharp chiseled edge of the brow shadow.
+    line(()=>{c.moveTo(153,-281.5);c.bezierCurveTo(163,-287.5,174,-287,181,-281)},
+      'rgba(115,83,63,.72)',1.65);
+    line(()=>{c.moveTo(155,-279);c.bezierCurveTo(164,-275.5,175,-276.1,180.5,-281)},
+      'rgba(255,235,192,.79)',1.5);
+    line(()=>{c.moveTo(155,-277.3);c.bezierCurveTo(168,-274.5,175,-277.2,179,-279.3)},
+      'rgba(141,105,76,.23)',.65);
+    // Weathered iris: a very shallow circular relief made entirely of stone.
+    // Its lower half is swallowed by erosion, so the gaze is solemn, not cartoonish.
+    line(()=>{c.moveTo(169.6,-283.4);c.bezierCurveTo(167.6,-282.0,167.7,-278.5,169.8,-277.2)},
+      'rgba(114,81,58,.38)',.78);
+    line(()=>{c.moveTo(172,-283.2);c.quadraticCurveTo(173.6,-280.8,172,-278.5)},
+      'rgba(250,222,174,.32)',.68);
+    // Tear duct is a small cut, softly blended with the broken nasal bridge.
+    line(()=>{c.moveTo(180.5,-280.6);c.lineTo(182,-278.8)},
+      'rgba(142,102,73,.45)',.9);
+    // A receding far eye: part of the side facet, not a disconnected eyebrow.
+    sculpt(()=>{c.moveTo(132,-283);c.quadraticCurveTo(140,-287,148,-283);
+      c.quadraticCurveTo(141,-280.7,134,-282.2);},
+      'rgba(158,117,84,.09)',null);
+    line(()=>{c.moveTo(131,-284);c.quadraticCurveTo(140,-288.9,148,-283.5)},
+      'rgba(122,89,67,.20)',1.15);
+    line(()=>{c.moveTo(134,-281.8);c.quadraticCurveTo(141,-280,147,-283.4)},
+      'rgba(255,237,194,.29)',.8);
+    // Keep this edge weathered so the far eye reads only at close zoom.
+    line(()=>{c.moveTo(130,-291);c.lineTo(137,-292)},
+      'rgba(255,239,204,.25)',.95);
+
+    // Nasal structure: carved ridge runs from brow into a missing, broken tip.
+    // No projecting intact nose: the photo shows a flat eroded stump.
+    sculpt(()=>{c.moveTo(177,-285);c.quadraticCurveTo(183,-279,186,-267);
+      c.lineTo(189,-261);c.lineTo(185,-257);c.lineTo(180,-258);
+      c.bezierCurveTo(175,-266,175,-275,177,-285);},
+      grad(175,-281,191,-258,[[0,'rgba(255,239,193,.51)'],[1,'rgba(164,113,77,.24)']]),null);
+    // Chipped tip silhouette: irregular but compact, with a rough fracture.
+    line(()=>{c.moveTo(184,-260);c.lineTo(187,-259);c.lineTo(181,-255);c.lineTo(185,-253)},
+      'rgba(113,79,55,.73)',1.45);
+    line(()=>{c.moveTo(179,-255);c.lineTo(183,-251)},
+      'rgba(250,222,171,.62)',1.15);
+    // The cheek is a broad raised limestone plane, not a thin cartoon cheek.
+    sculpt(()=>{c.moveTo(149,-272);c.quadraticCurveTo(163,-269,175,-266);
+      c.lineTo(183,-250);c.bezierCurveTo(175,-240,167,-232,150,-229);
+      c.lineTo(134,-238);c.quadraticCurveTo(146,-254,149,-272);},
+      grad(146,-269,177,-235,[[0,'rgba(249,226,181,.34)'],[.55,'rgba(224,182,130,.11)'],[1,'rgba(132,86,60,.18)']]),null);
+    line(()=>{c.moveTo(156,-261);c.quadraticCurveTo(165,-260,174,-255)},
+      'rgba(255,240,199,.38)',1.25);
+    // Subtle nasolabial crease, softened by centuries of weathering.
+    line(()=>{c.moveTo(179,-249);c.quadraticCurveTo(177,-245,177,-240)},
+      'rgba(124,86,60,.30)',1.2);
+
+    // Calm royal mouth, carved as a narrow shadow between raised stone lips.
+    sculpt(()=>{c.moveTo(173,-240);c.quadraticCurveTo(179,-241,185,-236);
+      c.quadraticCurveTo(181,-233,173,-235);},
+      'rgba(241,208,165,.26)',null);
+    line(()=>{c.moveTo(173,-237);c.quadraticCurveTo(181,-239,187,-234)},
+      '#8b6349',1.35);
+    line(()=>{c.moveTo(176,-231);c.quadraticCurveTo(183,-231,185,-233)},
+      'rgba(249,225,180,.72)',1.25);
+    // Sphinx's chin: angular eroded block, not pointed jaw or modern beard.
+    sculpt(()=>{c.moveTo(143,-230);c.quadraticCurveTo(156,-235,173,-225);
+      c.lineTo(177,-216);c.quadraticCurveTo(167,-208,152,-211);
+      c.lineTo(136,-220);},
+      grad(146,-230,176,-211,[[0,'rgba(246,220,178,.21)'],[1,'rgba(125,82,57,.21)']]),null);
+    line(()=>{c.moveTo(149,-214);c.quadraticCurveTo(163,-210,175,-219)},
+      'rgba(127,89,63,.29)',1.55);
+    line(()=>{c.moveTo(155,-220);c.lineTo(164,-221)},
+      'rgba(255,240,195,.49)',1.1);
+
+    // Ear in raised low relief. Behind it, preserve the nemes stone texture.
+    sculpt(()=>{c.moveTo(115,-281);c.bezierCurveTo(107,-284,104,-273,108,-264);
+      c.quadraticCurveTo(113,-254,120,-263);c.quadraticCurveTo(123,-272,115,-281);},
+      '#cba77e','rgba(112,82,61,.66)',1.05);
+    line(()=>{c.moveTo(111,-273);c.quadraticCurveTo(119,-272,114,-262)},
+      'rgba(119,86,63,.56)',1.2);
+
+    // Nemes band is itself a weathered carved ridge, in limestone not gold.
+    line(()=>{c.moveTo(104,-325);c.bezierCurveTo(132,-340,163,-339,181,-324)},
+      '#9f785a',2.4);
+    line(()=>{c.moveTo(109,-330);c.bezierCurveTo(141,-343,168,-336,179,-326)},
+      'rgba(255,236,199,.70)',2.0);
+    sculpt(()=>{c.moveTo(174,-326);c.quadraticCurveTo(171,-334,176,-337);
+      c.quadraticCurveTo(184,-333,180,-323);c.lineTo(181,-319);c.lineTo(177,-318);},
+      '#d2b088','#98745a',.85);
+
+    // Geological weathering of the face is localized to the stone, avoiding
+    // random scratches across the eye, lips or silhouette.
+    c.save();c.beginPath();faceClip();c.closePath();c.clip();
+    c.strokeStyle='rgba(115,80,56,.14)';c.lineWidth=1.45;
+    for(const [x1,y1,x2,y2] of [[122,-316,135,-317],[135,-307,145,-307],[118,-247,126,-246],[139,-228,150,-229],[156,-216,169,-216]]){
+      c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();
+    }
+    c.fillStyle='rgba(252,237,202,.34)';
+    for(const [x1,y1] of [[140,-320],[153,-315],[131,-255],[171,-245],[161,-224]]){
+      c.fillRect(x1,y1,2.2,.9);
+    }
+    c.restore();
+    // Hairline fractures and rim wear, deliberately limited to the monument.
+    line(()=>{c.moveTo(87,-245);c.lineTo(98,-236);c.lineTo(104,-229)},'rgba(119,90,65,.34)',1.5);
+    line(()=>{c.moveTo(-35,-152);c.lineTo(-27,-143);c.lineTo(-18,-144)},'rgba(116,78,54,.31)',1.6);
+    c.restore(); // proportional head transform
+    c.restore(); // monument transform
+  }
   function temple(c,x,base,k=1){c.save();c.translate(x,base);c.scale(k,k);
     rect(c,-160,-45,320,46,'#bc7c50','#9c6045',3);for(const dx of [-135,-70,70,135])column(c,dx,-30,.69);
     path(c,[[-186,-151],[0,-196],[186,-151]],'#b77b4c','#d4a469',4);rect(c,-190,-157,380,17,P.stone,P.terracotta,3);
@@ -253,26 +552,43 @@ const EgyptWorld = (() => {
   }
   function templeAvenue(c,x,base,k=1){
     c.save();c.translate(x,base);c.scale(k,k);
-    // Wide, grounded temple courtyard behind the actual driveable profile.
-    rect(c,-500,-65,1000,70,'#ad6f4d','#86543e',5);
-    rect(c,-505,-66,1010,12,'#e7bc82','#a1694b',3);
-    for(let i=-4;i<=4;i++){
-      const xx=i*113;
-      column(c,xx,-66,i%2?.9:.99);
-      c.fillStyle='#26497c';c.fillRect(xx-18,-197,36,12);
-      c.fillStyle='#e0b67b';c.fillRect(xx-22,-213,44,12);
-      if(i%2===0){ankh(c,xx,-143,.48);}
+    // A true axial ceremonial courtyard: wall, recessed sanctum, papyrus columns,
+    // architrave and carved story panels, all behind the physical race surface.
+    rect(c,-515,-67,1030,74,'#a66d4e','#81533e',4);
+    rect(c,-508,-68,1016,10,'#e5b682','#8f5c43',2);
+    // Deep cool recesses between columns create perspective without textures.
+    for(let j=-4;j<=3;j++){
+      const xx=j*113+56;
+      rect(c,xx-42,-211,84,143,'#955d47','#83503c',2);
+      rect(c,xx-35,-198,70,126,'#bb8a61','#9b6749',2);
+      rect(c,xx-27,-192,54,114,'#5f574f','#dcaf7a',3);
+      c.fillStyle='#233954';c.fillRect(xx-21,-185,42,107);
+      c.save();c.globalAlpha=.4;ankh(c,xx,-137,.55);c.restore();
     }
-    rect(c,-525,-242,1050,25,'#dca66e','#89543c',4);
-    lapisInlay(c,-528,-240,1056,20);
-    for(let j=0;j<15;j++)jewel(c,-492+j*70,-236,.35);
-    // Large, readable sandstone bas-reliefs that remain behind the track.
+    // Two broad relief wall sections above lower foundation.
     for(const d of [-1,1]){
-      rect(c,d*286-113,-141,226,74,'#d3a16d','#8c5b43',3);
-      wingedRelief(c,d*286,-99,.62);
-      stoneGrain(c,d*286-112,-140,223,72,d+11);
+      rect(c,d*286-116,-145,232,78,'#d6a573','#8c5944',3);
+      rect(c,d*286-111,-138,222,65,null,'#eccc92',2);
+      wingedRelief(c,d*286,-101,.62);
+      stoneGrain(c,d*286-110,-141,223,72,d+11);
     }
-    ancientPylon(c,0,-47,.67);
+    // Full height lotus/papyrus columns, rather than small repeated sticks.
+    for(let i=-4;i<=4;i++)column(c,i*113,-67,i%2?.92:1.02);
+    // Architectural architrave closes the void above capitals.
+    rect(c,-525,-295,1050,34,'#c99665','#88563f',3);
+    rect(c,-532,-263,1064,30,'#e0b27b','#945e42',2);
+    rect(c,-518,-258,1036,13,'#9a6548');
+    lapisInlay(c,-519,-292,1038,23);
+    for(let j=0;j<20;j++)jewel(c,-488+j*51,-237,.37);
+    // Upper cornice with carved uraei/lotus accents, not a disconnected floating line.
+    rect(c,-543,-310,1086,17,'#ebc48a','#926044',2);
+    for(let j=-7;j<=7;j++){
+      const xx=j*69;
+      c.strokeStyle='#9a684a';c.lineWidth=1.7;c.beginPath();
+      c.moveTo(xx-14,-299);c.quadraticCurveTo(xx,-320,xx+14,-299);c.stroke();
+    }
+    // Symmetrical sacred court at center, projected forward for focus.
+    ancientPylon(c,0,-52,.79);
     c.restore();
   }
   function treasureObelisk(c,x,base,k=1){
@@ -286,32 +602,64 @@ const EgyptWorld = (() => {
   }
   function royalTomb(c,x,base,k=1){
     c.save();c.translate(x,base);c.scale(k,k);
-    rect(c,-390,-67,780,74,'#b47853','#81503e',4);
-    // Two load-bearing side towers framing a recessed, sacred entrance.
+    // Gold-stone sanctuary inspired by the original museum photographs.
+    rect(c,-410,-67,820,74,'#ac7550','#80523f',4);
+    rect(c,-412,-72,824,10,'#e7bd85','#936044',2);
+    // A stepped cornice and two richly worked wings provide hierarchy.
     for(const d of [-1,1]){
-      const xx=d*246;
-      rect(c,xx-108,-324,216,258,'#a56849','#744737',6);
-      rect(c,xx-107,-329,214,22,'#e8b97c','#85513a',3);
-      rect(c,xx-100,-278,200,13,'#244978','#d1a55b',2);
-      rect(c,xx-100,-102,200,12,'#244978','#d1a55b',2);
-      engravedPanel(c,xx-90,-260,180,151,5);
-      stoneGrain(c,xx-104,-323,208,258,xx+11);
-      royalMask(c,xx,-181,.61);
-      for(const sy of [-242,-162])jewel(c,xx+85,sy,.6);
+      const xx=d*245;
+      rect(c,xx-112,-351,224,284,'#a76c4e','#744937',4);
+      rect(c,xx-108,-352,216,9,'#edc68e');
+      rect(c,xx-101,-334,202,13,'#265080','#d6ae6f',2);
+      rect(c,xx-101,-305,202,9,'#eac288','#88583f',2);
+      rect(c,xx-101,-96,202,11,'#284e80','#d5ae6c',2);
+      // Densely carved side walls, but deliberately behind the giant masks.
+      engravedPanel(c,xx-94,-288,188,181,6);
+      stoneGrain(c,xx-100,-346,200,278,xx+7);
+      c.save();c.translate(xx,0);
+      for(let j=-1;j<=1;j++){
+        jewel(c,-94,-198+j*44,.37);jewel(c,94,-198+j*44,.37);
+      }
+      c.restore();
+      // Raised lapis cartouche anchors the royal funerary mask.
+      rect(c,xx-84,-289,168,175,'#9d7355','#e7bd83',6);
+      rect(c,xx-74,-281,148,160,'#1b426f','#cfa968',5);
+      royalMask(c,xx,-158,.67);
+      lapisInlay(c,xx-96,-118,192,13);
     }
-    rect(c,-149,-321,298,264,'#825340','#e9b97a',8);
-    rect(c,-126,-307,252,245,'#254476','#d8aa64',8);
-    rect(c,-104,-290,208,218,'#112c59','#bb975f',4);
-    // Progressive depth, a blue-gold lit tomb; no full-screen FX.
-    let aura=c.createRadialGradient(0,-180,8,0,-180,150);
-    aura.addColorStop(0,'rgba(119,201,192,.74)');aura.addColorStop(.45,'rgba(53,107,152,.38)');aura.addColorStop(1,'rgba(42,64,103,0)');
-    c.fillStyle=aura;c.fillRect(-130,-309,260,250);
-    ankh(c,0,-182,2.1);
-    // Protective winged figures on the lintel, from the sarcophagus relief photo.
-    wingedRelief(c,0,-308,.78);
-    rect(c,-341,-357,681,31,'#e4b57b','#85513e',4);
-    lapisInlay(c,-324,-355,649,17);
-    jackal(c,-131,-62,1.07);jackal(c,131,-62,1.07);
+    // Central portal: a deep layered dark blue corridor, not a flat rectangle.
+    rect(c,-164,-345,328,282,'#81503f','#d3a36a',7);
+    rect(c,-145,-325,290,260,'#b9895c','#f0cc8c',5);
+    rect(c,-129,-311,258,246,'#1f4876','#d9b477',5);
+    rect(c,-111,-294,222,228,'#102a4d','#b78a56',4);
+    const aura=c.createRadialGradient(0,-174,8,0,-174,173);
+    aura.addColorStop(0,'rgba(97,190,183,.51)');aura.addColorStop(.55,'rgba(53,111,142,.2)');aura.addColorStop(1,'rgba(30,63,106,0)');
+    c.fillStyle=aura;c.fillRect(-113,-297,226,234);
+    // Receding lintels and two illuminated door leaves suggest a real sanctuary.
+    c.strokeStyle='#d0aa67';c.lineWidth=2.6;
+    for(const xx of [-87,-69,69,87]){c.beginPath();c.moveTo(xx,-266);c.lineTo(xx,-76);c.stroke();}
+    c.strokeStyle='#376187';c.lineWidth=3;c.beginPath();c.moveTo(0,-263);c.lineTo(0,-75);c.stroke();
+    for(const dx of [-42,42]){
+      c.save();c.globalAlpha=.9;ankh(c,dx,-176,.84);c.restore();
+    }
+    // Central carved solar disk, hovering within its architectural recess.
+    c.fillStyle='#d5a95e';c.beginPath();c.arc(0,-252,15,0,TAU);c.fill();
+    c.strokeStyle='#f5d68f';c.lineWidth=2;c.beginPath();c.arc(0,-252,18,0,TAU);c.stroke();
+    // Two ceremonial guardian statues flank but never occlude the race line.
+    jackal(c,-153,-61,.88);jackal(c,153,-61,.88);
+    // Winged sun disk above the entrance, within a dedicated upper band.
+    rect(c,-375,-381,750,34,'#e3b47e','#855440',3);
+    rect(c,-365,-377,730,21,'#244778','#dbb56e',2);
+    wingedRelief(c,0,-333,1.05);
+    lapisInlay(c,-350,-378,700,20);
+    // Short crowned pylons/pedestals for a final architectural silhouette.
+    for(const d of [-1,1]){
+      const xx=d*386;
+      rect(c,xx-20,-310,40,239,'#c38b5b','#85533c',2);
+      rect(c,xx-26,-318,52,13,'#edc68b','#986345',2);
+      lapisInlay(c,xx-19,-300,38,11);
+      rect(c,xx-31,-85,62,13,'#e1b67b','#8d593e',2);
+    }
     c.restore();
   }
   function heritageFlags(c,x,base,k=1){
@@ -360,11 +708,11 @@ const EgyptWorld = (() => {
       // Entrance: an enormous Sphinx and royal pylons; second act: temple
       // colonnade; final act: monumental lapis tomb with jackal guardians.
       if(st[0]>-950&&st[0]<w+950){
-        ancientPylon(c,st[0]+475,gy-25,.85);
-        sphinx(c,st[0]-110,gy-25,1.32);
-        heritageFlags(c,st[0]-410,gy-20,.9);
+        ancientPylon(c,st[0]+665,gy-26,.88);
+        sphinx(c,st[0]-120,gy-62,1.55);
+        heritageFlags(c,st[0]-760,gy-20,.83);
         // Discrete ceremonial-chariot relief set behind the monumental threshold.
-        c.save();c.translate(st[0]+155,gy-105);chariotRelief(c,0,0,.47);c.restore();
+        c.save();c.translate(st[0]+205,gy-104);chariotRelief(c,0,0,.45);c.restore();
       }
       if(st[1]>-1100&&st[1]<w+1100){
         templeAvenue(c,st[1],gy-18,.91);
@@ -376,7 +724,9 @@ const EgyptWorld = (() => {
         treasureObelisk(c,st[2]-480,gy-19,.9);
         treasureObelisk(c,st[2]+477,gy-19,.9);
       }
-      for(let i=0;i<3;i++){
+      // Keep foreground palms off the silhouette of the Sphinx; the monument
+      // must read as a single uninterrupted landmark. Other scenes retain palms.
+      for(let i=1;i<3;i++){
         const xx=st[i]+380*(i-1);
         if(xx>-180&&xx<w+180)palm(c,xx,gy-25,.65);
       }
