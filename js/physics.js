@@ -1342,21 +1342,28 @@ const Sim = (() => {
   // Antico Egitto — una fascia che passa DAVVERO vicino alla ruota posteriore
   // trasforma gradualmente il profilo Matter. Nessuna riduzione forzata della
   // velocità: la differenza di guida deriva soltanto dalla forma fisica.
-  const CURSE_MS=5300, CURSE_RISE_MS=470, CURSE_FADE_MS=850;
+  const CURSE_MS=5800, CURSE_RISE_MS=900, CURSE_FADE_MS=1000;
   function egyptCurseStep(r,clockMs){
     const segment=Terrain.WORLD_SEGMENT;
     const inEgypt=segment&&segment.world==='egypt'&&r.chassis.position.x>=segment.start-250&&r.chassis.position.x<=segment.end+300;
     if(inEgypt && r.curseAt<0){
       for(const mummy of Terrain.EGYPT_MUMMIES){
-        if(Math.abs(mummy.x-r.rw.position.x)>370)continue;
-        const shot=EgyptWorld.shot(mummy,clockMs);if(!shot)continue;
-        const shotNo=Math.floor((clockMs/1000+mummy.phase)/mummy.period);
-        if(r.curseHits[mummy.id]===shotNo)continue;
-        // A real wheel/projectile overlap, with a short safe margin: jumping
-        // well over the bandage avoids it, and a late/low jump may be hit.
-        const dx=shot.x-r.rw.position.x,dy=shot.y-r.rw.position.y;
-        if(dx*dx/(60*60)+dy*dy/(53*53)>1)continue;
-        r.curseHits[mummy.id]=shotNo;
+        if(Math.abs(mummy.x-r.rw.position.x)>405)continue;
+        let caught=false;
+        for(const dir of [-1,1]){
+          if(!EgyptWorld.detects(mummy,r,dir))continue;
+          const projectile=EgyptWorld.shot(mummy,clockMs,dir);
+          if(!projectile)continue;
+          const shotNo=Math.floor((clockMs/1000+mummy.phase)/mummy.period);
+          const hitKey=mummy.id+':'+dir;
+          if(r.curseHits[hitKey]===shotNo)continue;
+          // Projectile must hit the *actual rear wheel*, not merely the bike.
+          const dx=projectile.x-r.rw.position.x,dy=projectile.y-r.rw.position.y;
+          if(dx*dx/(55*55)+dy*dy/(51*51)>1)continue;
+          r.curseHits[hitKey]=shotNo;
+          caught=true;break;
+        }
+        if(!caught)continue;
         r.curseAt=clockMs;
         break;
       }
@@ -1365,9 +1372,9 @@ const Sim = (() => {
     const age=clockMs-r.curseAt;
     const level=age>=CURSE_MS?0:age<CURSE_RISE_MS?age/CURSE_RISE_MS:
       age>CURSE_MS-CURSE_FADE_MS?(CURSE_MS-age)/CURSE_FADE_MS:1;
-    const stage=Math.round(Math.max(0,Math.min(1,level))*4);
+    const stage=Math.round(Math.max(0,Math.min(1,level))*10);
     if(stage!==r.curseStage){
-      r.curseStage=stage;r.curseLevel=stage/4;
+      r.curseStage=stage;r.curseLevel=stage/10;
       r.curseClearing=stage===0;
       rebuildWheel(r,'rw',r.mR);
       r.curseClearing=false;

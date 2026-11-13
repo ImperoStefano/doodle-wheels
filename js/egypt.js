@@ -797,10 +797,31 @@ const EgyptWorld = (() => {
     }
     c.restore();
   }
-  // A mummy casts leftwards as players approach from the left. The projectile is
-  // an actual spatial hit test against the rear wheel (not a zone-based debuff).
-  function shot(m,clockMs){const t=clockMs/1000+ m.phase;const cycle=((t%m.period)+m.period)%m.period;const flight=1.12;if(cycle>flight)return null;const p=cycle/flight;const x=m.x-240*p;return {x,y:520-Terrain.height(x)-51-19*Math.sin(Math.PI*p),p,cycle};}
-  function drawMummy(c,x,y,t,casting){
+  // Symmetrical launch from the mummy: dir = -1 (left) or +1 (right).
+  // No random target steering: the same race layout and host physics clock give
+  // identical projectile positions to host and remote clients.
+  const SHOT_RANGE = 325, DETECT_RANGE = 395, SHOT_FLIGHT = 1.40;
+  function shot(m,clockMs,dir=-1){
+    const t=clockMs/1000+m.phase;
+    const cycle=((t%m.period)+m.period)%m.period;
+    if(cycle>SHOT_FLIGHT)return null;
+    const p=cycle/SHOT_FLIGHT,side=dir>=0?1:-1;
+    const x=m.x+side*(25+SHOT_RANGE*p);
+    const y=520-Terrain.height(x)-51-28*Math.sin(Math.PI*p);
+    return {x,y,p,cycle,dir:side};
+  }
+  // A mummy only casts toward a detected bike; other riders remain unaffected.
+  // 'bike' may be a Matter racer (rw.position), or a network-rendered snapshot.
+  function detects(m,bike,dir){
+    if(!bike||bike.finished)return false;
+    const wheel=bike.rw?.position||bike;
+    const x=wheel.rwX??wheel.x, y=wheel.rwY??wheel.y;
+    const dx=(x-m.x)*dir;
+    if(!Number.isFinite(dx)||dx<-20||dx>DETECT_RANGE)return false;
+    const groundY=520-Terrain.height(x)-51;
+    return !Number.isFinite(y)||Math.abs(y-groundY)<180;
+  }
+  function drawMummy(c,x,y,t,casting,dir=-1,doubleShot=false){
     c.save();c.translate(x,y);
     // Sarcophagus and figure are decorative: no hidden rigid obstacle.
     // Its raised lid and linen arm anticipate an actual projectile.
@@ -834,44 +855,131 @@ const EgyptWorld = (() => {
     for(const ex of [-10,11]){
       c.fillStyle='#69c4d0';c.beginPath();c.arc(ex,-92,3.4,0,TAU);c.fill();
     }
-    // Front arm points at the moving bandage projectile; a simple cloth tail
-    // indicates direction without an exclamation mark or inaccurate hit zone.
-    c.strokeStyle='#dcc69e';c.lineWidth=10;c.beginPath();c.moveTo(-18,-65);
-    c.quadraticCurveTo(-42,casting?-91:-65,casting?-66:-37,casting?-91:-44);
-    c.moveTo(18,-64);c.quadraticCurveTo(31,-53,37,-42);c.stroke();
+    // The casting arm reaches toward the side on which a racer is detected.
+    const aim=dir>=0?1:-1;
+    c.strokeStyle='#dcc69e';c.lineWidth=10;c.beginPath();
+    c.moveTo(aim*19,-64);
+    c.quadraticCurveTo(aim*44,casting?-89:-63,aim*(casting?67:38),casting?-89:-43);
+    c.moveTo(-aim*17,-65);
+    c.quadraticCurveTo(-aim*(doubleShot?44:31),doubleShot?-89:-53,-aim*(doubleShot?67:37),doubleShot?-89:-42);
+    c.stroke();
     if(casting){
-      c.strokeStyle='#f4e2b7';c.lineWidth=4.5;
-      c.beginPath();c.moveTo(-64,-91);c.quadraticCurveTo(-78,-103,-91,-87);c.stroke();
+      c.strokeStyle='#f4e2b7';c.lineWidth=5;
+      c.beginPath();c.moveTo(aim*65,-89);c.quadraticCurveTo(aim*78,-103,aim*94,-87);c.stroke();
       c.strokeStyle='rgba(41,74,131,.73)';c.lineWidth=1.8;
-      c.beginPath();c.moveTo(-64,-92);c.lineTo(-87,-87);c.stroke();
+      c.beginPath();c.moveTo(aim*66,-90);c.lineTo(aim*89,-87);c.stroke();
+      if(doubleShot){
+        c.strokeStyle='#f4e2b7';c.lineWidth=5;
+        c.beginPath();c.moveTo(-aim*65,-89);c.quadraticCurveTo(-aim*78,-103,-aim*94,-87);c.stroke();
+      }
     }
     c.restore();c.restore();
   }
-  function drawHazards(c,cam,w,gy,clockMs){const ms=Terrain.EGYPT_MUMMIES||[];if(!ms.length)return;
+  // Drawn from the exact same projectile trajectory used by the host hit-test.
+  // Detection is visual-only on clients; gameplay remains server authoritative.
+  function drawHazards(c,cam,w,gy,clockMs,bikes=[]){
+    const ms=Terrain.EGYPT_MUMMIES||[];if(!ms.length)return;
     c.save();c.translate(-cam,gy-520);
-    for(const m of ms){if(m.x<cam-330||m.x>cam+w+450)continue;const pr=shot(m,clockMs),base=520-Terrain.height(m.x);
-      drawMummy(c,m.x,base,clockMs/1000,!!pr);
-      if(pr){
-        c.save();c.translate(pr.x,pr.y);c.rotate(-.23+.3*pr.p);c.strokeStyle='#f2e1b8';c.lineWidth=9;c.lineCap='round';c.beginPath();c.moveTo(-17,-5);c.bezierCurveTo(-6,-23,4,22,19,-5);c.stroke();
-        c.strokeStyle=P.lapis;c.lineWidth=2.5;c.beginPath();c.moveTo(-16,-7);c.quadraticCurveTo(-3,-14,12,2);c.stroke();jewel(c,0,0,.37);c.restore();
+    for(const m of ms){
+      if(m.x<cam-440||m.x>cam+w+440)continue;
+      const active=[];
+      for(const dir of [-1,1]){
+        if(bikes.some(b=>detects(m,b,dir))){
+          const pr=shot(m,clockMs,dir);if(pr)active.push(pr);
+        }
       }
-    }c.restore();
-  }
-  // A circular or custom wheel is sampled on the SAME vertices used by Matter.
-  // Morph toward a *rounded* equilateral triangular radius with a fixed max radius;
-  // original custom wheel and lava erosion are fully restored afterwards.
-  function morph(vertices,level){if(!Array.isArray(vertices)||vertices.length<3||!(level>0))return vertices;
-    const n=vertices.length;let cx=0,cy=0,R=0;for(const q of vertices){cx+=q.x;cy+=q.y;}cx/=n;cy/=n;
-    for(const q of vertices)R=Math.max(R,Math.hypot(q.x-cx,q.y-cy));
-    const k=clamp(level,0,1)*.83, normals=[-Math.PI/6,Math.PI/2,7*Math.PI/6];
-    return vertices.map(q=>{const dx=q.x-cx,dy=q.y-cy,a=Math.atan2(dy,dx),co=Math.max(...normals.map(n=>Math.cos(a-n)));const rt=R*.53/Math.max(co,.50001);return {x:cx+dx*(1-k)+Math.cos(a)*rt*k,y:cy+dy*(1-k)+Math.sin(a)*rt*k};});
-  }
-  function drawBandages(c,vertices,level){if(!(level>.01)||!vertices||vertices.length<3)return;
-    c.save();c.globalAlpha*=clamp(level*1.3,0,1);c.beginPath();vertices.forEach((q,i)=>i?c.lineTo(q.x,q.y):c.moveTo(q.x,q.y));c.closePath();c.clip();
-    const R=Math.max(...vertices.map(p=>Math.hypot(p.x,p.y))),w=R*2.5;
-    c.rotate(-.38);for(let j=-2;j<=2;j++){const y=j*R*.38;c.fillStyle=j%2?'#ead7a8':'#f8eac6';rect(c,-w*.5,y-7,w,15,c.fillStyle);c.strokeStyle='#baa57f';c.lineWidth=1;c.beginPath();c.moveTo(-w*.5,y+7);c.lineTo(w*.5,y+7);c.stroke();
-      for(let i=-2;i<=2;i++){c.strokeStyle=P.lapis;c.lineWidth=1.6;const x=i*R*.44+(j%2)*6;c.beginPath();c.moveTo(x-5,y-2);c.lineTo(x+3,y+2);c.moveTo(x,y-4);c.lineTo(x,y+5);c.stroke();}}
+      const base=520-Terrain.height(m.x);
+      drawMummy(c,m.x,base,clockMs/1000,active.length>0,active[0]?.dir||-1,active.length===2);
+      for(const pr of active){
+        const dir=pr.dir;
+        c.save();c.translate(pr.x,pr.y);c.scale(dir,1);
+        c.rotate(-.11+.36*pr.p);
+        // The spinning linen bolt travels sideways with a loose, curling tail.
+        c.globalAlpha=.25;c.strokeStyle='#3d5e87';c.lineWidth=14;
+        c.beginPath();c.moveTo(-12,3);c.quadraticCurveTo(-44,-26,-65,-4-13*Math.sin(pr.p*9));c.stroke();
+        c.globalAlpha=1;
+        c.strokeStyle='#d1ab7b';c.lineWidth=12;c.lineCap='round';
+        c.beginPath();c.moveTo(-20,-4);c.bezierCurveTo(-2,-22,11,22,28,-4);c.stroke();
+        c.strokeStyle='#f8e8be';c.lineWidth=8;
+        c.beginPath();c.moveTo(-20,-4);c.bezierCurveTo(-2,-22,11,22,28,-4);c.stroke();
+        c.strokeStyle='#8b765a';c.lineWidth=1.25;
+        for(let i=0;i<5;i++){
+          const xx=-16+i*9;
+          c.beginPath();c.moveTo(xx,-6-4*Math.sin(i));c.lineTo(xx+5,4-4*Math.sin(i));c.stroke();
+        }
+        c.strokeStyle=P.lapis;c.lineWidth=2;
+        c.beginPath();c.moveTo(-12,-5);c.quadraticCurveTo(1,-13,18,1);c.stroke();
+        c.restore();
+      }
+    }
     c.restore();
   }
-  return {P,shot,morph,drawBandages,drawBackdrop,drawGround,drawHazards};
+  // The wheel is physically squeezed toward a near-equilateral triangle.
+  // The very slight residual rounding limits Matter.js contact chatter while
+  // preserving the triangular silhouette at full intensity.
+  function morph(vertices,level){
+    if(!Array.isArray(vertices)||vertices.length<3||!(level>0))return vertices;
+    let cx=0,cy=0,R=0;
+    for(const q of vertices){cx+=q.x;cy+=q.y;}
+    cx/=vertices.length;cy/=vertices.length;
+    for(const q of vertices)R=Math.max(R,Math.hypot(q.x-cx,q.y-cy));
+    if(R<1)return vertices;
+    const k=clamp(level,0,1)*.985;
+    const normals=[-Math.PI/6,Math.PI/2,7*Math.PI/6];
+    return vertices.map(q=>{
+      const dx=q.x-cx,dy=q.y-cy,a=Math.atan2(dy,dx);
+      const co=Math.max(...normals.map(n=>Math.cos(a-n)));
+      const target=R*.505/Math.max(.5,co);
+      const rr=Math.hypot(dx,dy), nr=rr*(1-k)+target*k;
+      return {x:cx+Math.cos(a)*nr,y:cy+Math.sin(a)*nr};
+    });
+  }
+  // Real layered linen: ribbons tighten across the actual deformed ring as
+  // the physical curse progresses, then unwind while it returns to normal.
+  // All in wheel-local coordinates, so the pattern rotates with the bike.
+  function drawBandages(c,vertices,level){
+    if(!(level>.01)||!vertices||vertices.length<3)return;
+    const k=clamp(level,0,1);
+    let R=0;for(const p of vertices)R=Math.max(R,Math.hypot(p.x,p.y));
+    if(R<2)return;
+    const trace=()=>{c.beginPath();vertices.forEach((p,i)=>i?c.lineTo(p.x,p.y):c.moveTo(p.x,p.y));c.closePath();};
+    c.save();
+    // First, a tension cord over the tyre perimeter makes the squeezing visible.
+    trace();c.strokeStyle=`rgba(139,103,63,${(.36+.5*k).toFixed(3)})`;
+    c.lineWidth=2.3+5*k;c.lineJoin='round';c.stroke();
+    trace();c.strokeStyle=`rgba(248,224,169,${(.32+.58*k).toFixed(3)})`;
+    c.lineWidth=1.5+3.2*k;c.stroke();
+    trace();c.clip();
+    const count=6;
+    for(let j=0;j<count;j++){
+      const reveal=clamp((k-j*.115)*5.2,0,1);
+      if(reveal<=0)continue;
+      const y=R*(-.76+j*.305),angle=(j%2===0?-.52:.46);
+      c.save();c.rotate(angle);
+      c.globalAlpha=.32+.68*reveal;
+      const xx=R*1.6, width=6+8*reveal;
+      c.lineCap='round';
+      const ribbon=()=>{c.beginPath();c.moveTo(-xx,y+5);c.bezierCurveTo(-R*.45,y-5,R*.32,y+9,xx,y-4);};
+      ribbon();c.strokeStyle='#927555';c.lineWidth=width+3;c.stroke();
+      ribbon();c.strokeStyle=j%2?'#e2c69a':'#f0ddba';c.lineWidth=width;c.stroke();
+      ribbon();c.strokeStyle='rgba(255,250,224,.67)';c.lineWidth=2;c.stroke();
+      // Thin woven threads and transverse fold marks.
+      c.strokeStyle='rgba(119,89,60,.48)';c.lineWidth=1.1;
+      for(let t=-4;t<=4;t++){
+        const x=t*R*.32+(j%2)*6;
+        c.beginPath();c.moveTo(x,y-width*.42);c.lineTo(x+5,y+width*.42);c.stroke();
+      }
+      c.restore();
+    }
+    // Crossing strips at full tension enhance the bandaged triangle.
+    if(k>.56){
+      const a=clamp((k-.56)*2.27,0,1);
+      c.save();c.globalAlpha=.72*a;c.rotate(.7);
+      c.strokeStyle='#f5e4c1';c.lineCap='round';c.lineWidth=7+5*a;
+      c.beginPath();c.moveTo(-R,0);c.quadraticCurveTo(0,-R*.2,R,0);c.stroke();
+      c.strokeStyle='#9d805f';c.lineWidth=1.3;c.stroke();c.restore();
+    }
+    c.restore();
+  }
+  return {P,shot,detects,morph,drawBandages,drawBackdrop,drawGround,drawHazards};
 })();

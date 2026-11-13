@@ -1649,7 +1649,7 @@
     const obstacleElapsed = Net.isHost ? Sim.getObstacleTime() :
       Math.max(0, hazardHostOrigin === null ? t0 - raceT0 : t0 - hazardHostOrigin - interpClientMs);
     DynamicObstacles.draw(ctx2d, camX, w, groundY, obstacleElapsed);
-    if (Terrain.WORLD_SEGMENT && Terrain.WORLD_SEGMENT.world==='egypt') EgyptWorld.drawHazards(ctx2d,camX,w,groundY,obstacleElapsed);
+    if (Terrain.WORLD_SEGMENT && Terrain.WORLD_SEGMENT.world==='egypt') EgyptWorld.drawHazards(ctx2d,camX,w,groundY,obstacleElapsed,Object.values(latestRacers));
     // Pass already synchronized bike poses for a subtle, local anticipation cue.
     // This is drawing-only; clients do not alter obstacles or collision bodies.
     InteractiveObstacles.draw(ctx2d, camX, w, groundY, !Net.isHost, undefined, undefined, Object.values(latestRacers));
