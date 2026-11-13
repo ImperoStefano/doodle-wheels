@@ -315,7 +315,7 @@ const Terrain = (() => {
   // costruttori dei tipi di patch (lunghezza e parametri); il centro lo sceglie planPatches
   function mkKicker(tier, rnd) {
     const T = [[30, 42, 17, 110], [60, 84, 29, 160], [100, 132, 32, 210]][tier];
-    const H = T[0] + Math.round(rnd() * (T[1] - T[0])), rp = mkRamp(H, T[2] + (rnd() * 3 - 1.5), T[3]), s = 70, u1 = Math.round(s + rp.run), ex = 20;
+    const H = T[0] + Math.round(rnd() * (T[1] - T[0])), rp = mkRamp(H, T[2] + (rnd() * 3 - 1.5), T[3]), s = 70, u1 = Math.round(s + rp.run), ex = 46;
     return Object.assign({ kind: 'kicker', len: u1 + ex + 120, s, u1, ex, tier }, rp);
   }
   function makePatch(kind, rnd) {
@@ -345,7 +345,7 @@ const Terrain = (() => {
       }
       case 'twostage': {   // rampa a due stadi: salita dolce, pianerottolo, seconda salita ripida (più spinta al labbro)
         const h1 = 30 + Math.round(rnd() * 12), h2 = 40 + Math.round(rnd() * 24), r1 = mkRamp(h1, 13 + rnd() * 3, 120), r2 = mkRamp(h2, 29 + rnd() * 3, 170);
-        const s = 70, s2 = Math.round(s + r1.run + 50 + rnd() * 40), u1 = Math.round(s2 + r2.run), ex = 20;
+        const s = 70, s2 = Math.round(s + r1.run + 50 + rnd() * 40), u1 = Math.round(s2 + r2.run), ex = 46;
         return Object.assign({ kind: 'kicker', len: u1 + ex + 130, s, u1, ex, tier: 2, s2, r2 }, r1, { H: h1 + h2 });
       }
       case 'twin': {   // gemelle: una rampa piccola/media e una più grande, una dopo l'altra (due rampe normali, piazzate insieme)

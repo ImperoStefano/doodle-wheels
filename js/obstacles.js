@@ -4,7 +4,11 @@
  */
 const DynamicObstacles = (() => {
   const TAU = Math.PI * 2, GROUND_Y = 520, clamp = (v,lo,hi) => Math.min(hi,Math.max(lo,v));
+  // Timed vertical blocks are *kinetic fields*, not invisible walls.
+  // A hit changes vertical motion without removing any horizontal momentum.
+  const SOFT_RISERS = new Set(['choir','flowergate','icefang','lightstep','hammer','lift','piston','gate']);
   let instances = [];
+  let byBody = new WeakMap();
   let remoteStates = null;
   let remoteViews = null;
   let previousFrame = 0;
@@ -70,7 +74,7 @@ const DynamicObstacles = (() => {
       balance:[0.85,0.8,0.12],crumble:[0.68,0.75,0.08],gate:[0.6,0.6,0.1],spring:[0.6,0.7,0.7],boulder:[0.9,0.9,0.1],bigroller:[0.7,0.75,0.15],shell:[0.48,0.58,0.32],seesaw:[0.66,0.68,0.14],
       bell:[0.52,0.56,0.2],meteor:[0.64,0.66,0.15],
       piston:[0.5,0.6,0.09],roller:[0.62,0.68,0.2]})[o.kind] || [0.6,0.68,0.16];
-    const options={isStatic:o.kind!=='boulder', label:'obstacle-v22-'+o.kind,
+    const options={isStatic:o.kind!=='boulder', isSensor:SOFT_RISERS.has(o.kind), label:'obstacle-v22-'+o.kind,
       friction:profile[0], frictionStatic:profile[1], restitution:profile[2], slop:0.025};
     let b;
     if (p.radius) b = Matter.Bodies.circle(p.x,p.y,p.radius,options,20);
@@ -81,7 +85,8 @@ const DynamicObstacles = (() => {
     return b;
   }
   function mount(world) {
-    remoteStates=null;remoteViews=null;previousFrame=0;instances = (Terrain.DYNAMIC_OBSTACLES || []).map(o=>({config:o, body:makeBody(o), tilt:0, tiltVelocity:0, drop:0, dropVelocity:0, cooldown:0, initialX:o.x}));
+    remoteStates=null;remoteViews=null;previousFrame=0;byBody=new WeakMap();instances = (Terrain.DYNAMIC_OBSTACLES || []).map(o=>({config:o, body:makeBody(o), bumped:new WeakMap(), tilt:0, tiltVelocity:0, drop:0, dropVelocity:0, cooldown:0, initialX:o.x}));
+    for(const q of instances)byBody.set(q.body,q);
     if (instances.length) Matter.World.add(world, instances.map(q=>q.body));
     // A rolling boulder is a genuinely dynamic Matter body; a soft tether prevents
     // it from escaping the section and obstructing later players indefinitely.
@@ -124,6 +129,24 @@ const DynamicObstacles = (() => {
       }
       Matter.Body.setPosition(body,{x:p.x,y:p.y},true);
       Matter.Body.setAngle(body,p.angle || 0,true);
+    }
+  }
+  // Real Matter contact sensor: no horizontal braking on a rising block.
+  // Each rider receives one modest upward deflection, not an invisible speed boost.
+  function contact(a,b,nowMs,racers){
+    const q=byBody.get(a)||byBody.get(b);
+    if(!q || !SOFT_RISERS.has(q.config.kind)) return;
+    const wheel=q.body===a?b:a;
+    if(!wheel || wheel.label!=='wheel') return;
+    const racer=(racers||[]).find(r=>r && (r.fw===wheel || r.rw===wheel));
+    if(!racer || racer.finished) return;
+    const prev=q.bumped.get(racer)??-1e7;
+    if(nowMs-prev<1050)return;
+    q.bumped.set(racer,nowMs);
+    for(const body of [racer.fw,racer.rw,racer.chassis]){
+      if(!body) continue;
+      // Retain x exactly: the field never applies a sudden brake.
+      Matter.Body.setVelocity(body,{x:body.velocity.x,y:Math.min(body.velocity.y,-7.8)});
     }
   }
   function snapshot(){return instances.map(q=>{
@@ -412,11 +435,12 @@ const DynamicObstacles = (() => {
         circ(ctx,o.x,groundY-25,5,T.a);
       }
       ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.angle||0);
+      if (SOFT_RISERS.has(o.kind)) ctx.globalAlpha *= .72; // semi-transparent field: traversable
       ctx.shadowColor=T.a;ctx.shadowBlur=o.biome==='paradise'||o.biome==='neon'?13:6;
       if(p.radius)circleBody(ctx,o,p,T,elapsedMs);else barBody(ctx,o,p,T,elapsedMs);
       ctx.restore();
     }
     ctx.restore();
   }
-  return {pose,mount,update,draw,active,snapshot,setRemoteStates,get bodies(){return instances.map(q=>q.body);}};
+  return {pose,mount,update,draw,active,contact,snapshot,setRemoteStates,get bodies(){return instances.map(q=>q.body);}};
 })();

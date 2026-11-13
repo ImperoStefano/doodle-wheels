@@ -15,14 +15,14 @@ const InteractiveObstacles = (() => {
     enchanted:{dark:'#284d43',mid:'#628a61',light:'#c4e6a2',edge:'#39523e',metal:'#bde29b',glow:'#b4ff95'},
     neon:{dark:'#191736',mid:'#4749a5',light:'#77fff0',edge:'#fb63df',metal:'#8ca8ff',glow:'#36f2ed'}
   };
-  let host=[], remote=new Map(), drawAt=0, activeRacers=[], pendingSprings=[],pendingVaults=[],pendingTilts=[];
+  let host=[], remote=new Map(), drawAt=0, activeRacers=[], pendingSprings=[],pendingVaults=[],pendingTilts=[],pendingRisers=[];
   const springVisual = new Map(); // phase-clock per obstacle, only for drawing
   const placements=()=>Terrain.INTERACTIVE_OBSTACLES||[];
   const ground=(x)=>GY-Terrain.height(x);
   const basePose=(o)=>({x:o.x,y:ground(o.x)-({boulder:30,tilt:13,spring:21,shard:28,clam:26,bud:29,servo:29}[o.kind]||25),a:0,s:0});
   const nearby=(rs,x,r=230)=>Boolean(rs&&rs.some(q=>q&&!q.finished&&q.chassis&&Math.abs(q.chassis.position.x-x)<r));
   function mount(world){
-    host=[];activeRacers=[];pendingSprings=[];pendingVaults=[];pendingTilts=[];remote=new Map();drawAt=0;springVisual.clear();
+    host=[];activeRacers=[];pendingSprings=[];pendingVaults=[];pendingTilts=[];pendingRisers=[];remote=new Map();drawAt=0;springVisual.clear();
     for(const config of placements()){
       const p=basePose(config); let body;
       if(config.kind==='boulder'){
@@ -43,8 +43,8 @@ const InteractiveObstacles = (() => {
         // obstacles. All have consistent collisions with their actual drawn envelope.
         const k=SIZES[config.kind];
         body=Matter.Bodies.rectangle(p.x,p.y,k.w,k.h,{
-          label:'interactive-'+config.kind,isStatic:true,
-          friction:config.kind==='clam'?.35:.75,
+          label:'interactive-'+config.kind,isStatic:true,isSensor:true,
+          friction:0,
           frictionStatic:.7,restitution:.07,slop:.02
         });
       }else if(config.kind==='spring'){
@@ -95,8 +95,10 @@ const InteractiveObstacles = (() => {
       if(timeMs-(entry.reactivations.get(racer)??-1e7)<1200)return;
       if(!pendingVaults.some(q=>q.entry===entry&&q.racer===racer))
         pendingVaults.push({entry,racer,at:timeMs});
-    }else if(rider.label==='wheel' && entry.phase==='idle'){
-      entry.phase='react';entry.phaseAt=timeMs;
+
+    }else if(['shard','clam','bud','servo'].includes(obstacleKind) && rider.label==='wheel'){
+      if(!pendingRisers.some(q=>q.entry===entry && q.racer===racer))
+        pendingRisers.push({entry,racer,at:timeMs});
     }
   }
   function beforeStep(nowMs,racers){
@@ -151,6 +153,17 @@ const InteractiveObstacles = (() => {
       }
     }
     pendingTilts.length=0;
+    // Rising obstacles react as non-braking soft kinetic pads. The animated
+    // rectangle is a translucent reactive field, not an immovable wall.
+    for(const {entry,racer,at} of pendingRisers){
+      if(at-(entry.reactivations.get(racer)??-1e7)<1050)continue;
+      entry.reactivations.set(racer,at);
+      entry.phase='react';entry.phaseAt=nowMs;
+      for(const body of [racer.chassis,racer.fw,racer.rw])if(body){
+        Matter.Body.setVelocity(body,{x:body.velocity.x,y:Math.min(body.velocity.y,-7.8)});
+      }
+    }
+    pendingRisers.length=0;
     // Rounded mobile volume: speed + deliberate approach offers a modest vault.
     // Never applies a boost on an arbitrary collision with its back or underside.
     for(const {entry,racer,at} of pendingVaults){
@@ -366,6 +379,7 @@ const InteractiveObstacles = (() => {
   function drawChallenge(c,o,p,T,phase,t){
     const k=SIZES[o.kind];const W=k.w,H=k.h;
     c.save();c.lineJoin='round';c.lineCap='round';c.lineWidth=4;
+    c.globalAlpha=.76; // V27.3: kinetic field, not a rigid brake wall
     if(o.kind==='shard'){
       c.fillStyle='#342437';c.strokeStyle='#d2674f';
       rounded(c,-W/2,-H/2,W,H,9);c.fill();c.stroke();
