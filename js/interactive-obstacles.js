@@ -13,7 +13,8 @@ const InteractiveObstacles = (() => {
     inferno:{dark:'#2e1b32',mid:'#713949',light:'#fb9d6e',edge:'#260f27',metal:'#dc7360',glow:'#ff5c49'},
     atlantis:{dark:'#1a5167',mid:'#4fa4ad',light:'#b6fff0',edge:'#185774',metal:'#e0cf8c',glow:'#72fff0'},
     enchanted:{dark:'#284d43',mid:'#628a61',light:'#c4e6a2',edge:'#39523e',metal:'#bde29b',glow:'#b4ff95'},
-    neon:{dark:'#191736',mid:'#4749a5',light:'#77fff0',edge:'#fb63df',metal:'#8ca8ff',glow:'#36f2ed'}
+    neon:{dark:'#191736',mid:'#4749a5',light:'#77fff0',edge:'#fb63df',metal:'#8ca8ff',glow:'#36f2ed'},
+    egypt:{dark:'#76452e',mid:'#be8052',light:'#e9c990',edge:'#805335',metal:'#c9a04d',glow:'#40799d'}
   };
   let host=[], remote=new Map(), drawAt=0, activeRacers=[], pendingSprings=[],pendingVaults=[],pendingTilts=[],pendingRisers=[];
   const springVisual = new Map(); // phase-clock per obstacle, only for drawing
@@ -323,6 +324,14 @@ const InteractiveObstacles = (() => {
       c.fillStyle='#f5e99a';dot(c,0,0,R*.16);
       for(let i=-2;i<=2;i++){c.fillStyle='#97c47a';
         c.beginPath();c.ellipse(i*R*.22,R*.63,4,2,i*.4,0,TAU);c.fill();}
+    }else if(o.biome==='egypt'){
+      // Physical oval 156×60, carved stone scarab with lapis inlay.
+      c.fillStyle='#b37b50';c.beginPath();c.ellipse(0,0,R*.92,R*.90,0,0,TAU);c.fill();
+      c.strokeStyle='#e6c387';c.lineWidth=3;c.beginPath();c.ellipse(0,0,R*.83,R*.81,0,0,TAU);c.stroke();
+      c.strokeStyle='#845435';c.lineWidth=2;for(let i=-2;i<=2;i++){c.beginPath();c.arc(0,0,8+Math.abs(i)*8,i*.32,i*.32+1);c.stroke();}
+      c.fillStyle='#294a83';c.beginPath();c.ellipse(0,0,13,19,0,0,TAU);c.fill();
+      c.strokeStyle='#c9a04d';c.lineWidth=2.5;c.beginPath();c.ellipse(0,0,13,19,0,0,TAU);c.stroke();
+      c.beginPath();c.moveTo(0,-18);c.lineTo(0,19);c.moveTo(-13,-2);c.quadraticCurveTo(0,6,13,-2);c.stroke();
     }else if(o.biome==='neon'){
       c.strokeStyle='#7cf9ff';c.lineWidth=4;for(let i=0;i<6;i++){let a=i*TAU/6;line(c,[Math.cos(a)*23,Math.sin(a)*23,Math.cos(a+.2)*41,Math.sin(a+.2)*41]);}
       c.fillStyle='#243e85';dot(c,0,0,24);c.strokeStyle='#fa70e3';c.beginPath();c.arc(0,0,17,-.2,Math.PI*1.35);c.stroke();dot(c,0,0,6,'#c2fffc');
@@ -367,6 +376,9 @@ const InteractiveObstacles = (() => {
     }else if(o.biome==='enchanted'){
       c.fillStyle='#5d4c34';for(let k=-5;k<=5;k++){rounded(c,k*24-8,-9,16,18,4);c.fill();}
       c.strokeStyle='#c1eda3';for(let i=-5;i<=5;i+=2){c.beginPath();c.ellipse(i*23,0,7,4,i*.18,0,TAU);c.stroke();}
+    }else if(o.biome==='egypt'){
+      c.fillStyle='#b9794c';for(let i=-5;i<=5;i++){c.strokeStyle='#e6c48a';c.lineWidth=2;c.strokeRect(i*23-9,-8,18,16);}
+      for(const x of [-104,0,104]){c.strokeStyle='#294a83';c.lineWidth=2.5;c.beginPath();c.moveTo(x,-8);c.lineTo(x+6,0);c.lineTo(x,-1);c.stroke();}
     }else if(o.biome==='neon'){
       c.fillStyle='#1c1c49';rounded(c,-W/2+6,-8,W-12,15,3);c.fill();
       c.strokeStyle='#65fdf2';for(let i=-5;i<=5;i++){const x=i*24;line(c,[x-9,-4,x+7,-4,x+13,4]);}
@@ -430,6 +442,8 @@ const InteractiveObstacles = (() => {
       g.addColorStop(0,'#d8fff5');g.addColorStop(.5,'#62dfd4');g.addColorStop(1,'#286b80');
     }else if(o.biome==='enchanted'){
       g.addColorStop(0,'#f7ebff');g.addColorStop(.5,'#c8a6df');g.addColorStop(1,'#6c507a');
+    }else if(o.biome==='egypt'){
+      g.addColorStop(0,'#f7dc9c');g.addColorStop(.5,'#d3a05b');g.addColorStop(1,'#92613c');
     }else if(o.biome==='neon'){
       g.addColorStop(0,'#aefff7');g.addColorStop(.5,'#38d5ec');g.addColorStop(1,'#3c3c91');
     }else{
@@ -468,6 +482,8 @@ const InteractiveObstacles = (() => {
     }else if(o.biome==='enchanted'){
       c.strokeStyle='#f6ffe2';for(let i=-6;i<=6;i++){
         c.beginPath();c.ellipse(i*13,2,5,2,.3,0,TAU);c.stroke();}
+    }else if(o.biome==='egypt'){
+      c.strokeStyle='#294a83';for(let i=-6;i<=6;i++){c.beginPath();c.moveTo(i*13-4,-4);c.lineTo(i*13+3,2);c.stroke();}
     }else if(o.biome==='neon'){
       c.strokeStyle='#a7fff7';for(let i=-6;i<=6;i++){
         c.beginPath();c.moveTo(i*13,-8);c.lineTo(i*13,-3);c.stroke();}

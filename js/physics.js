@@ -322,6 +322,7 @@ const Sim = (() => {
       finished: false, finishTime: null,
       bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0,
       cornerReleases: 0, releaseAt: -1e9, releaseTriedFor: -1, stallEvents: [],
+      curseAt:-1,curseStage:0,curseLevel:0,curseHits:{},curseClearing:false,
       stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
@@ -350,7 +351,7 @@ const Sim = (() => {
 
     const sv = r.sc && r.sc !== 1 ? vertices.map(p => ({ x: p.x * r.sc, y: p.y * r.sc })) : vertices;   // portale gigante: la ruota ridisegnata nasce già della taglia attuale
     const fw = createWheelBody(fwPos.x, fwPos.y, sv, wOpt);
-    const rw = createWheelBody(rwPos.x, rwPos.y, sv, wOpt);
+    const rw = createWheelBody(rwPos.x, rwPos.y, r.curseLevel>0 ? EgyptWorld.morph(sv,r.curseLevel) : sv, wOpt);
     if (r.sc && r.sc > 1.001) { Matter.Body.setDensity(fw, fw.density / (r.sc * r.sc)); Matter.Body.setDensity(rw, rw.density / (r.sc * r.sc)); }
 
     Matter.Body.setVelocity(fw, fwVel);
@@ -440,15 +441,22 @@ const Sim = (() => {
   const MELT_GRIP = 1.0;
   function rebuildWheel(r, key, m) {
     let mv = meltVertices(r.base, m);
+    // La maledizione cambia esclusivamente la geometria; non applicare ANCHE
+    // una penalità di aderenza da lava per il materiale compresso dalle bende.
+    const materialArea = ringArea(mv);
+    if(key==='rw' && r.curseLevel>0) mv=EgyptWorld.morph(mv,r.curseLevel);
     if (r.baseArea === undefined) r.baseArea = ringArea(r.base);
-    const kk = Math.max(0.35, 1 - MELT_GRIP * Math.max(0, 1 - ringArea(mv) / (r.baseArea || 1)));
+    const kk = Math.max(0.35, 1 - MELT_GRIP * Math.max(0, 1 - materialArea / (r.baseArea || 1)));
     if (r.sc && r.sc !== 1) { const S = r.sc; mv = mv.map(p => ({ x: p.x * S, y: p.y * S })); }
     if (key === 'fw') r.mkF = kk; else r.mkR = kk;
     const old = r[key], axKey = key === 'fw' ? 'axF' : 'axR', dx = (key === 'fw' ? 80 : -80) * (r.sc || 1), group = r.chassis.collisionFilter.group;
     const pos = { x: old.position.x, y: old.position.y }, ang = old.angle;
     const nw = createWheelBody(pos.x, pos.y, simplifyRing(mv, 1.4), wheelOptions(group));
     // si copia lo stato di moto così com'è (posizione precedente, angolo precedente, passo di tempo): niente scossoni alla ricostruzione
-    if (r.sc && r.sc > 1.001) Matter.Body.setDensity(nw, nw.density / (r.sc * r.sc));   // ruota gigante: stessa massa di prima (4,8 volte più pesante farebbe esplodere i vincoli con il telaio leggero)
+    if (r.sc && r.sc > 1.001) Matter.Body.setDensity(nw, nw.density / (r.sc * r.sc));
+    // La maledizione cambia il profilo ma non modifica all'improvviso massa
+    // e inerzia effettiva tramite un salto di densita' del nuovo collider.
+    if(key==='rw' && (r.curseLevel>0 || r.curseClearing)) Matter.Body.setDensity(nw,old.mass/Math.max(1,nw.area));   // ruota gigante: stessa massa di prima (4,8 volte più pesante farebbe esplodere i vincoli con il telaio leggero)
     Matter.Body.setPosition(nw, pos); Matter.Body.setAngle(nw, ang);   // (setPosition: difesa se la scomposizione in pezzi lascia il corpo altrove)
     nw.deltaTime = old.deltaTime; nw.deltaTimePrev = old.deltaTimePrev; nw.positionPrev.x = pos.x - (old.position.x - old.positionPrev.x); nw.positionPrev.y = pos.y - (old.position.y - old.positionPrev.y);
     nw.anglePrev = nw.angle - (old.angle - old.anglePrev); nw.velocity.x = old.velocity.x; nw.velocity.y = old.velocity.y; nw.angularVelocity = old.angularVelocity; nw.speed = old.speed; nw.angularSpeed = old.angularSpeed;
@@ -1331,11 +1339,48 @@ const Sim = (() => {
     }
   }
 
+  // Antico Egitto — una fascia che passa DAVVERO vicino alla ruota posteriore
+  // trasforma gradualmente il profilo Matter. Nessuna riduzione forzata della
+  // velocità: la differenza di guida deriva soltanto dalla forma fisica.
+  const CURSE_MS=5300, CURSE_RISE_MS=470, CURSE_FADE_MS=850;
+  function egyptCurseStep(r,clockMs){
+    const segment=Terrain.WORLD_SEGMENT;
+    const inEgypt=segment&&segment.world==='egypt'&&r.chassis.position.x>=segment.start-250&&r.chassis.position.x<=segment.end+300;
+    if(inEgypt && r.curseAt<0){
+      for(const mummy of Terrain.EGYPT_MUMMIES){
+        if(Math.abs(mummy.x-r.rw.position.x)>370)continue;
+        const shot=EgyptWorld.shot(mummy,clockMs);if(!shot)continue;
+        const shotNo=Math.floor((clockMs/1000+mummy.phase)/mummy.period);
+        if(r.curseHits[mummy.id]===shotNo)continue;
+        // A real wheel/projectile overlap, with a short safe margin: jumping
+        // well over the bandage avoids it, and a late/low jump may be hit.
+        const dx=shot.x-r.rw.position.x,dy=shot.y-r.rw.position.y;
+        if(dx*dx/(60*60)+dy*dy/(53*53)>1)continue;
+        r.curseHits[mummy.id]=shotNo;
+        r.curseAt=clockMs;
+        break;
+      }
+    }
+    if(r.curseAt<0)return;
+    const age=clockMs-r.curseAt;
+    const level=age>=CURSE_MS?0:age<CURSE_RISE_MS?age/CURSE_RISE_MS:
+      age>CURSE_MS-CURSE_FADE_MS?(CURSE_MS-age)/CURSE_FADE_MS:1;
+    const stage=Math.round(Math.max(0,Math.min(1,level))*4);
+    if(stage!==r.curseStage){
+      r.curseStage=stage;r.curseLevel=stage/4;
+      r.curseClearing=stage===0;
+      rebuildWheel(r,'rw',r.mR);
+      r.curseClearing=false;
+    }
+    if(age>=CURSE_MS){r.curseAt=-1;r.curseLevel=0;r.curseStage=0;}
+  }
+
   function stepRacer(r, elapsed) {
     if (r.finished) return;
 
     driveRacer(r, elapsed, true);
     meltStep(r, elapsed);
+    egyptCurseStep(r,obstacleClockMs);
     scaleStep(r, elapsed);
     if (!rightBike(r)) antiFlip(r);
     if (r.jBuf) { if (elapsed - r.jBuf > JUMP_BUF_MS) r.jBuf = 0; else if (jumpTry(r, elapsed)) r.jBuf = 0; }
@@ -1439,7 +1484,7 @@ const Sim = (() => {
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
       finished: r.finished, finishTime: r.finishTime,
-      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, ln: r.ln || 0, ls: r.ls || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
+      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, ln: r.ln || 0, ls: r.ls || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, cu: r.curseLevel || 0, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
   }
 

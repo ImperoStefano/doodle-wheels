@@ -6,7 +6,7 @@ const DynamicObstacles = (() => {
   const TAU = Math.PI * 2, GROUND_Y = 520, clamp = (v,lo,hi) => Math.min(hi,Math.max(lo,v));
   // Timed vertical blocks are *kinetic fields*, not invisible walls.
   // A hit changes vertical motion without removing any horizontal momentum.
-  const SOFT_RISERS = new Set(['choir','flowergate','icefang','lightstep','hammer','lift','piston','gate']);
+  const SOFT_RISERS = new Set(['choir','flowergate','icefang','lightstep','hammer','lift','piston','gate','obelisk']);
   let instances = [];
   let byBody = new WeakMap();
   let remoteStates = null;
@@ -45,6 +45,10 @@ const DynamicObstacles = (() => {
       case 'branch':return {x:o.x,y:g-59,angle:0.32*s,width:198,height:29};
       case 'lift':{const lift=smoothstep((1+Math.sin(a))/2);
         return {x:o.x,y:g-39-67*lift,angle:0,width:169,height:24,lift};}
+      case 'obelisk': {
+        const raised=smoothstep((1-Math.cos(a))*.5);
+        return {x:o.x,y:g+37-68*raised,angle:0,raised,width:70,height:80};
+      }
       case 'piston': {
         // Rientra completamente sotto il terreno tra una chiusura e l'altra.
         const raised = smoothstep((1 - Math.cos(a)) * 0.5);
@@ -73,7 +77,7 @@ const DynamicObstacles = (() => {
       choir:[.46,.63,.26],sunwheel:[.58,.65,.10],ashdrum:[.76,.82,.11],waterwheel:[.42,.57,.23],flowergate:[.72,.80,.17],magbar:[.66,.77,.08],lightstep:[0.7,0.76,0.05],hammer:[0.58,0.62,0.10],jelly:[0.5,0.55,0.72],branch:[0.86,0.88,0.13],lift:[0.68,0.75,0.07],
       balance:[0.85,0.8,0.12],crumble:[0.68,0.75,0.08],gate:[0.6,0.6,0.1],spring:[0.6,0.7,0.7],boulder:[0.9,0.9,0.1],bigroller:[0.7,0.75,0.15],shell:[0.48,0.58,0.32],seesaw:[0.66,0.68,0.14],
       bell:[0.52,0.56,0.2],meteor:[0.64,0.66,0.15],
-      piston:[0.5,0.6,0.09],roller:[0.62,0.68,0.2]})[o.kind] || [0.6,0.68,0.16];
+      piston:[0.5,0.6,0.09],obelisk:[0.55,0.60,0.07],roller:[0.62,0.68,0.2]})[o.kind] || [0.6,0.68,0.16];
     const options={isStatic:o.kind!=='boulder', isSensor:SOFT_RISERS.has(o.kind), label:'obstacle-v22-'+o.kind,
       friction:profile[0], frictionStatic:profile[1], restitution:profile[2], slop:0.025};
     let b;
@@ -177,7 +181,8 @@ const DynamicObstacles = (() => {
     inferno:{a:'#ff906c',b:'#6c3445',c:'#281b30',l:'#ffd090'},
     atlantis:{a:'#73ffeb',b:'#438f9c',c:'#21576e',l:'#d4fff9'},
     enchanted:{a:'#b8eaa2',b:'#61826a',c:'#395044',l:'#f1ffc4'},
-    neon:{a:'#5ffdf2',b:'#4547a0',c:'#1d244f',l:'#ff75e6'}
+    neon:{a:'#5ffdf2',b:'#4547a0',c:'#1d244f',l:'#ff75e6'},
+    egypt:{a:'#c9a04d',b:'#b86b48',c:'#70452d',l:'#ead09b'}
   };
   function ln(c,pts){c.beginPath();c.moveTo(pts[0],pts[1]);for(let i=2;i<pts.length;i+=2)c.lineTo(pts[i],pts[i+1]);c.stroke();}
   function circ(c,x,y,r,col){c.fillStyle=col;c.beginPath();c.arc(x,y,r,0,TAU);c.fill();}
@@ -247,7 +252,14 @@ const DynamicObstacles = (() => {
     const g=c.createLinearGradient(0,-H/2,0,H/2);g.addColorStop(0,T.l);g.addColorStop(.6,T.a);g.addColorStop(1,T.b);
     c.fillStyle=g;rect(c,-W/2+4,-H/2+3,W-8,H-6,Math.min(6,H*.2));c.fill();
     c.strokeStyle=T.c;c.lineWidth=2;
-    if(o.kind==='choir'){
+    if(o.kind==='obelisk'){
+      // Real sensor slab footprint, decorative glyphs inside this footprint.
+      c.fillStyle='#c68d5f';rect(c,-W*.43,-H*.45,W*.86,H*.88,5);c.fill();
+      c.strokeStyle='#744931';c.lineWidth=2;c.stroke();
+      for(let i=-2;i<=2;i++){const y=i*H*.16;c.strokeStyle='#294a83';c.lineWidth=2;
+        ln(c,[-W*.18,y-3,0,y+3,W*.17,y-3]);}
+      c.fillStyle='#d9b878';rect(c,-W*.46,-H*.42,W*.92,9,3);c.fill();
+    }else if(o.kind==='choir'){
       c.strokeStyle='#e9d4a3';c.fillStyle='#fff4d3';c.lineWidth=4;
       for(let k=-2;k<=2;k++){
         c.beginPath();c.arc(k*20,0,17,Math.PI,TAU);c.stroke();
@@ -352,6 +364,10 @@ const DynamicObstacles = (() => {
         ctx.fillStyle='#5a2434';ctx.beginPath();ctx.ellipse(p.x,contactY,37,4,0,0,TAU);ctx.fill();
         ctx.strokeStyle='#ff9d52';ctx.lineWidth=2;ln(ctx,[p.x-25,contactY-1,p.x,contactY-2,p.x+25,contactY-1]);
         ctx.restore();
+      }
+      if(o.kind==='obelisk'){
+        ctx.fillStyle='#946242';rect(ctx,o.x-50,groundY-5,100,12,4);ctx.fill();ctx.strokeStyle=T.a;ctx.lineWidth=3;ctx.stroke();
+        ctx.strokeStyle='#806049';for(const dx of [-24,24])ln(ctx,[o.x+dx,groundY-7,o.x+dx,p.y+36]);
       }
       if(o.kind==='choir'||o.kind==='flowergate'||o.kind==='icefang'){
         // Visual track shows where a retracting obstacle comes out of the floor.

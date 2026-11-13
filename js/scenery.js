@@ -401,9 +401,9 @@ const Scenery = (() => {
   // ---------- pista -------------------------------------------------------------------------
   function setTrack(zones, fx, world = 'classic', worldSegment = null) {
     Z.length = 0; finishX = fx;
-    const validWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(world) ? world : 'classic';
+    const validWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'].includes(world) ? world : 'classic';
     // I tre nuovi mondi sono set-piece locali: il resto della pista resta nel mondo classico.
-    S.segment = worldSegment && ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(worldSegment.world)
+    S.segment = worldSegment && ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'].includes(worldSegment.world)
       ? { world: worldSegment.world, start: worldSegment.start, end: worldSegment.end, length: worldSegment.length }
       : null;
     S.segmentBlend = 0; S.segmentActive = false;
@@ -2152,7 +2152,8 @@ const Scenery = (() => {
     else if (world === 'enchanted') { S.e = 0.22; S.warm = 0.02; S.night = 0.48; S.day = 0.12; S.starA = 0.22; }
     else { S.e = 0.12; S.warm = 0; S.night = 0.72; S.day = 0.04; S.starA = 0.12; }
     ctx.save(); ctx.globalAlpha *= S.segmentBlend;
-    if ((world === 'paradise' || world === 'inferno') && !(WORLD_ART[world] && WORLD_ART[world].complete && WORLD_ART[world].naturalWidth)) {
+    if (world === 'egypt') EgyptWorld.drawBackdrop(ctx,S);
+    else if ((world === 'paradise' || world === 'inferno') && !(WORLD_ART[world] && WORLD_ART[world].complete && WORLD_ART[world].naturalWidth)) {
       // Fallback originale senza rete, prima che termini il caricamento del PNG ottimizzato.
       drawDanteWorldBackdrop(ctx, world);
     } else drawDedicatedWorldBackdrop(ctx);

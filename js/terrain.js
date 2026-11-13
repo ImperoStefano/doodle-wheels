@@ -12,9 +12,9 @@
  */
 const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
-  let SEASON = null, PACE = "classica", WORLD = 'classic', WORLD_SEGMENT = null, ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], INFERNO_ISLANDS = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [], HALO_RINGS = [], ASH_GUSTS = [], TIDAL_CURRENTS = [], ROOT_RIDGES = [], NEON_GATES = [], DYNAMIC_OBSTACLES = [], INTERACTIVE_OBSTACLES = [];
-  const WORLD_KEYS = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'];
-  const SEGMENT_WORLDS = ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon'];
+  let SEASON = null, PACE = "classica", WORLD = 'classic', WORLD_SEGMENT = null, ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], INFERNO_ISLANDS = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [], HALO_RINGS = [], ASH_GUSTS = [], TIDAL_CURRENTS = [], ROOT_RIDGES = [], NEON_GATES = [], EGYPT_MUMMIES = [], DYNAMIC_OBSTACLES = [], INTERACTIVE_OBSTACLES = [];
+  const WORLD_KEYS = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'];
+  const SEGMENT_WORLDS = ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'];
   const isSegmentWorld = world => SEGMENT_WORLDS.includes(world);
   const overlapsWorldSegment = z => !!(WORLD_SEGMENT && z.start < WORLD_SEGMENT.end && z.end > WORLD_SEGMENT.start);
   const zoneInsideWorldSegment = z => overlapsWorldSegment(z) && WORLD_SEGMENT && WORLD_SEGMENT.world === 'neon';
@@ -445,7 +445,8 @@ const Terrain = (() => {
           (sw === 'paradise' && z.key === 'hills') ||
           (sw === 'inferno' && z.key === 'hills') ||
           (sw === 'enchanted' && z.key === 'hills') ||
-          (sw === 'neon' && z.key === 'hills')
+          (sw === 'neon' && z.key === 'hills') ||
+          (sw === 'egypt' && z.key === 'hills')
         )) picks = [];
         const forbidden = WORLD_SEGMENT.world === 'paradise'
           ? ['ravine', 'gapland', 'pipe', 'mud', 'sand', 'boulders', 'logs', 'holes']
@@ -453,7 +454,8 @@ const Terrain = (() => {
           : WORLD_SEGMENT.world === 'neon'
           ? ['ravine', 'gapland', 'pipe', 'arch', 'stairs', 'boulders', 'sand', 'mud', 'holes', 'logs', 'rack']
           : WORLD_SEGMENT.world === 'enchanted' ? ['ravine', 'gapland', 'pipe', 'sand']
-          : WORLD_SEGMENT.world === 'atlantis' ? ['ravine', 'gapland', 'pipe', 'sand', 'mud'] : [];
+          : WORLD_SEGMENT.world === 'atlantis' ? ['ravine', 'gapland', 'pipe', 'sand', 'mud']
+          : WORLD_SEGMENT.world === 'egypt' ? ['ravine','gapland','pipe','rack','icefang','logs'] : [];
         picks = picks.filter(k => !forbidden.includes(typeof k === 'string' ? k : k.kind));
       }
       picks.forEach(kind => {
@@ -655,7 +657,7 @@ const Terrain = (() => {
     const wd = WORLD_SEGMENT ? WORLD_SEGMENT.world : WORLD;
     const rand = mulberry32(hashStr(keys.join('|') + '#physical-v21-' + wd));
     const events = [].concat(UPDRAFTS, GEYSERS, CLOUD_PADS, BUBBLE_VENTS, NEON_BOOSTS,
-      HALO_RINGS, ASH_GUSTS, TIDAL_CURRENTS, ROOT_RIDGES, NEON_GATES);
+      HALO_RINGS, ASH_GUSTS, TIDAL_CURRENTS, ROOT_RIDGES, NEON_GATES, EGYPT_MUMMIES);
     const fractions = [0.31, 0.69, 0.49, 0.19, 0.83, 0.40, 0.59];
     for (const z of ZONES) {
       if (z.key === 'start' || z.key === 'finish') continue;
@@ -674,7 +676,8 @@ const Terrain = (() => {
         inferno:['meteor','hammer','ashdrum','piston'],
         atlantis:['shell','jelly','waterwheel','bigroller'],
         enchanted:['log','branch','flowergate','bigroller'],
-        neon:['piston','gate','lift','magbar']
+        neon:['piston','gate','lift','magbar'],
+        egypt:['obelisk','hayroll','piston']
       };
       const classicVariants={
         hills:['roller','log','hayroll','bigroller'],
@@ -705,6 +708,8 @@ const Terrain = (() => {
         if (Math.max(h0,h1,hc,h2,h3)-Math.min(h0,h1,hc,h2,h3) > (special ? 62 : 52)) continue;
         if (Math.abs(h2-h1)>29) continue;
         if (events.some(e => e.x !== undefined && Math.abs(e.x - x) < (special ? 180 : 235))) continue;
+        if (EGYPT_MUMMIES.some(e => Math.abs(e.x-x)<350)) continue;
+        if (special && wd==='egypt' && INTERACTIVE_OBSTACLES.some(e=>Math.abs(e.x-x)<390)) continue;
         if (DYNAMIC_OBSTACLES.some(e => Math.abs(e.x - x) < (special ? 465 : 520))) continue;
         // PENDOLI: lunghezza 110 e oscillazione fino a 50px, con spazio libero ai lati.
         if (Math.abs(height(x + radius) - height(x - radius)) > 39) continue;
@@ -723,7 +728,7 @@ const Terrain = (() => {
     INTERACTIVE_OBSTACLES=[];
     const rng=mulberry32(hashStr(keys.join('|')+'#interactive-v22-'+(WORLD_SEGMENT?WORLD_SEGMENT.world:WORLD)));
     const events=[...UPDRAFTS,...GEYSERS,...CLOUD_PADS,...BUBBLE_VENTS,...NEON_BOOSTS,
-      ...HALO_RINGS,...ASH_GUSTS,...TIDAL_CURRENTS,...ROOT_RIDGES,...NEON_GATES];
+      ...HALO_RINGS,...ASH_GUSTS,...TIDAL_CURRENTS,...ROOT_RIDGES,...NEON_GATES,...EGYPT_MUMMIES];
     let specials=0;
     const candidates=[];
     for(const z of ZONES) {
@@ -745,7 +750,8 @@ const Terrain = (() => {
         inferno:['shard','tilt','boulder','spring'],
         atlantis:['clam','spring','tilt','boulder'],
         enchanted:['bud','spring','boulder','tilt'],
-        neon:['servo','spring','tilt','boulder']
+        neon:['servo','spring','tilt','boulder'],
+        egypt:['boulder','spring','tilt']
       };
       const classic={water:['clam','tilt','spring'],ice:['boulder','spring','shard'],
         ramps:['spring','tilt','servo'],gravel:['boulder','shard','spring'],
@@ -755,7 +761,9 @@ const Terrain = (() => {
       const choices=pool.filter(k=>!recent.includes(k));
       const usable=choices.length?choices:pool.filter(k=>k!==recent.at(-1));
       const kinds=usable.length?usable:pool;
-      const kind=kinds[Math.floor(rng()*kinds.length)];
+      // Il set-piece egizio garantisce una sfera scarabeo e una lastra sacra,
+      // evitando che il sorteggio li sostituisca con decorazioni generiche.
+      const kind=world==='egypt' && special ? (specials===0?'boulder':specials===1?'spring':'tilt') : kinds[Math.floor(rng()*kinds.length)];
       let selected=null;
       for(const f of (world==='atlantis'?[0.15,0.85,0.17,0.82,0.23,0.77]:[0.46,0.28,0.70,0.56,0.78,0.20,0.15,0.85])){
         const x=Math.round(z.start+z.len*f);
@@ -765,6 +773,7 @@ const Terrain = (() => {
         if((z.patches||[]).some(p=>x>p.a-(kind==='tilt'?375:260)&&x<p.b+(kind==='tilt'?375:260)))continue;
         if(BRIDGES.some(b=>x>b.start-(kind==='tilt'?375:kind==='spring'?270:special?190:250)&&x<b.end+(kind==='tilt'?375:kind==='spring'?270:special?190:250)))continue;
         if(events.some(e=>e.x!==undefined&&Math.abs(e.x-x)<(kind==='tilt'?395:kind==='spring'?315:world==='atlantis'?150:special?170:205)))continue;
+        if(EGYPT_MUMMIES.some(e=>Math.abs(e.x-x)<350))continue;
         if(DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-x)<(kind==='tilt'?460:kind==='spring'?390:world==='atlantis'?235:special?265:330)))continue;
         if(INTERACTIVE_OBSTACLES.some(o=>Math.abs(o.x-x)<(special?610:720)))continue;
         const extent=kind==='tilt'?290:kind==='spring'?210:170;
@@ -783,7 +792,7 @@ const Terrain = (() => {
     // the normal placement search found nothing; in-game it looked suspended.
     if (WORLD_SEGMENT && specials === 0) {
       const world=WORLD_SEGMENT.world;
-      const kind=({inferno:'shard',paradise:'spring',atlantis:'clam',enchanted:'bud',neon:'servo'})[world]||'tilt';
+      const kind=({inferno:'shard',paradise:'spring',atlantis:'clam',enchanted:'bud',neon:'servo',egypt:'spring'})[world]||'tilt';
       const searchZones=ZONES.filter(z=>z.key!=='start'&&z.key!=='finish'&&z.end>WORLD_SEGMENT.start&&z.start<WORLD_SEGMENT.end);
       fallback: for(const zone of searchZones){
         for(const f of [0.50,0.27,0.73,0.39,0.61]){
@@ -793,6 +802,7 @@ const Terrain = (() => {
           if((zone.patches||[]).some(p=>x>p.a-290&&x<p.b+290))continue;
           if(BRIDGES.some(b=>x>b.start-290&&x<b.end+290))continue;
           if(events.some(e=>e.x!==undefined&&Math.abs(e.x-x)<270))continue;
+          if(EGYPT_MUMMIES.some(e=>Math.abs(e.x-x)<350))continue;
           if(DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-x)<390))continue;
           if(INTERACTIVE_OBSTACLES.some(o=>Math.abs(o.x-x)<610))continue;
           const extent=kind==='spring'?210:170;
@@ -825,7 +835,8 @@ const Terrain = (() => {
       const sr = mulberry32(hashStr(rawKeys.join(',') + '#setpiece-' + selectedWorld));
       const maxOffset = Math.max(1, keys.length - 4);
       segmentOffset = 1 + Math.floor(sr() * maxOffset); // indice nell'array dei biomi (zona reale = indice + 1)
-      const motif = selectedWorld === 'atlantis' ? ['water', 'water', 'hills']
+      const motif = selectedWorld === 'egypt' ? ['hills', 'ramps', 'gravel']
+        : selectedWorld === 'atlantis' ? ['water', 'water', 'hills']
         : selectedWorld === 'enchanted' ? ['hills', 'ramps', 'hills']
         : selectedWorld === 'neon' ? ['ramps', 'hills', 'ramps']
         : selectedWorld === 'paradise' ? ['hills', 'ramps', 'water']
@@ -867,11 +878,81 @@ const Terrain = (() => {
     if (!(force && force.nogap)) planGaps(rnd, !!(force && force.crazy));
     planPatches(rnd, force);
     planWorldEvents(keys);
-    planDynamicObstacles(keys);
-    planInteractiveObstacles(keys);
+    // La maledizione e le due firme del bioma hanno la precedenza. Gli ostacoli
+    // dinamici vengono posizionati dopo, così non rendono introvabile la lastra.
+    if (selectedWorld === 'egypt') {
+      DYNAMIC_OBSTACLES = []; INTERACTIVE_OBSTACLES = [];
+      planEgyptMummies(keys);
+      planInteractiveObstacles(keys);
+      ensureEgyptSignature();
+      planDynamicObstacles(keys);
+    } else {
+      EGYPT_MUMMIES = [];
+      planDynamicObstacles(keys);
+      planInteractiveObstacles(keys);
+    }
     PORTALS = []; if (force && force.crazy) planPortals(keys, force.np);
     FLOWERS = generateFlowers(rnd).filter(f => !DYNAMIC_OBSTACLES.some(o => Math.abs(o.x - f.x) < 180) && !INTERACTIVE_OBSTACLES.some(o => Math.abs(o.x - f.x) < 175));
     LILIES = generateLilies();
+  }
+
+  // Il caso casuale deve SEMPRE tentare la firma del mondo: una massa reale
+  // scarabeo + una lastra reattiva. Gli stessi controlli anti-incastro usati
+  // dal generatore normale si applicano qui; niente 'spawn' sui bordi ripidi.
+  function ensureEgyptSignature(){
+    const seg=WORLD_SEGMENT;if(!seg||seg.world!=='egypt')return;
+    const len=seg.end-seg.start;
+    for(const [kind,part] of [['boulder',.25],['spring',.58]]){
+      if(INTERACTIVE_OBSTACLES.some(o=>o.biome==='egypt'&&o.kind===kind))continue;
+      let found=null;
+      // Campionamento fitto: non saltare l'unica sezione piana disponibile
+      // solo perché non coincide con gli offset fissi del vecchio generatore.
+      const target=seg.start+part*len;
+      const xs=[];
+      for(let x=seg.start+340;x<seg.end-340;x+=55)xs.push(x);
+      xs.sort((a,b)=>Math.abs(a-target)-Math.abs(b-target));
+      for(const x of xs){
+        if(x<seg.start+300||x>seg.end-340||x<1500||x>FINISH_X-750)continue;
+        const z=ZONES.find(q=>x>=q.start&&x<q.end);
+        if(!z||z.gap&&x>z.gap.g0-330&&x<z.gap.g1+330)continue;
+        if((z.patches||[]).some(p=>x>p.a-285&&x<p.b+285))continue;
+        if(BRIDGES.some(b=>x>b.start-300&&x<b.end+300))continue;
+        if(DYNAMIC_OBSTACLES.some(o=>Math.abs(o.x-x)<340))continue;
+        if(INTERACTIVE_OBSTACLES.some(o=>Math.abs(o.x-x)<460))continue;
+        if(EGYPT_MUMMIES.some(o=>Math.abs(o.x-x)<330))continue;
+        const hh=[-150,-75,0,75,150].map(dx=>height(x+dx));
+        if(Math.max(...hh)-Math.min(...hh)>38)continue;
+        found=x;break;
+      }
+      if(found!==null)INTERACTIVE_OBSTACLES.push({id:INTERACTIVE_OBSTACLES.length,x:found,kind,biome:'egypt',zone:zoneAt(found).key});
+    }
+  }
+
+  // Mummie: ostacoli esclusivi dell'Antico Egitto, ancorati al suolo e mai
+  // sovrapposti a corpi fisici, ponti, bordi di rampe o altri ostacoli.
+  // Il posizionamento dipende SOLO da layout + WORLD_SEGMENT: host e client coincidono.
+  function planEgyptMummies(keys) {
+    EGYPT_MUMMIES = [];
+    if (!WORLD_SEGMENT || WORLD_SEGMENT.world !== 'egypt') return;
+    const seg = WORLD_SEGMENT, len = seg.end - seg.start;
+    for (const [i, f] of [0.47].entries()) {
+      let chosen = null;
+      for (const off of [0, 175, -175, 350, -350, 525, -525, 720, -720, 950, -950, 1200, -1200, 1450, -1450, 1720, -1720]) {
+        const x = Math.round(seg.start + len * f + off);
+        if (x < seg.start + 300 || x > seg.end - 300) continue;
+        const z = ZONES.find(z => x >= z.start && x < z.end);
+        if (!z || z.gap && x > z.gap.g0 - 280 && x < z.gap.g1 + 280) continue;
+        if (BRIDGES.some(b => x > b.start-280 && x < b.end+280)) continue;
+        if ((z.patches||[]).some(a => x > a.a-245 && x < a.b+245)) continue;
+        // Pianificate PRIMA degli oggetti fisici (che riservano spazio alle mummie).
+        if (EGYPT_MUMMIES.some(a=>Math.abs(a.x-x)<900)) continue;
+        const hh = [-150,-75,0,75,150].map(d=>height(x+d));
+        if (Math.max(...hh)-Math.min(...hh)>32) continue;
+        if (Math.abs(height(x+30)-height(x-30))>8) continue;
+        chosen=x;break;
+      }
+      if (chosen!==null) EGYPT_MUMMIES.push({ id:i, x:chosen, period:3.9+i*.4, phase:0.4+i*1.1 });
+    }
   }
 
   // Ogni zona acqua ha una "buca" (il bacino); alcune hanno invece un VERO vuoto sotto un ponte:
@@ -1125,7 +1206,7 @@ const Terrain = (() => {
 
   return {
     generateRandomLayout, applyLayout, plainAt, SEASONS, seasonOf, PACES, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
-    get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get DYNAMIC_OBSTACLES() { return DYNAMIC_OBSTACLES; }, get INTERACTIVE_OBSTACLES() { return INTERACTIVE_OBSTACLES; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; }, get HALO_RINGS() { return HALO_RINGS; }, get ASH_GUSTS() { return ASH_GUSTS; }, get TIDAL_CURRENTS() { return TIDAL_CURRENTS; }, get ROOT_RIDGES() { return ROOT_RIDGES; }, get NEON_GATES() { return NEON_GATES; },
+    get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get DYNAMIC_OBSTACLES() { return DYNAMIC_OBSTACLES; }, get INTERACTIVE_OBSTACLES() { return INTERACTIVE_OBSTACLES; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; }, get HALO_RINGS() { return HALO_RINGS; }, get ASH_GUSTS() { return ASH_GUSTS; }, get TIDAL_CURRENTS() { return TIDAL_CURRENTS; }, get ROOT_RIDGES() { return ROOT_RIDGES; }, get NEON_GATES() { return NEON_GATES; }, get EGYPT_MUMMIES() { return EGYPT_MUMMIES; },
     frictionAt: x => { const f = FRICTION[zoneAt(x).key] || 0.9; return f < 0.9 && onRamp(x) ? 0.9 : f; },   // il piano della rampa tiene sempre (anche nel ghiaccio)
     colorAt: x => zoneAt(x).color || '#059669',
     zoneKeyAt: x => zoneAt(x).key,

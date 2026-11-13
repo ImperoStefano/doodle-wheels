@@ -263,8 +263,8 @@
   els.lenHint.textContent = I18n.t('len.hint.' + trackLen);
   // I mondi speciali sono eventi a comparsa frequente ma non garantita: il sorteggio avviene una volta per ogni nuova pista,
   // soltanto sull'host. La scelta viene poi inviata con allReady, così tutti vedono lo stesso mondo.
-  // Il replay conserva invece la pista e il mondo appena giocati. Le probabilità sommano al 50%: il Classico resta presente nel 50% delle nuove gare.
-  const WORLD_CHANCES = { paradise: 0.10, inferno: 0.10, atlantis: 0.10, enchanted: 0.10, neon: 0.10 };
+  // Il replay conserva invece la pista e il mondo appena giocati. Le probabilità dei sei mondi sommano al 60%: il Classico resta presente nel 40% delle nuove gare.
+  const WORLD_CHANCES = { paradise: 0.10, inferno: 0.10, atlantis: 0.10, enchanted: 0.10, neon: 0.10, egypt: 0.10 };
   function drawWorld() {
     // Modalità collaudo facoltativa (solo per l'host): ?testWorld=atlantis.
     // Nelle partite normali si applicano le probabilità configurate in WORLD_CHANCES.
@@ -583,7 +583,7 @@
     }
     if (!Array.isArray(d.layout) || !d.layout.length || !d.wheels) return;
     wheels = d.wheels; currentLayout = d.layout; crazy = !!d.crazy;
-    currentWorld = ['classic','paradise','inferno','atlantis','enchanted','neon'].includes(d.world) ? d.world : 'classic';
+    currentWorld = ['classic','paradise','inferno','atlantis','enchanted','neon','egypt'].includes(d.world) ? d.world : 'classic';
     const opts = { world: currentWorld };
     if (crazy) { opts.crazy = true; opts.np = d.np || Object.keys(Net.players).length; }
     if (d.season && !crazy) opts.season = d.season;
@@ -616,7 +616,7 @@
     }
     if (data.type === 'goToDraw') { champ = data.champ || null; enterDrawPhase(); }
     if (data.type === 'wheel' && Net.isHost && Net.players[from] && validWheelVertices(data.vertices)) receiveWheel(from, data.vertices);
-    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentRaceStart = data.startTime; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
+    if (data.type === 'allReady') { wheels = data.wheels || wheels; currentRaceStart = data.startTime; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
     if (data.type === 'snap') { if (!Net.isHost) { InteractiveObstacles.receive(data.io); if (data.obs) DynamicObstacles.setRemoteStates(data.obs); } if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); if (!Net.isHost && Number.isFinite(data.ht) && Number.isFinite(data.ts) && snapOff !== null) { const origin = data.ts + snapOff - data.ht; hazardHostOrigin = hazardHostOrigin === null ? origin : hazardHostOrigin * 0.94 + origin * 0.06; } }
     if (data.type === 'results') showResults(data.standings, data.champ);
     if (data.type === 'lastCall') showLastCall(data.ms);
@@ -877,7 +877,7 @@
           for (const id in b.m) {
             const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
-            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc, cu: rb.cu||0,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
           }
           return;
@@ -891,7 +891,7 @@
       if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }   // portale (teletrasporto) o nuovo arrivato o salto (rimessa in pista): niente scivolata
       latestRacers[id] = {
         id, finished: rb.finished, finishTime: rb.finishTime,
-        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc, cu: rb.cu||0,
         fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
         rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
       };
@@ -1133,7 +1133,8 @@
     inferno: { band: '#e85d56', wash: '#f5a498' },    // inferno: ember + hot coral
     atlantis: { band: '#2d9eae', wash: '#cdfff0' },   // Atlantis: deep turquoise
     enchanted: { band: '#8dbb83', wash: '#ecffd0' },  // forest: luminous foliage
-    neon: { band: '#46f5ee', wash: '#8ffcff' }        // neon: electric cyan
+    neon: { band: '#46f5ee', wash: '#8ffcff' },       // neon: electric cyan
+    egypt: { band: '#bf784d', wash: '#efd09a' }       // Egypt: warm terracotta/sand, not lapis-blue
   };
   const FT_FLOWERS = ['#fb5f35', '#f5e594', '#e3937a', '#ecbd6f', '#f8f4dc'];
   // Tooltip della pista finale: zona sotto il puntatore (mouse o dito), pastiglia evidenziata e nome con il colore della zona
@@ -1635,6 +1636,7 @@
     Scenery.drawGround(ctx2d, surfBuf, n, SURF_STEP);
     Scenery.drawWorldEffects(ctx2d, camX, w, groundY, Math.max(0, t0 - raceT0));
     WorldFX.drawGround(ctx2d, camX, w, groundY, t0);
+    if (Terrain.WORLD_SEGMENT && Terrain.WORLD_SEGMENT.world==='egypt') EgyptWorld.drawGround(ctx2d,camX,w,groundY);
 
     Props.drawPatches(ctx2d, camX, w, groundY, SC);
     Props.drawRamps(ctx2d, camX, w, groundY);
@@ -1647,6 +1649,7 @@
     const obstacleElapsed = Net.isHost ? Sim.getObstacleTime() :
       Math.max(0, hazardHostOrigin === null ? t0 - raceT0 : t0 - hazardHostOrigin - interpClientMs);
     DynamicObstacles.draw(ctx2d, camX, w, groundY, obstacleElapsed);
+    if (Terrain.WORLD_SEGMENT && Terrain.WORLD_SEGMENT.world==='egypt') EgyptWorld.drawHazards(ctx2d,camX,w,groundY,obstacleElapsed);
     // Pass already synchronized bike poses for a subtle, local anticipation cue.
     // This is drawing-only; clients do not alter obstacles or collision bodies.
     InteractiveObstacles.draw(ctx2d, camX, w, groundY, !Net.isHost, undefined, undefined, Object.values(latestRacers));
@@ -1696,7 +1699,7 @@
       if (bigB) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(gs, gs); ctx2d.translate(-cx, -cy(r.y)); }
       if (bigB) ctx2d.restore();
       const hR = wheelHeat(id, 'r', r.rwX, r.rwY), hF = wheelHeat(id, 'f', r.fwX, r.fwY);
-      drawWheel(r.rwX - camX, cy(r.rwY), r.rwAngle, meta.vr || meta.vertices, meta.color, id === Net.myId, hR, meta.vr ? meta.mr : null, id, r.sc);
+      drawWheel(r.rwX - camX, cy(r.rwY), r.rwAngle, meta.vr || meta.vertices, meta.color, id === Net.myId, hR, meta.vr ? meta.mr : null, id, r.sc, r.cu||0);
       drawWheel(r.fwX - camX, cy(r.fwY), r.fwAngle, meta.vf || meta.vertices, meta.color, id === Net.myId, hF, meta.vf ? meta.mf : null, id, r.sc);
       lavaDrips(id, r, meta, hR, hF);
       if (bigB) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(gs, gs); ctx2d.translate(-cx, -cy(r.y)); }
@@ -1835,7 +1838,8 @@
     for (let i = 0; i < n; i++) { const p = v[i], q = v[(i + 1) % n]; ctx2d.quadraticCurveTo(p.x, p.y, (p.x + q.x) / 2, (p.y + q.y) / 2); }
     ctx2d.closePath();
   }
-  function drawWheel(x, y, a, v, c, isMe, heat, mArr, id, sc) {
+  function drawWheel(x, y, a, v, c, isMe, heat, mArr, id, sc, curse = 0) {
+    if(curse>0) v=EgyptWorld.morph(v,curse);
     ctx2d.save(); ctx2d.translate(x, y); ctx2d.rotate(a);
     if (sc && sc !== 1) ctx2d.scale(sc, sc);   // portale gigante: stessa forma, più grande (i tratti restano della stessa grossezza)
     const ls = sc && sc !== 1 ? 1 / sc : 1, dark = `rgb(${mixRgb(hexRgb(c), 0.7)})`, melted = !!mArr;
@@ -1868,6 +1872,7 @@
       }
       ctx2d.restore();
     }
+    if(curse>0) EgyptWorld.drawBandages(ctx2d,v,curse);
     // 5) mozzo: disco crema con un punto d'ardesia
     ctx2d.beginPath(); ctx2d.arc(0, 0, 10, 0, TAU2); ctx2d.fillStyle = CREAM; ctx2d.fill(); ctx2d.beginPath(); ctx2d.arc(0, 0, 4.6, 0, TAU2); ctx2d.fillStyle = SLATE; ctx2d.fill(); ctx2d.restore();
   }
