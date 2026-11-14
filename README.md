@@ -2,7 +2,7 @@
 
 **Multiplayer 2D browser game** — disegna le ruote della tua bici, affronta rampe e ostacoli, gareggia con gli amici attraverso mondi diversi.
 
-Questa è la versione **Doodle Wheels V36 — Forward Flight**. Mantiene il nome **Doodle Wheels**, la grafica egiziana approvata, le funzioni multiplayer e le probabilità dei biomi (Classico 35%, Egitto 15%, altri speciali 10% ciascuno). Migliora il rapporto fra slancio in avanti e altezza dei salti, l’interazione tra rampa e Salto, il recupero dalle voragini e la fusione delle ruote triangolari nel Vulcano. La gara non viene rallentata.
+Questa è la versione **Doodle Wheels V37 — Atlantis & Screen Recovery**. Mantiene il nome **Doodle Wheels**, la grafica egiziana approvata, le funzioni multiplayer e le probabilità dei biomi (Classico 35%, Egitto 15%, altri speciali 10% ciascuno). Migliora il rapporto fra slancio in avanti e altezza dei salti, l’interazione tra rampa e Salto, il recupero dalle voragini e la fusione delle ruote triangolari nel Vulcano. La gara non viene rallentata.
 
 ## Avvio e pubblicazione
 
@@ -26,6 +26,16 @@ Il codice non è distribuito con una licenza open source. La possibilità di gio
 > **Attenzione:** in un gioco HTML/JavaScript, il browser deve ricevere i file necessari al funzionamento. Un avviso di copyright protegge giuridicamente i materiali originali ma non rende il codice invisibile né impedisce tecnicamente la copia.
 
 Per segnalazioni di sicurezza, vedere [SECURITY.md](SECURITY.md).
+
+## V37 — Correzioni Atlante e schermo bianco
+
+- **Riepilogo di fine gara:** i segmenti speciali (in particolare Atlantide) sostituiscono i colori delle zone classiche soltanto **sotto il profilo del terreno**. Non viene più disegnato un rettangolo semitrasparente nel cielo e non rimangono alberi, fiori o ponti appartenenti alle colline nello stesso tratto speciale.
+- **Barra dei biomi:** le pastiglie delle zone normali sono interrotte sotto la pastiglia del mondo speciale, evitando sovrapposizioni e piccoli frammenti di colore.
+- **Canvas della gara:** in caso di eccezione ripetuta non viene più chiamato `CanvasRenderingContext2D.reset()`, che poteva cancellare l'immagine e lasciare lo schermo vuoto. Viene conservato il fotogramma esistente e, dopo tre errori consecutivi, appare un pannello di recupero.
+- **Avvio più trasparente:** se i componenti JavaScript esterni (PeerJS o Matter.js) non si caricano, compare una schermata con il pulsante per ricaricare, invece di lasciare l'utente senza indicazioni. Sono stati aggiornati gli identificativi di cache dei file del gioco per evitare versioni miste dopo la pubblicazione.
+- **Nessun cambio a fisica, salti, mondi o multiplayer.** L'eventuale recupero riavvia la pagina (non rallenta la simulazione di gara).
+
+**Verifica:** sintassi e regressioni Node, prova browser reale del disegno finale con un tracciato Atlantide e prova separata del pannello di avvio (sia errore sia avvio valido). L'errore specifico della schermata bianca segnalato su un dispositivo reale non è stato riprodotto end-to-end; per verificare se sia completamente eliminato serve una nuova prova dalla pagina pubblicata.
 
 ## V36 — salti con vero avanzamento orizzontale
 

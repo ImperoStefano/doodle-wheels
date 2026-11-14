@@ -205,4 +205,23 @@ const ctx2={};vm.createContext(ctx2);vm.runInContext(fs.readFileSync(root+'/js/c
  }
  applied++;
 }
-console.log('OK '+applied+' regression tests: forward takeoffs, late tap, reverse jump, ramp timing, landings, short/partial launches, all lip kinds, linen, asset integrity');
+// V37 visual boundary and blank-screen safeguards: the summary renderer must
+// clip the entire world skin to the terrain, not paint a rectangle into the sky.
+{
+ const game=fs.readFileSync(root+'/js/game.js','utf8');
+ const html=fs.readFileSync(root+'/index.html','utf8');
+ const boot=fs.readFileSync(root+'/js/boot-guard.js','utf8');
+ assert(game.includes('const isSpecialX = x => !!(spTrace'), 'special biome predicate missing');
+ assert(game.includes('s.closePath(); s.clip();'), 'terrain profile clipping removed');
+ assert(game.includes('if (isSpecialX(tx)) continue'), 'classic props still overlap special biome');
+ assert(game.includes('if (f.x < x0 || f.x > x1 || isSpecialX(f.x)) return'), 'flowers overlap special biome');
+ assert(game.includes('const spans = spTrace && a < sw.end && b > sw.start'), 'biome-strip overlap');
+ assert(!game.includes('s.fillRect(spTrace.a, 15, spTrace.b - spTrace.a, gB - 15)'), 'legacy rectangular sky wash');
+ assert(!game.includes('ctx2d && ctx2d.reset'), 'white-frame clear on draw error');
+ assert(game.includes('drawErrorStreak >= 3'), 'race recovery threshold removed');
+ assert(html.includes('id="render-failure"') && html.includes('id="boot-failure"'), 'recovery UI missing');
+ assert(html.includes('js/boot-guard.js?v=20261114-v37-recovery'), 'boot guard not loaded');
+ assert(boot.includes('window.__dwBootReady'), 'boot watchdog removed');
+ applied++;
+}
+console.log('OK '+applied+' regression tests: ramps, jumps, landings, assets, special-world summary, white-screen recovery');

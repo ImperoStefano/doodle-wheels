@@ -317,7 +317,7 @@ const Terrain = (() => {
     const S = 2 * 80 * Math.sin(Math.PI / n);
     const ac = S / (2 * Math.log(1 / Math.tan(Math.PI / (2 * n))));
     const k = Math.ceil(880 / S) + (rnd ? Math.floor(rnd() * 2) : 0);
-    return { kind: 'arch', n, S, ac, c: 1 / Math.sin(Math.PI / n), f: f == null ? 1.2 : f, len: k * S };
+    return { kind: 'arch', n, S, ac, c: 1 / Math.sin(Math.PI / n), f: f == null ? 1.0 : f, len: k * S };
   }
   // costruttori dei tipi di patch (lunghezza e parametri); il centro lo sceglie planPatches
   function mkKicker(tier, rnd) {
@@ -328,15 +328,15 @@ const Terrain = (() => {
   function makePatch(kind, rnd) {
     switch (kind) {
       case 'arch': return archSpec(3 + Math.floor(rnd() * 4), rnd);
-      case 'stairs': { const n = 3 + Math.floor(rnd() * 2), T = 150 + Math.round(rnd() * 15), rw = 30, h = 32 + Math.round(rnd() * 8), P = 150, D = 200; return { kind, len: n * T + rw + P + D, n, T, rw, h, P, D }; }
-      case 'holes': { const k = 3 + Math.floor(rnd() * 2), sp = 340, W = 140 + Math.round(rnd() * 15); return { kind, len: k * sp, k, sp, W, D: 48, e: 30 }; }
+      case 'stairs': { const n = 3 + Math.floor(rnd() * 2), T = 170 + Math.round(rnd() * 15), rw = 54, h = 30 + Math.round(rnd() * 8), P = 150, D = 200; return { kind, len: n * T + rw + P + D, n, T, rw, h, P, D }; }
+      case 'holes': { const k = 3 + Math.floor(rnd() * 2), sp = 340, W = 150 + Math.round(rnd() * 15); return { kind, len: k * sp, k, sp, W, D: 40, e: 68 }; }
       case 'ripples': { const lam = 100 + Math.round(rnd() * 20); return { kind, len: 8 * lam, lam, A: 17 }; }
-      case 'logs': { const k = 3 + Math.floor(rnd() * 2); return { kind, len: k * 320, k, sp: 320, w: 52, H: 34 }; }
+      case 'logs': { const k = 3 + Math.floor(rnd() * 2); return { kind, len: k * 320, k, sp: 320, w: 66, H: 34 }; }
       case 'rack': { const per = 64 + Math.round(rnd() * 12); return { kind, len: 14 * per, per, A: 15 }; }
       case 'sand': return { kind, len: 880 + Math.round(rnd() * 120) };
-      case 'boulders': { const k = 2 + Math.floor(rnd() * 2), sp = 270, rocks = []; for (let j = 0; j < k; j++) rocks.push({ c: Math.round((j + 0.5) * sp + (rnd() - 0.5) * 70), w: Math.round(72 + rnd() * 30), H: Math.round(28 + rnd() * 28) }); return { kind, len: k * sp, rocks }; }
-      case 'whoops': { const n = 4 + Math.floor(rnd() * 2), hs = []; let s = 40; for (let j = 0; j < n; j++) { const l = Math.round(150 + rnd() * 60), A = Math.round(28 + rnd() * 18); hs.push({ s, l, A }); s += l + Math.round(30 + rnd() * 30); } return { kind, len: s + 20, hs }; }
-      case 'ridges': { const k = 3 + Math.floor(rnd() * 2), sp = Math.round(210 + rnd() * 30), rocks = []; for (let j = 0; j < k; j++) rocks.push({ c: Math.round((j + 0.5) * sp), w: 46, H: Math.round(26 + rnd() * 10) }); return { kind, len: k * sp, rocks }; }
+      case 'boulders': { const k = 2 + Math.floor(rnd() * 2), sp = 270, rocks = []; for (let j = 0; j < k; j++) rocks.push({ c: Math.round((j + 0.5) * sp + (rnd() - 0.5) * 70), w: Math.round(92 + rnd() * 30), H: Math.round(26 + rnd() * 20) }); return { kind, len: k * sp, rocks }; }
+      case 'whoops': { const n = 4 + Math.floor(rnd() * 2), hs = []; let s = 40; for (let j = 0; j < n; j++) { const l = Math.round(190 + rnd() * 60), A = Math.round(24 + rnd() * 14); hs.push({ s, l, A }); s += l + Math.round(30 + rnd() * 30); } return { kind, len: s + 20, hs }; }
+      case 'ridges': { const k = 3 + Math.floor(rnd() * 2), sp = Math.round(210 + rnd() * 30), rocks = []; for (let j = 0; j < k; j++) rocks.push({ c: Math.round((j + 0.5) * sp), w: 62, H: Math.round(26 + rnd() * 10) }); return { kind, len: k * sp, rocks }; }
       case 'bowl': {   // avvallamento: valle dolce di profondità e lunghezza diverse (la pendenza massima resta ≈ 0,5: più è profonda, più è lunga)
         const D = 42 + Math.round(rnd() * rnd() * 100 + rnd() * 18), L = Math.round(Math.max(420, 6.1 * D) + rnd() * 110);
         return { kind, len: L + 160, s: 80, L, D };
@@ -370,12 +370,12 @@ const Terrain = (() => {
       }
       case 'gapland': {   // rampa, vuoto largo, parete, cresta e discesa: il volo deve arrivare sulla pendenza. Chi cade viene riportato sulla cresta
         const tier = 1, H = tier === 1 ? 60 + Math.round(rnd() * 24) : 100 + Math.round(rnd() * 30), rp = mkRamp(H, tier === 1 ? 29 : 32, tier === 1 ? 160 : 210);
-        const s = 70, u1 = Math.round(s + rp.run), ex = 56, pw = (tier === 1 ? 180 : 220) + Math.round(rnd() * 45), D = 105 + Math.round(rnd() * 45), Hl = Math.round(H * 0.45), rr = 165 + Math.round(rnd() * 30), u2 = u1 + ex + pw, u3 = u2 + rr + 60, dl = Math.round(Hl / Math.tan(18 * Math.PI / 180));
+        const s = 70, u1 = Math.round(s + rp.run), ex = 56, pw = (tier === 1 ? 180 : 220) + Math.round(rnd() * 45), D = 105 + Math.round(rnd() * 45), Hl = Math.round(H * 0.45), rr = Math.max(165 + Math.round(rnd() * 30), Math.round((D + Hl) * 1.95)), u2 = u1 + ex + pw, u3 = u2 + rr + 60, dl = Math.round(Hl / Math.tan(18 * Math.PI / 180));
         return Object.assign({ kind, len: u3 + dl + 130, D, pw, s, u1, ex, u2, rr, u3, dl, Hl, tier }, rp);
       }
       case 'ravine': {   // burrone vero: rampa di lancio ripida, vuoto profondo SENZA ponte, parete di arrivo ripida. Si scavalca saltando (rampa + salto/doppio salto); chi cade viene riportato sul bordo dopo un po'
         const H = 50 + Math.round(rnd() * 14), D = 110 + Math.round(rnd() * 115), pw = RAVINE_W + Math.round(rnd() * 45);
-        const rp = mkRamp(H, 26, 160), s = 70, u1 = Math.round(s + rp.run) + 10, ex = 55, u2 = u1 + ex + pw, rr = 165 + Math.round(rnd() * 45);
+        const rp = mkRamp(H, 26, 160), s = 70, u1 = Math.round(s + rp.run) + 10, ex = 55, u2 = u1 + ex + pw, rr = Math.max(165 + Math.round(rnd() * 45), Math.round(D * 1.95));   // pendenza di risalita ≤ ~38°
         return Object.assign({ kind, len: u2 + rr + 100, D, pw, s, u1, ex, u2, rr }, rp);
       }
       case 'drop': { const D = 40 + Math.round(rnd() * rnd() * 80 + rnd() * 14), s = 70, ex = 120, pl = 200 + Math.round(rnd() * 60), s2 = s + ex + pl, rr = Math.round(210 + D * 2.2); return { kind, len: s2 + rr + 70, D, s, ex, s2, rr }; }

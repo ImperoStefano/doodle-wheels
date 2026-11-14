@@ -1204,6 +1204,10 @@
     const sw = Terrain.WORLD_SEGMENT;
     const scfg = sw && FT_SPECIAL[sw.world];
     const spTrace = scfg && sw.end > x0 && sw.start < x1 ? { key:sw.world, a:X(Math.max(x0,sw.start)), b:X(Math.min(x1,sw.end)), col:scfg.band, wash:scfg.wash } : null;
+    // A special biome replaces the base-zone scenery in the results illustration.
+    // Keep its limits in world coordinates: this avoids drawing hills, trees or
+    // gravel decorations on top of Atlantis (and the other themed worlds).
+    const isSpecialX = x => !!(spTrace && x >= sw.start && x < sw.end);
     for (const id of ids) { const R = runs[id], lane = order.indexOf(id), dy = -lift - lane * laneGap; R.Y = R.H2.map(h => Yh(h) + dy); R.kk = R.F.map(q => GR.length ? gk(q[0]) : 0); }
     const winner = order[0];
 
@@ -1253,6 +1257,38 @@
       };
       pts.forEach(q => { if (q[1] < lv(q[0])) run.push(q); else flush(); }); flush();
     });
+    // V37 — render each special-world segment as actual terrain, not a transparent
+    // rectangle over regular hills. The clip follows the original terrain profile:
+    // no vertical sky seam, no inherited hill/gravel colors inside Atlantis.
+    if (spTrace && spTrace.b - spTrace.a > 3) {
+      const xa = Math.max(x0, sw.start), xb = Math.min(x1, sw.end);
+      const pal = {
+        atlantis: ['#54b9b4', '#18878e', '#0d6679'],
+        paradise: ['#f8e6a1', '#eac97a', '#c89f6a'],
+        inferno: ['#ef947b', '#d55b4e', '#9d483d'],
+        enchanted: ['#9ad4a2', '#5fa37a', '#387b63'],
+        neon: ['#70d5d5', '#319cbb', '#286e94'],
+        egypt: ['#eccf95', '#c99b6c', '#9d7453']
+      }[sw.world] || ['#9fd3c2', '#5bb5b0', '#027a71'];
+      s.save();
+      s.beginPath(); s.moveTo(X(xa), gB); s.lineTo(X(xa), Yh(hAt(xa)));
+      P.forEach(([x, h]) => { if (x > xa && x < xb) s.lineTo(X(x), Yh(h)); });
+      s.lineTo(X(xb), Yh(hAt(xb))); s.lineTo(X(xb), gB);
+      s.closePath(); s.clip();
+      const tint = s.createLinearGradient(0, 0, 0, gB);
+      tint.addColorStop(0, pal[0]); tint.addColorStop(0.65, pal[1]); tint.addColorStop(1, pal[2]);
+      s.fillStyle = tint; s.fillRect(spTrace.a, 0, spTrace.b - spTrace.a, gB);
+      // A few quiet horizontal insets add depth without exposing another biome.
+      s.strokeStyle = sw.world === 'atlantis' ? 'rgba(204,255,239,.24)' : 'rgba(255,247,214,.18)';
+      s.lineWidth = 1.3;
+      for (let i = 0; i < 4; i++) {
+        const y = gB - 19 - i * 19;
+        s.beginPath(); s.moveTo(spTrace.a + 8, y);
+        s.quadraticCurveTo((spTrace.a + spTrace.b) / 2, y - 3.6, spTrace.b - 8, y);
+        s.stroke();
+      }
+      s.restore();
+    }
     // filo chiaro sul bordo del terreno (come il labbro dei prati dell'illustrazione)
     s.strokeStyle = 'rgba(248,244,220,0.7)'; s.lineWidth = 2.2; edge(s, 0, 0); s.stroke();
     // gli "abitanti" di ogni bioma: forme piatte, rade
@@ -1260,7 +1296,8 @@
     zs.forEach(z => {
       const xa = Math.max(x0, z.start), xb = Math.min(x1, z.end);
       for (let cx = X(xa) + 6, i = 0; cx < X(xb) - 6; i++, cx += 12 + hsh(i, z.index + 1.3) * 18) {
-        const tx = TX(cx); if (z.gap && tx > z.gap.g0 - 25 && tx < z.gap.g1 + 25) continue;
+        const tx = TX(cx); if (isSpecialX(tx)) continue; // special theme owns this part of the illustration
+        if (z.gap && tx > z.gap.g0 - 25 && tx < z.gap.g1 + 25) continue;
         const y = Yh(hAt(tx)), r1 = hsh(i, z.index * 2.1 + 0.7), r2 = hsh(i, z.index * 3.7 + 1.9);
         if (z.key === 'hills' || z.key === 'start' || z.key === 'finish') {
           if (r1 < 0.34) tree(cx, y, 14 + r2 * 7, r2 > 0.5 ? TEAL : '#a3d4ad', r2 <= 0.5);
@@ -1279,14 +1316,15 @@
       }
     });
     // i fiori veri della pista, radi
-    { let lastFx = -99; (Terrain.FLOWERS || []).forEach(f => { if (f.x < x0 || f.x > x1) return; const cx = X(f.x); if (cx - lastFx < 9) return; lastFx = cx; const y = Yh(hAt(f.x)), col = FT_FLOWERS[f.hue % 5], h = 3 + Math.min(5, f.stemScale * 2.4);
+    { let lastFx = -99; (Terrain.FLOWERS || []).forEach(f => { if (f.x < x0 || f.x > x1 || isSpecialX(f.x)) return; const cx = X(f.x); if (cx - lastFx < 9) return; lastFx = cx; const y = Yh(hAt(f.x)), col = FT_FLOWERS[f.hue % 5], h = 3 + Math.min(5, f.stemScale * 2.4);
       s.strokeStyle = GRN; s.lineWidth = 1.1; s.beginPath(); s.moveTo(cx, y + 0.5); s.lineTo(cx, y - h); s.stroke();
       s.fillStyle = col; s.beginPath(); s.arc(cx, y - h, 2, 0, TAU); s.fill(); s.fillStyle = '#f5e594'; s.beginPath(); s.arc(cx, y - h, 0.8, 0, TAU); s.fill(); }); }
     // ninfee sul pelo dell'acqua
-    (Terrain.LILIES || []).forEach(l => { if (l.x < x0 || l.x > x1) return; const q = pAt(l.x), y = Yh(q[2] - 28), cx = X(l.x); if (q[1] >= q[2] - 28) return; s.fillStyle = MINT; s.beginPath(); s.ellipse(cx, y + 0.6, 3.4 * l.size, 1.4 * l.size, 0, 0, TAU); s.fill(); if (l.bloom) { s.fillStyle = '#e3937a'; s.beginPath(); s.arc(cx, y - 0.6, 1.3, 0, TAU); s.fill(); } });
+    (Terrain.LILIES || []).forEach(l => { if (l.x < x0 || l.x > x1 || isSpecialX(l.x)) return; const q = pAt(l.x), y = Yh(q[2] - 28), cx = X(l.x); if (q[1] >= q[2] - 28) return; s.fillStyle = MINT; s.beginPath(); s.ellipse(cx, y + 0.6, 3.4 * l.size, 1.4 * l.size, 0, 0, TAU); s.fill(); if (l.bloom) { s.fillStyle = '#e3937a'; s.beginPath(); s.arc(cx, y - 0.6, 1.3, 0, TAU); s.fill(); } });
     // ponti: impalcato marrone piatto con un filo crema sopra e i due pali
     (Terrain.BRIDGES || []).forEach(b => {
-      if (b.end < x0 || b.start > x1) return; const arch = Math.min(1, 6 / (Math.max(1, Math.abs(b.peak)) * sy)), pts = [];
+      if (b.end < x0 || b.start > x1 || (spTrace && b.start < sw.end && b.end > sw.start)) return;
+      const arch = Math.min(1, 6 / (Math.max(1, Math.abs(b.peak)) * sy)), pts = [];
       for (let x = Math.max(x0, b.start); x <= Math.min(x1, b.end); x += 8) { const q = pAt(x); pts.push([x, q[2] + (Terrain.height(x) - Terrain.baseHeight(x)) * arch]); }
       if (pts.length < 2) return; const dk = () => { s.beginPath(); pts.forEach(([x, h], i) => { if (i) s.lineTo(X(x), Yh(h)); else s.moveTo(X(x), Yh(h)); }); };
       s.strokeStyle = CRM; s.lineWidth = 6; dk(); s.stroke(); s.strokeStyle = BRN; s.lineWidth = 3.4; dk(); s.stroke();
@@ -1307,20 +1345,19 @@
       const bun = ['#fb5f35', '#f5e594', '#5bb5b0', '#78ba8e', '#e3937a', '#ecbd6f'], bx0 = fx, by0 = fy - fh + 1, bx1 = fx - 62, by1 = fy - 8;
       s.strokeStyle = 'rgba(45,62,72,0.55)'; s.lineWidth = 1; s.beginPath(); s.moveTo(bx0, by0); s.quadraticCurveTo((bx0 + bx1) / 2, Math.max(by0, by1) + 6, bx1, by1); s.stroke();
       for (let k = 1; k <= 6; k++) { const t = k / 7, px = (1 - t) * (1 - t) * bx0 + 2 * (1 - t) * t * ((bx0 + bx1) / 2) + t * t * bx1, py = (1 - t) * (1 - t) * by0 + 2 * (1 - t) * t * (Math.max(by0, by1) + 6) + t * t * by1; s.fillStyle = bun[k - 1]; s.beginPath(); s.moveTo(px - 3.4, py); s.lineTo(px + 3.4, py); s.lineTo(px, py + 7); s.closePath(); s.fill(); } }
-    // A subtle scene-tinted wash keeps the watercolor terrain and rider traces.
-    // There is no label or artificial purple rectangle across the special world.
-    if (spTrace && spTrace.b - spTrace.a > 3) {
-      s.save();
-      s.globalAlpha = 0.16; s.fillStyle = spTrace.wash;
-      s.fillRect(spTrace.a, 15, spTrace.b - spTrace.a, gB - 15);
-      s.restore();
-    }
     // fascia dei biomi: pastiglie piene senza scritte (nome al tocco/hover)
     const bY = gB + 7, bH = H - 5 - bY;
     s.font = `700 ${fz.toFixed(1)}px Kalam, cursive`; s.textAlign = 'center'; s.textBaseline = 'middle';
     zs.forEach(z => {
-      const xa = X(Math.max(x0, z.start)), xb = X(Math.min(x1, z.end)); if (xb - xa < 4) return;
-      rr(s, xa + 0.8, bY, xb - xa - 1.6, bH, bH / 2); s.fillStyle = FT_BAND[z.key] || '#94a3b8'; s.fill();
+      const a = Math.max(x0, z.start), b = Math.min(x1, z.end);
+      const spans = spTrace && a < sw.end && b > sw.start
+        ? [[a, Math.min(b, sw.start)], [Math.max(a, sw.end), b]] : [[a, b]];
+      spans.forEach(([left, right]) => {
+        if (right <= left) return;
+        const xa = X(left), xb = X(right); if (xb - xa < 4) return;
+        rr(s, xa + 0.8, bY, xb - xa - 1.6, bH, bH / 2);
+        s.fillStyle = FT_BAND[z.key] || '#94a3b8'; s.fill();
+      });
     });
     // Each special world is one solid, elegantly colored pill, exactly like all
     // the other biome pills. No "PARADISO"/"ATLANTIDE" painted inside the band.
@@ -1663,13 +1700,23 @@
 
   // Un errore di disegno in un singolo fotogramma non deve MAI fermare la gara: il ciclo si riprende da solo al fotogramma dopo
   // (prima, un'eccezione qui impediva di richiedere il fotogramma successivo e lo schermo restava congelato).
-  let drawErrs = 0;
+  let drawErrs = 0, drawErrorStreak = 0;
+  const renderFault = document.getElementById('render-failure');
   function renderRace(ts) {
-    adaptRes(ts);
-    try { renderRaceFrame(ts); }
-    catch (e) {
-      if (drawErrs++ < 5) { try { console.error('draw', e); } catch (_) {} }
-      try { if (ctx2d && ctx2d.reset) ctx2d.reset(); applyZoom(gzoom); } catch (_) {}
+    // Include resize and zoom updates in the same guard. A failed frame should
+    // never erase the last picture or leave the player staring at a white page.
+    try {
+      adaptRes(ts);
+      renderRaceFrame(ts);
+      drawErrorStreak = 0;
+      if (renderFault) renderFault.hidden = true;
+    } catch (e) {
+      drawErrorStreak++;
+      window.__dwLastRenderError = String(e && (e.stack || e.message) || e);
+      if (drawErrs++ < 5) { try { console.error('[Doodle Wheels] rendering', e); } catch (_) {} }
+      // NEVER call ctx2d.reset() here: it clears the entire frame to white.
+      // Keep the last visible frame and show recovery controls on repeat failure.
+      if (renderFault && drawErrorStreak >= 3) renderFault.hidden = false;
     }
     raceLoopHandle = requestAnimationFrame(renderRace);
   }
@@ -2029,7 +2076,7 @@
     });
   }
 
-  function stopRaceLoops() { CurseFx.reset(); if (connectionStatus) connectionStatus.hidden = true; closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
+  function stopRaceLoops() { drawErrorStreak = 0; if (renderFault) renderFault.hidden = true; CurseFx.reset(); if (connectionStatus) connectionStatus.hidden = true; closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
   I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
   function showResults(st, ch) {
@@ -2084,5 +2131,5 @@
       enterDrawPhase();
     } else location.reload();
   }); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
-  document.body.dataset.screen = 'menu'; I18n.init(); applyInvite(); updateRejoinButton(); const lastRoom = readRejoin(); if (lastRoom && !els.code.value) els.code.value = lastRoom.code; if (lastRoom && !els.name.value) els.name.value = lastRoom.name; if (typeof Sfx !== 'undefined') Sfx.init();
+  document.body.dataset.screen = 'menu'; I18n.init(); applyInvite(); updateRejoinButton(); const lastRoom = readRejoin(); if (lastRoom && !els.code.value) els.code.value = lastRoom.code; if (lastRoom && !els.name.value) els.name.value = lastRoom.name; if (typeof Sfx !== 'undefined') Sfx.init(); window.__dwBootReady = true;
 })();
