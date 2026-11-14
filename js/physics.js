@@ -323,6 +323,8 @@ const Sim = (() => {
       bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0,
       cornerReleases: 0, releaseAt: -1e9, releaseTriedFor: -1, stallEvents: [],
       curseAt:-1,curseStage:0,curseLevel:0,curseHits:{},
+      rampTakeoffAt:-1e9,rampInputUsed:false,rampGroundTicks:0,
+      flightTicks:0,flightArmed:false,landHits:0,landPower:0,
       stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
       cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
@@ -1122,17 +1124,44 @@ const Sim = (() => {
   // ---- Salto (comando del giocatore) ---------------------------------------------------------------------------------------------
   // Un colpo verso l'alto a bici e ruote insieme. Funziona solo con almeno una ruota vicino al suolo (niente doppi salti in aria)
   // e con una pausa fra un salto e l'altro, così non si "vola" tenendo premuto. Le ruote giganti saltano un po' più forte.
-  const JUMP_V = 18.5;         // V27.3: salto manuale leggermente più basso; conserva lo slancio orizzontale presso gli ostacoli
+  const JUMP_V = 14.4;         // V36: meno verticalita' a velocita' di gara, parabola piu' tesa e piu' avanzamento
+  // V36: una bici in movimento traduce parte della velocita' di corsa in
+  // slancio orizzontale al salto. Un mezzo fermo non viene trascinato avanti;
+  // il motore/collisioni continuano a decidere chi arriva veloce alla rampa.
+  const JUMP_FORWARD_MIN = 1.4, JUMP_FORWARD_MAX = 2.8, RAMP_FORWARD_MAX = 1.65;
   const JUMP_GAP = 27;       // px: distanza massima dal suolo per poter saltare (un attimo di tolleranza dopo un dosso)
   const JUMP_COOLDOWN = 440; // ms
-  const JUMP_RISE_CAP = 4.5; // limita la somma con l'inerzia verticale già acquisita (rampe): niente impennate esagerate
+  const JUMP_RISE_CAP = 2.8; // V36: tetto verticale piu moderato, evita razzi quando si salta su una rampa
   const DJ_MIN_MS = 130;     // doppio salto: un secondo salto in aria, non prima di tanto dal primo
   const DJ_POWER = 0.95;     // e un filo meno potente
   const PORTAL_SKIP_H = 34; // px: si scavalca un portale se il fondo delle ruote passa a quest'altezza dal suolo o più (un salto ben tempestivo arriva a ~128, il doppio salto a ~225); l'anello è alto 2·PORTAL_RY + 3
   const JUMP_BUF_MS = 330;   // un tocco "troppo presto" (pausa dopo un salto, doppio salto prematuro, atterraggio imminente) viene ricordato e parte appena si può
-  const COYOTE_MS = 150;     // pochi istanti dopo aver lasciato il suolo (dosso, bordo di rampa) si può ancora fare il primo salto
+  const COYOTE_MS = 170;     // tolleranza al labbro senza fermare mai il tempo della gara
+  const RAMP_LATE_MS = 155;  // un tap appena dopo il labbro integra lo stacco, non diventa un doppio salto differito
   function jumpTry(r, elapsed) {
     const grounded = r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP;
+    // A launch-edge tap that arrives a handful of frames late is part of the
+    // same takeoff. Without this check, the buffered tap becomes a delayed
+    // DOUBLE jump, producing an unnatural high parabola and punishing latency.
+    // One small bounded correction only; it consumes the aerial tap for this
+    // flight and does not change physics time or translate the bike.
+    const lateRampTap = !grounded && r.airJ === 1 && r.rampLaunched &&
+      !r.rampInputUsed && elapsed - (r.rampTakeoffAt ?? -1e9) <= RAMP_LATE_MS;
+    if (lateRampTap) {
+      const speed = Math.max(0, r.chassis.velocity.x);
+      const target = -Math.min(13.4, 9.5 + speed * .45);
+      // A late, well-timed tap extends the actual ramp flight forward as
+      // well as upward. The bonus is bounded and can only apply once.
+      const forwardBoost = speed > 3 ? Math.min(1.25, .16 * (speed - 3) + .32) : 0;
+      for (const b of [r.chassis,r.fw,r.rw]) {
+        Matter.Body.setVelocity(b, {x:b.velocity.x + (r.dir||1)*forwardBoost,
+          y:Math.min(b.velocity.y,target)});
+      }
+      r.rampInputUsed = true; r.rampFly = 0; r.airJ = 2;
+      r.jumpAt = elapsed; r.jn = (r.jn||0)+1;
+      r.ln = (r.ln||0)+1; r.ls = 3;
+      return 1;
+    }
     if (grounded) r.lastGroundAt = elapsed;
     const coyote = !grounded && r.airJ === 0 && elapsed - (r.lastGroundAt || 0) < COYOTE_MS;
     let ok = false;
@@ -1141,7 +1170,7 @@ const Sim = (() => {
     if (!ok) return 0;
     const air = !(grounded || coyote);
     let v = JUMP_V * Math.pow(r.sc || 1, 0.4) * (air ? DJ_POWER : 1);
-    r.rampFly = 0;   // un salto prende il comando: da qui in poi vale la gravità normale
+    r.rampFly = 0; r.rampLaunched = false; r.rampGroundTicks = 0; // il salto manuale prende il comando
     // da terra: spinta sopra la velocità verticale attuale; in aria (doppio salto): la velocità verso l'alto diventa almeno v, SENZA sommarsi a quella che c'è
     // già (sommate, un secondo tocco ravvicinato lanciava la bici altissima, soprattutto con le ruote giganti)
     // Rovi tesi dell'Inferno: una fionda VISIBILE e a comando, non una raffica invisibile.
@@ -1175,11 +1204,22 @@ const Sim = (() => {
     const perfect=!!takeoff&&forward>=3.8&&distance>=-12&&distance<=72;
     // Sweet spot at the same distance indicated by the lone golden arrow.
     const quality=perfect?Math.max(0,1-Math.abs(distance-42)/58):0;
-    if(perfect) v*=1+.09+.055*quality;
-    const launchDx = (ahead ? Math.min(3.5, Math.max(0, 5.8 - forward)) : 0)
-      + (perfect ? Math.min(1.5,Math.max(0,(forward-3.5)*(.30+.09*quality))) : 0);
+    if(perfect) v*=1+.05+.04*quality;
+    // V36: A FAST jump needs a forward arc, not a vertical rocket. The kick
+    // grows with the speed actually earned on the ground and is shared by
+    // all three bike bodies to avoid stretching the axle constraints.
+    // Slow/stationary attempts still stay slow: no free race-length boosts.
+    const runningKick = !air && forward > 2
+      ? Math.min(JUMP_FORWARD_MAX, Math.max(JUMP_FORWARD_MIN, .45+.36*forward)) : 0;
+    const obstacleRecovery = ahead && !air
+      ? Math.min(2.0,Math.max(0,4.8-forward)) : 0;
+    const lipBonus = perfect ? Math.min(1.15,.16*forward+.12*quality) : 0;
+    const launchDx = air ? 0 : Math.min(3.7, runningKick + obstacleRecovery + lipBonus);
     for (const b of [r.chassis, r.fw, r.rw]) {
-      let vx = b.velocity.x + dir * launchDx, vy = air ? Math.min(b.velocity.y, -v) : Math.max(-(v + JUMP_RISE_CAP), Math.min(b.velocity.y, 0) - v);
+      const riseCap = takeoff ? 1.4 : JUMP_RISE_CAP;
+      let vx = b.velocity.x + dir * launchDx,
+        vy = air ? Math.min(b.velocity.y, -v)
+          : Math.max(-(v + riseCap), Math.min(b.velocity.y, 0) - v);
       if (thorn) { vx = Math.max(vx, 16.0); vy = Math.min(vy, -29.0); }
       Matter.Body.setVelocity(b, { x: vx, y: vy });
     }
@@ -1245,24 +1285,37 @@ const Sim = (() => {
 
   // V32: the lip is determined by procedural geometry, including kicker,
   // jump, ravine, halfpipe, gapland and nested twin / drop-in ramps.
-  // Only the authoritative host adds a small bounded vertical impulse when
-  // actually crossing the lip with a wheel on the ground. No position changes.
+  // Only the authoritative host applies a bounded takeoff vector when
+  // crossing the actual lip with grounded wheels. The horizontal component
+  // inherits the approaching speed; the vertical one follows the lip slope.
+  // Neither the game clock nor body positions are touched.
   const RAMP_KINDS=new Set(['kicker','jump','ravine','pipe','gapland','wave']);
   function rampStep(r,elapsed){
     const fx=r.fw.position.x,previous=r.rfx;
     r.rfx=fx;
     if(r.rampFly>0){
       r.rfT=(r.rfT||0)+1;
-      const airborne=r.fw.gapNow>12&&r.rw.gapNow>12;
+      const frontAir=r.fw.gapNow>12, rearAir=r.rw.gapNow>12;
+      const airborne=frontAir&&rearAir;
       if(!r.rampLaunched&&airborne&&!r.airJ){
         r.rampLaunched=true;
+        r.rampTakeoffAt=elapsed;
+        r.rampInputUsed=false;
         r.airJ=1;r.jumpAt=elapsed;
         r.ln=(r.ln||0)+1;r.ls=r.rampSmall?1:2;
       }
-      if((r.rfT>14&&!airborne&&r.rampLaunched)||r.rfT>90){
-        r.rampFly=0;r.rampLaunched=false;
-      }
-      return;
+      // V35: a launch may leave only the FRONT wheel airborne for several
+      // ticks while the rear still follows the ramp. Do not unlock that real
+      // takeoff prematurely. But if BOTH wheels stayed on the surface, the
+      // ramp only caused a short bump: re-arm promptly for the next lip.
+      r.rampGroundTicks=(!frontAir&&!rearAir)?(r.rampGroundTicks||0)+1:0;
+      const missedTakeoff=!r.rampLaunched&&r.rampGroundTicks>=6;
+      const landed=r.rampLaunched&&!airborne&&r.rfT>=8;
+      const stale=r.rfT>(r.rampLaunched?75:54);
+      if(missedTakeoff||landed||stale){
+        if(!airborne&&r.rampLaunched&&r.airJ===1)r.airJ=0;
+        r.rampFly=0;r.rampLaunched=false;r.rampGroundTicks=0;
+      } else return;
     }
     if(previous===undefined||(r.dir||1)!==1||r.airJ||r.righting)return;
     const lipInfo=Terrain.takeoffAt?Terrain.takeoffAt(fx,80,70):null;
@@ -1276,18 +1329,54 @@ const Sim = (() => {
     // current forward speed and the lip slope, so quick approaches fly farther
     // and odd-shaped wheels keep their real traction penalties.
     // Do not change game time or force orientation; no slow motion.
-    if(speed>3.7&&grounded){
+    const assisted=speed>3.7&&grounded;
+    if(assisted){
       const slope=Math.max(.24,Math.min(.82,Math.sin(Math.abs(lipInfo.th||.30))));
-      const strength=big?2.1:1.65;
-      const lift=2.9+(big?1.0:0)+(speed-3.7)*slope*strength;
-      const launchY=-Math.min(big?10.2:7.5,lift);
+      // A fast, steep ramp generates a long, shallow-ish forward parabola.
+      // Small ramps pop gently; big ravines give more flight time. This is a
+      // single takeoff impulse, not mid-air steering or a scripted trajectory.
+      const lift=3.8+(big?1.0:0)+speed*slope*(big?1.95:1.8);
+      const launchY=-Math.min(big?11.5:9.0,lift);
+      const forwardKick=Math.min(big?RAMP_FORWARD_MAX:1.15,
+        Math.max(0,(speed-3.7)*.35)+slope*1.1);
       for(const body of [r.chassis,r.fw,r.rw]){
-        if(body.velocity.y>launchY)
-          Matter.Body.setVelocity(body,{x:body.velocity.x,y:launchY});
+        Matter.Body.setVelocity(body,{x:body.velocity.x+forwardKick,
+          y:Math.min(body.velocity.y,launchY)});
       }
     }
+    // No artificial "ramp flight" state when a slow wheel merely rolls over
+    // a lip. That state suppresses ground stabilisation and can cause a stall.
+    const naturallyAirborne=r.fw.gapNow>12&&r.rw.gapNow>12;
+    if(!assisted&&!naturallyAirborne)return;
     r.rampFly=1;r.rampLaunched=false;
-    r.rampSmall=!big;r.rfT=0;
+    r.rampSmall=!big;r.rfT=0;r.rampGroundTicks=0;
+  }
+
+  // V35: detect genuine landings from the *solved* wheel contacts, not from
+  // input presses or predicted arcs. One event per flight; host publishes only
+  // a tiny integer counter/intensity for all clients to draw local dust.
+  // No extra force, no slowdown and no changes to authoritative trajectory.
+  function landingStep(r){
+    if(r.finished)return;
+    const f=r.fw.gapNow, b=r.rw.gapNow;
+    if(!Number.isFinite(f)||!Number.isFinite(b))return;
+    const bothAir=f>24&&b>24;
+    if(bothAir){
+      r.flightTicks=Math.min(300,(r.flightTicks||0)+1);
+      if(r.flightTicks>=5)r.flightArmed=true;
+      return;
+    }
+    if(!(r.flightArmed)){
+      r.flightTicks=0;return;
+    }
+    if(Math.min(f,b)>13)return;
+    const downward=Math.max(0,r.fw.velocity.y,r.rw.velocity.y,r.chassis.velocity.y);
+    const vX=Math.abs(r.chassis.velocity.x);
+    if(downward>=2.6 && vX>=.6){
+      r.landHits=(r.landHits||0)+1;
+      r.landPower=Math.min(3,Math.max(1,Math.round((downward-1.5)/3.5)));
+    }
+    r.flightArmed=false;r.flightTicks=0;
   }
 
   // Correnti del Paradiso e geyser dell'Inferno: vengono applicati solo dall'host,
@@ -1530,6 +1619,7 @@ const Sim = (() => {
         InteractiveObstacles.afterStep(nextObstacleTime, racerOrder);
         obstacleClockMs = nextObstacleTime;
         for (let i = 0; i < n; i++) { const r = racerOrder[i]; antiSink(r.fw); antiSink(r.rw); }
+        if(sub===SUBSTEPS-1)for(let i=0;i<n;i++)landingStep(racerOrder[i]);
       }
       accumulator -= FIXED_DT;
 
@@ -1546,7 +1636,7 @@ const Sim = (() => {
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
       finished: r.finished, finishTime: r.finishTime,
-      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, ln: r.ln || 0, ls: r.ls || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, cu: r.curseLevel || 0, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
+      dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, ln: r.ln || 0, ls: r.ls || 0, ld: r.landHits || 0, lp: r.landPower || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, cu: r.curseLevel || 0, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
   }
 

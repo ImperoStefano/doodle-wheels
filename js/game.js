@@ -755,7 +755,8 @@
     currentRaceStart = startTime;
     if (Net.isHost) Net.setPhase('race');
     showScreen('race'); if (!returning && typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'flex';
-    if (els.btnJump) els.btnJump.style.display = 'flex'; if (els.btnSprint) { els.btnSprint.style.display = 'flex'; els.btnSprint.style.setProperty('--p', 1); els.btnSprint.classList.add('ready'); els.btnSprint.classList.remove('on', 'cool'); const cd = document.getElementById('sprint-cd'); if (cd) { cd.textContent = ''; cd.dataset.s = '0'; } } resetSlow(); for (const k in jnSeen) delete jnSeen[k]; for (const k in jaSeen) delete jaSeen[k]; for (const k in lnSeen) delete lnSeen[k];
+    CurseFx.reset();
+    if (els.btnJump) els.btnJump.style.display = 'flex'; if (els.btnSprint) { els.btnSprint.style.display = 'flex'; els.btnSprint.style.setProperty('--p', 1); els.btnSprint.classList.add('ready'); els.btnSprint.classList.remove('on', 'cool'); const cd = document.getElementById('sprint-cd'); if (cd) { cd.textContent = ''; cd.dataset.s = '0'; } } resetSlow(); for (const k in jnSeen) delete jnSeen[k]; for (const k in jaSeen) delete jaSeen[k]; for (const k in lnSeen) delete lnSeen[k]; for (const k in ldSeen) delete ldSeen[k];
     for (const id in activeEmotes) delete activeEmotes[id];
     for (const id in lastEmoteById) delete lastEmoteById[id];
     lastMyEmote = -1e9;
@@ -877,7 +878,7 @@
           for (const id in b.m) {
             const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
-            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc, cu: rb.cu||0,
+            latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, ld: rb.ld||0, lp: rb.lp||0, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc, cu: rb.cu||0,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
           }
           return;
@@ -891,7 +892,7 @@
       if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }   // portale (teletrasporto) o nuovo arrivato o salto (rimessa in pista): niente scivolata
       latestRacers[id] = {
         id, finished: rb.finished, finishTime: rb.finishTime,
-        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc, cu: rb.cu||0,
+        x: ra.x + (rb.x - ra.x) * k, y: ra.y + (rb.y - ra.y) * k, angle: angLerp(ra.angle, rb.angle, k), vx: ra.vx + (rb.vx - ra.vx) * k, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, ld: rb.ld||0, lp: rb.lp||0, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc, cu: rb.cu||0,
         fwX: ra.fwX + (rb.fwX - ra.fwX) * k, fwY: ra.fwY + (rb.fwY - ra.fwY) * k, fwAngle: angLerp(ra.fwAngle, rb.fwAngle, k),
         rwX: ra.rwX + (rb.rwX - ra.rwX) * k, rwY: ra.rwY + (rb.rwY - ra.rwY) * k, rwAngle: angLerp(ra.rwAngle, rb.rwAngle, k)
       };
@@ -1503,7 +1504,7 @@
   const SLOW_ON = 2.4, SLOW_OFF = 3.6, SLOW_HOLD_MS = 1500, SLOW_FREE_MS = 12000;   // nei primi 12 s dal VIA mai: all inizio si parte da fermi e non ha senso consigliare un'altra ruota
   let hazardHostOrigin = null;
   let raceT0 = 0, slowOn = false, slowSince = 0, fastSince = 0, ctrlHintT = 0;
-  const jnSeen = {}, jaSeen = {}, lnSeen = {};
+  const jnSeen = {}, jaSeen = {}, lnSeen = {}, ldSeen = {};
   function setSlow(on) {
     if (on === slowOn) return; slowOn = on;
     els.btnRedrawTrigger.classList.toggle('blink', on);
@@ -1638,6 +1639,28 @@
     }
   }
 
+  // V35: local landing feedback after an authoritative host contact event.
+  // Tiny dust/droplet bursts on the rideable ground; no shake, impulse,
+  // slowdown or extra networking messages. All clients see the same landing.
+  function landingFx(id,r){
+    const n=r.ld||0,old=ldSeen[id];ldSeen[id]=n;
+    if(old===undefined||!n||n===old)return;
+    const power=Math.max(1,Math.min(3,r.lp||1));
+    const x=Number.isFinite(r.fwX)?r.fwX:r.x;
+    const y=Sim.GROUND_Y-Terrain.height(x);
+    const z=Terrain.zoneAt(x);
+    const kind=z&&z.key||'';
+    const color=kind==='water'?'rgba(143,218,246,':kind==='lava'?'rgba(255,166,94,':kind==='ice'?'rgba(232,249,255,':DUST;
+    const count=5+power*3;
+    for(let i=0;i<count&&particles.length<190;i++){
+      const angle=(i/(count-1))*Math.PI;
+      const speed=(1.2+power*.60)*(.7+Math.random()*.6);
+      particles.push({x:x+(Math.random()-.5)*42,y:y-2,
+        vx:Math.cos(angle)*speed,vy:-Math.sin(angle)*speed-.5,
+        g:.08,dl:.065,life:.72,size:1.7+Math.random()*2.1+power*.45,col:color});
+    }
+  }
+
   // Un errore di disegno in un singolo fotogramma non deve MAI fermare la gara: il ciclo si riprende da solo al fotogramma dopo
   // (prima, un'eccezione qui impediva di richiedere il fotogramma successivo e lo schermo restava congelato).
   let drawErrs = 0;
@@ -1717,6 +1740,7 @@
       const cy = (y) => y - Sim.GROUND_Y + groundY, cx = r.x - camX;
       jumpFx(id, r);
       rampLaunchFx(id, r);
+      landingFx(id, r);
       const active = activeEmotes[id];
       if (active) {
         const age = t0 - active.at;
@@ -1748,6 +1772,9 @@
       const hR = wheelHeat(id, 'r', r.rwX, r.rwY), hF = wheelHeat(id, 'f', r.fwX, r.fwY);
       const egyptSeg=Terrain.WORLD_SEGMENT;
       const bandagesVisible=!!(egyptSeg&&egyptSeg.world==='egypt'&&r.x>=egyptSeg.start&&r.x<egyptSeg.end);
+      // The bandages visibly fall away on exit. The rear-wheel triangle remains
+      // unchanged on every client because the host continues to send r.cu.
+      CurseFx.draw(ctx2d,id,r,bandagesVisible,camX,cy,t0);
       drawWheel(r.rwX - camX, cy(r.rwY), r.rwAngle, meta.vr || meta.vertices, meta.color, id === Net.myId, hR, meta.vr ? meta.mr : null, id, r.sc, r.cu||0,bandagesVisible);
       drawWheel(r.fwX - camX, cy(r.fwY), r.fwAngle, meta.vf || meta.vertices, meta.color, id === Net.myId, hF, meta.vf ? meta.mf : null, id, r.sc);
       lavaDrips(id, r, meta, hR, hF);
@@ -2002,7 +2029,7 @@
     });
   }
 
-  function stopRaceLoops() { if (connectionStatus) connectionStatus.hidden = true; closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
+  function stopRaceLoops() { CurseFx.reset(); if (connectionStatus) connectionStatus.hidden = true; closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
   I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
   function showResults(st, ch) {
