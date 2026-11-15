@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Pacifico&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="img/icon-192.png">
-<link rel="stylesheet" href="style.css?v=v42">
+<link rel="stylesheet" href="style.css?v=v43">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><filter id="dw-ink" x="-20%" y="-40%" width="140%" height="180%"><feTurbulence type="fractalNoise" baseFrequency="0.07 0.1" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5"/></filter></svg>
@@ -217,7 +217,17 @@
       <p id="personal-best" class="personal-best" hidden></p>
       <div class="stamp-recap">
         <p id="stamp-result" class="stamp-result" hidden></p>
-        <button id="save-card" type="button" class="btn btn--ghost" data-i18n="stamps.save" hidden>Salva cartolina</button>
+        <a id="save-card" class="btn btn--ghost" download target="_blank" rel="noopener" data-i18n="stamps.save" hidden>Scarica cartolina PNG</a>
+        <button id="card-retry" type="button" class="btn btn--ghost" data-i18n="card.retry" hidden>Riprova</button>
+      </div>
+      <p id="card-status" class="hint card-status" role="status"></p>
+      <div id="card-preview" class="card-preview" hidden>
+        <img id="card-image" width="1000" height="520" alt="Cartolina di gara">
+        <p class="hint" data-i18n="card.tip">Su telefono puoi anche tenere premuta l’immagine per salvarla.</p>
+        <div class="card-actions">
+          <a id="card-open" class="btn btn--ghost" target="_blank" rel="noopener" data-i18n="card.open">Apri immagine</a>
+          <button id="card-share" type="button" class="btn btn--secondary" data-i18n="card.share" hidden>Condividi PNG</button>
+        </div>
       </div>
       <p id="launch-summary" class="launch-summary" hidden></p>
       <div id="champ-box" class="champ-box" style="display:none"><h3 class="champ-title" id="champ-title"></h3><ol id="champ-table" class="results-list champ-table"></ol></div>
@@ -235,26 +245,27 @@
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
-<script src="js/i18n.js?v=v42"></script>
+<script src="js/i18n.js?v=v43"></script>
 <script src="js/peer.js?v=v42"></script>
 <script src="js/draw.js?v=20261114-v37-recovery"></script>
-<script src="js/terrain.js?v=v42"></script>
-<script src="js/world-art-v19.js?v=v41"></script>
-<script src="js/egypt.js?v=20261114-v37-recovery"></script>
-<script src="js/scenery.js?v=v41"></script>
+<script src="js/terrain.js?v=v43"></script>
+<script src="js/world-art-v19.js?v=v43"></script>
+<script src="js/egypt.js?v=v45"></script>
+<script src="js/scenery.js?v=v45"></script>
 <script src="js/flora.js?v=20261114-v37-recovery"></script>
-<script src="js/props.js?v=20261114-v39"></script>
-<script src="js/worldfx.js?v=20261114-v37-recovery"></script>
+<script src="js/props.js?v=v43"></script>
+<script src="js/worldfx.js?v=v43"></script>
 <script src="js/obstacles.js?v=20261114-v37-recovery"></script>
 <script src="js/interactive-obstacles.js?v=v41"></script>
-<script src="js/stamps.js?v=v41"></script>
-<script src="js/physics.js?v=v41"></script>
-<script src="js/sound.js?v=v41"></script>
+<script src="js/stamps.js?v=v43"></script>
+<script src="js/physics.js?v=v43"></script>
+<script src="js/sound.js?v=v43"></script>
   <script src="js/emote-layout.js?v=20261114-v37-recovery"></script>
   <script src="js/curse-fx.js?v=20261114-v37-recovery"></script>
 <script src="js/ghost.js?v=v42"></script>
 <script src="js/ghost-art.js?v=v42"></script>
-<script src="js/game.js?v=v42"></script>
+<script src="js/postcard-export.js?v=v43"></script>
+<script src="js/game.js?v=v43"></script>
 <div id="boot-failure" class="dw-recovery dw-recovery--startup" role="alert" hidden>
   <div class="dw-recovery__panel">
     <strong>Doodle Wheels non è riuscito a caricarsi</strong>

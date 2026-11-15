@@ -866,9 +866,109 @@ const Props = (() => {
     }
   }
   // ---------- traguardo --------------------------------------------------------------------------
-  function drawFinish(ctx, camX, w, gy, S) {
+  const spectatorCoats = ['#ce6548', '#3e7774', '#e3a742', '#74709a', '#39766d'];
+  const spectatorSkin = ['#d29570', '#946749', '#f1c8a0', '#ad7859', '#e2ad83'];
+  const crowdMotion = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const animalStarts = new WeakMap();
+
+  function drawTracksideAnimals(c,camX,w,gy,me,now) {
+    const still = crowdMotion && crowdMotion.matches;
+    for (const zone of Terrain.ZONES) {
+      const wet = zone.key === 'water';
+      if ((!wet && zone.key !== 'hills') || zone.end < camX-300 || zone.start > camX+w+300) continue;
+      const spot = wet && zone.gap ? Math.min(zone.end-155,zone.gap.g1+95) : zone.start+zone.len*.60;
+      const segment = Terrain.WORLD_SEGMENT;
+      if (segment && spot >= segment.start && spot <= segment.end) continue;
+      if (spot < camX-280 || spot > camX+w+100) continue;
+      const distance = me ? Math.abs(me.x-spot) : Infinity;
+      if (!still && distance < (me?.so ? 410 : 275) && !animalStarts.has(zone)) animalStarts.set(zone,now);
+      const start = animalStarts.get(zone);
+      const age = !still && start !== undefined ? (now-start)/1000 : 0;
+      if (age > 3) continue;
+      c.save();
+      c.lineCap='round'; c.lineJoin='round';
+      for (let j=0;j<2;j++) {
+        const t=Math.max(0,age-j*.23), step=wet ? t*90 : t*66;
+        const wx=spot+j*39+step, x=wx-camX;
+        const up=wet ? Math.min(t*49,130) : 11*Math.abs(Math.sin(t*6.6));
+        const y=gy-Terrain.height(wet ? spot+j*39 : wx)-10-up;
+        c.save(); c.translate(x,y); c.globalAlpha*=Math.min(1,Math.max(0,3-age));
+        if (wet) {
+          c.strokeStyle='#455661'; c.lineWidth=1.8;
+          c.beginPath(); c.moveTo(-1,-9); c.lineTo(t ? -14 : -2,-2); c.lineTo(t ? -20 : -6,0);
+          c.moveTo(3,-8); c.lineTo(t ? -9 : 5,-1); c.stroke();
+          c.fillStyle='#f6edcc'; c.beginPath(); c.ellipse(0,-11,10,5,-.14,0,TAU); c.fill();
+          c.strokeStyle='#f6edcc'; c.lineWidth=3.7; c.beginPath(); c.moveTo(6,-12);
+          c.quadraticCurveTo(14,-17,9,-20); c.quadraticCurveTo(6,-25,13,-25); c.stroke();
+          c.fillStyle='#d19952'; c.beginPath(); c.moveTo(12,-27); c.lineTo(23,-25); c.lineTo(12,-24); c.fill();
+          if(t) {
+            const flap=14*Math.cos(t*8);
+            c.fillStyle='#a4c4c0'; c.beginPath(); c.moveTo(6,-12); c.quadraticCurveTo(-7,-19-flap,-17,-13-flap);
+            c.quadraticCurveTo(-9,-11,1,-10); c.fill();
+          }
+        } else {
+          c.fillStyle='#9a6955'; c.beginPath(); c.ellipse(0,-6,10,6,-.12,0,TAU); c.fill();
+          c.beginPath(); c.arc(7,-10,4.6,0,TAU); c.fill();
+          for(let k=0;k<2;k++) {
+            c.beginPath(); c.ellipse(5+k*4,-16,1.9,6,t ? -.9 : -.23-k*.14,0,TAU); c.fill();
+          }
+          c.fillStyle='#fff1d1'; c.beginPath(); c.arc(-9,-7,3.4,0,TAU); c.fill();
+          c.fillStyle='#4b4546'; c.fillRect(8,-12,1.6,1.6);
+        }
+        c.restore();
+      }
+      c.restore();
+    }
+  }
+
+  function drawSupporters(c, x, y, side, time, cheering, position) {
+    const still = crowdMotion && crowdMotion.matches;
+    c.save(); c.translate(x,y);
+    c.strokeStyle = '#3c4b4c'; c.lineWidth = 3; c.lineJoin = 'round'; c.lineCap = 'round';
+    for (let j = 0; j < 5; j++) {
+      const fanX = (j - 2) * 23, style = (j + (side > 0 ? 2 : 0)) % 5;
+      const near = Math.max(0, 1 - Math.abs(position - fanX) / 260);
+      const wave = still ? 0 : Math.sin(time * (cheering ? 8 : 4) - j * .9);
+      const hands = near * (cheering ? 27 : 14) + wave * (cheering ? 5 : 2) * near;
+      c.save(); c.translate(fanX, -16 - ((j * 7) % 11));
+      c.fillStyle = spectatorCoats[style];
+      c.beginPath(); c.roundRect(-8,-24,16,27,6); c.fill(); c.stroke();
+      c.beginPath(); c.moveTo(-6,-17); c.lineTo(-13,-14-hands);
+      c.moveTo(6,-17); c.lineTo(14,-16-hands); c.stroke();
+      if ((j + side) % 3 === 0) {
+        // The scarf lifts with the arms when a rider sends an emote.
+        c.strokeStyle = '#fff1c6'; c.lineWidth = 5;
+        c.beginPath(); c.moveTo(-13,-16-hands); c.quadraticCurveTo(0,-8-hands,14,-18-hands); c.stroke();
+      }
+      c.fillStyle = spectatorSkin[style]; c.strokeStyle = '#3c4b4c'; c.lineWidth = 2.5;
+      c.beginPath(); c.ellipse(0,-29,7,8,0,0,TAU); c.fill(); c.stroke();
+      c.fillStyle = j % 2 ? '#58484a' : spectatorCoats[(style+2)%5];
+      c.beginPath(); c.arc(0,-30,7.7,Math.PI,TAU); c.fill();
+      if (j % 2 === 0) c.fillRect(-8,-31,18,3);
+      c.fillStyle = '#3c4b4c'; c.fillRect(1,-28,2.3,2.3);
+      c.restore();
+    }
+    // A slatted rail separates the spectators from the riding surface.
+    c.fillStyle = '#6e5a50'; c.fillRect(-58,-12,6,9); c.fillRect(52,-12,6,9);
+    c.fillStyle = '#f2d5a2'; c.fillRect(-62,-16,124,6);
+    c.restore();
+  }
+
+  function drawFinish(ctx, camX, w, gy, S, racers, emotes, now) {
     const fx = Terrain.FINISH_X, x0 = fx - camX; if (x0 < -620 || x0 > w + 620) return;
     const y = gy - Terrain.height(fx), t = performance.now() / 1000, H = 205;
+    for (const side of [-1,1]) {
+      const wx = fx + side * 182;
+      if (wx < camX - 66 || wx > camX + w + 66) continue;
+      let position = Infinity, cheering = false;
+      for (const id in racers) {
+        const dx = racers[id].x - wx;
+        if (Math.abs(dx) < Math.abs(position)) position = dx;
+        const emote = emotes && emotes[id];
+        if (emote && now - emote.at < 1700 && Math.abs(dx) < 280) cheering = true;
+      }
+      drawSupporters(ctx, wx - camX, gy - Terrain.height(wx), side, t, cheering, position);
+    }
     // festoni di bandierine, in entrambe le direzioni
     const cols = ['#ef4444', '#3b82f6', '#facc15', '#22c55e', '#ec4899', '#f97316'];
     [-1, 1].forEach(dir => {
@@ -904,5 +1004,5 @@ const Props = (() => {
     });
   }
 
-  return { drawBridges, drawRamps, drawSigns, drawFinish, drawPatches, drawPortals, portalDraw };
+  return { drawBridges, drawRamps, drawSigns, drawFinish, drawTracksideAnimals, drawPatches, drawPortals, portalDraw };
 })(); // props

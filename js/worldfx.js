@@ -22,14 +22,20 @@ const WorldFX = (() => {
 
   // ---- quale mondo è attivo e con che intensità (dissolvenza ai bordi del tratto speciale) ---------
   function active(camX, w) {
-    const seg = Terrain.WORLD_SEGMENT, mid = camX + w * 0.5;
+    const seg = Terrain.WORLD_SEGMENT;
     if (seg && seg.world) {
-      const k = clamp(Math.min(mid - (seg.start - 320), (seg.end + 320) - mid) / 320, 0, 1);
-      return k > 0.01 ? { world: seg.world, k, seg } : null;
+      const left = Math.max(0, seg.start - camX), right = Math.min(w, seg.end - camX);
+      if (left >= right) return null;
+      return { world: seg.world, k: Math.min(1, (right - left) / Math.min(w, 320)), seg, left, right };
     }
     const wd = Terrain.WORLD;
-    return wd && wd !== 'classic' ? { world: wd, k: 1, seg: null } : null;
+    return wd && wd !== 'classic' ? { world: wd, k: 1, seg: null, left: 0, right: w } : null;
   }
+  function clipSegment(c, A, w, h) {
+    if (A.left === 0 && A.right === w) return;
+    c.beginPath(); c.rect(A.left, 0, A.right - A.left, h); c.clip();
+  }
+  const motionPreference = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   const qual = () => (typeof Scenery !== 'undefined' ? Scenery.quality : 0);
   const groundAt = (gy, x) => gy - Terrain.height(x);
   const slopeAt = x => Math.atan2(-(Terrain.height(x + 16) - Terrain.height(x - 16)), 32);
@@ -213,16 +219,6 @@ const WorldFX = (() => {
         ctx.globalAlpha = k * (0.55 + 0.25 * f); ctx.strokeStyle = 'rgba(214,255,250,0.9)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, rad, 0, TAU); ctx.stroke();
         ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(x - rad * 0.35, y - rad * 0.35, rad * 0.24, 0, TAU); ctx.fill();
       }
-      // banchi di pesciolini
-      for (let s = 0; s < 2; s++) {
-        const dir = s ? -1 : 1, base = mod(t * (38 + s * 11) * dir + s * 700 - camX * 0.25, w + 520) - 260, cy = gy * (0.22 + s * 0.17);
-        for (let j = 0; j < 7 * Math.max(0.6, n); j++) {
-          const x = base - dir * (j % 4) * 20 - dir * j * 5, y = cy + Math.sin(t * 1.5 + j * 1.3 + s) * 12 + (j % 3 - 1) * 14, flap = Math.sin(t * 9 + j) * 3;
-          ctx.save(); ctx.translate(x, y); ctx.scale(dir, 1); ctx.globalAlpha = k * 0.85; ctx.fillStyle = s ? '#ffb347' : '#7fe7e0';
-          ctx.beginPath(); ctx.ellipse(0, 0, 8, 3.6, 0, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(-13, -4 + flap); ctx.lineTo(-13, 4 + flap); ctx.fill();
-          ctx.fillStyle = '#0b3948'; ctx.beginPath(); ctx.arc(4.5, -0.8, 0.9, 0, TAU); ctx.fill(); ctx.restore();
-        }
-      }
       // meduse luminose
       for (let j = 0; j < 2; j++) {
         const x = drift(j + 40, camX, w, 0.18, 1), y = gy * (0.2 + 0.18 * j) + Math.sin(t * 0.5 + j * 2) * 16, p = 0.5 + 0.5 * Math.sin(t * 1.6 + j * 2.3), bw = 22 - p * 4, bh = 15 + p * 5;
@@ -242,7 +238,7 @@ const WorldFX = (() => {
         ctx.globalAlpha = k; ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x - 24, 0); ctx.lineTo(x + 26, 0); ctx.lineTo(x + 190, gy); ctx.lineTo(x + 40, gy); ctx.fill();
       }
       // lucciole
-      for (let i = 0; i < 28 * n; i++) {
+      for (let i = 0; i < 12 * n; i++) {
         const f = 0.45 + H(i, 5) * 0.8, bx = drift(i, camX, w, f, 2), by = gy * (0.18 + H(i, 8) * 0.74), x = bx + Math.sin(t * (0.5 + H(i, 9) * 0.7) + i) * 26, y = by + Math.cos(t * (0.4 + H(i, 10) * 0.6) + i * 2) * 18;
         const fl = Math.max(0, Math.sin(t * (1.4 + H(i, 12)) + i * 3.1)); const s = 7 + fl * 14;
         blob(ctx, i % 5 === 0 ? 'rgba(160,255,200,1)' : 'rgba(255,238,130,1)', x, y, s, k * (0.25 + fl * 0.75));
@@ -487,18 +483,172 @@ const WorldFX = (() => {
     }
   }
 
-  function drawGround(ctx, camX, w, gy, t) {
-    skinOff(ctx);   // rete di sicurezza: a inizio frame la skin degli ostacoli non deve mai restare attiva
-    const q = qual(); if (q >= 2) return; const A = active(camX, w); if (!A) return;
-    monuments(ctx, camX, w, gy, t / 1000, A);
-    props(ctx, camX, w, gy, t / 1000, A);
-    ctx.globalAlpha = 1;
+  // The shell and a single moth wing are painted once. The little family in each
+  // clearing is a middle-distance silhouette, behind hazards, stamps and bicycles.
+  function wildlifeSprite(marine) {
+    const key = marine ? 'nautilus' : 'luna-wing';
+    if (sprites[key]) return sprites[key];
+    const canvas = document.createElement('canvas');
+    canvas.width = 144; canvas.height = 108;
+    const c = canvas.getContext('2d');
+    c.translate(72, 54); c.lineCap = c.lineJoin = 'round';
+    if (marine) {
+      // Soft hood, four curling arms, chambered shell with russet growth bands.
+      c.strokeStyle='#743f48'; c.fillStyle='#e7a585'; c.lineWidth=3;
+      c.beginPath(); c.moveTo(-1,11); c.bezierCurveTo(7,-3,22,-5,32,10);
+      c.quadraticCurveTo(38,25,24,25); c.quadraticCurveTo(8,30,-1,18); c.closePath(); c.fill(); c.stroke();
+      c.strokeStyle='#e9ae88'; c.lineWidth=3;
+      for (let j=0;j<4;j++) {
+        c.beginPath(); c.moveTo(24,17+j*2);
+        c.bezierCurveTo(39,15+j*4,44-j*3,39-j,53+j*2,21+j*3); c.stroke();
+      }
+      c.fillStyle='#f2ddb8'; c.strokeStyle='#624a55';
+      c.beginPath(); c.ellipse(-7,0,28,26,-.28,0,TAU); c.fill(); c.stroke();
+      c.save(); c.clip(); c.strokeStyle='#b77467'; c.lineWidth=4;
+      for (let j=0;j<9;j++) {
+        const a=j*.48+1.05;
+        c.beginPath(); c.moveTo(-7+Math.cos(a)*34,Math.sin(a)*32);
+        c.quadraticCurveTo(-7+Math.cos(a+.11)*25,Math.sin(a+.11)*24,
+          -7+Math.cos(a+.37)*16,Math.sin(a+.37)*15); c.stroke();
+      }
+      c.restore(); c.lineWidth=2; c.strokeStyle='#a37366'; c.beginPath();
+      for(let j=0;j<=45;j++) {
+        const a=j*.18, r=1+j*.4, x=-8+Math.cos(a)*r, y=2+Math.sin(a)*r;
+        if(j) c.lineTo(x,y); else c.moveTo(x,y);
+      }
+      c.stroke(); c.fillStyle='#273e45'; c.beginPath(); c.arc(24,10,2.5,0,TAU); c.fill();
+    } else {
+      // A luna moth's long hindwing tail and crescent-shaped eyespot.
+      c.fillStyle='#b3dba6'; c.strokeStyle='#456466'; c.lineWidth=2.3;
+      c.beginPath(); c.moveTo(1,-9); c.bezierCurveTo(14,-15,37,-35,54,-27);
+      c.quadraticCurveTo(44,-3,22,6); c.quadraticCurveTo(29,18,21,23);
+      c.quadraticCurveTo(27,34,37,41); c.quadraticCurveTo(21,36,15,25);
+      c.quadraticCurveTo(4,22,1,7); c.closePath(); c.fill(); c.stroke();
+      c.strokeStyle='#688780'; c.lineWidth=1.2;
+      c.beginPath(); c.moveTo(4,-5); c.quadraticCurveTo(25,-7,48,-24);
+      c.moveTo(6,3); c.quadraticCurveTo(17,12,19,22); c.stroke();
+      c.fillStyle='#9e7d97'; c.beginPath(); c.ellipse(27,-12,5,4,-.65,0,TAU); c.fill();
+      c.fillStyle='#f7dfad'; c.beginPath(); c.ellipse(26,-12,2.3,2,-.65,0,TAU); c.fill();
+    }
+    sprites[key]=canvas;
+    return canvas;
+  }
+  function wildlife(c, camX, w, gy, t, A, quality) {
+    if (A.world !== 'atlantis' && A.world !== 'enchanted') return;
+    const marine = A.world === 'atlantis', origin = A.seg ? A.seg.start : 0;
+    const cell = 1320, first = Math.floor((camX + A.left - origin - 130) / cell);
+    const last = Math.floor((camX + A.right - origin + 130) / cell);
+    for (let i=first; i<=last; i++) {
+      const seed=H(i,marine ? 92 : 145);
+      const anchor=origin+(i+.32+.32*seed)*cell;
+      if (A.seg && (anchor < A.seg.start+125 || anchor > A.seg.end-125)) continue;
+      const phase=t*(marine ? .34 : .56)+seed*TAU;
+      const sx=anchor-camX+Math.sin(phase)*(marine ? 62 : 40);
+      if (sx < A.left-140 || sx > A.right+140) continue;
+      const y=Math.min(gy*(.32+.10*seed), groundAt(gy,anchor)-158) + Math.sin(phase*1.6)*9;
+      const sprite=wildlifeSprite(marine), count=quality===1 ? 1 : 3;
+      for(let j=0;j<count;j++) {
+        const scale = j ? .48+.06*j : .94;
+        const sign = seed<.5 ? 1 : -1;
+        c.save(); c.globalAlpha=A.k*(j ? .66 : .83);
+        c.translate(sx-sign*j*50,y+(j===1 ? -19 : j===2 ? 9 : 0)+Math.sin(phase+j)*4);
+        c.rotate(Math.sin(phase+j)*.08); c.scale(sign*scale,scale);
+        if (marine) c.drawImage(sprite,-72,-54);
+        else {
+          const flap=.74+.21*Math.cos(t*2.4+j+seed*TAU);
+          c.save(); c.scale(flap,1); c.drawImage(sprite,-72,-54); c.scale(-1,1); c.drawImage(sprite,-72,-54); c.restore();
+          c.fillStyle='#644e65'; c.beginPath(); c.ellipse(0,0,2.9,12,0,0,TAU); c.fill();
+          c.lineWidth=1.3; c.strokeStyle='#705973'; c.beginPath(); c.moveTo(0,-9);
+          c.quadraticCurveTo(-3,-17,-8,-17); c.moveTo(0,-9); c.quadraticCurveTo(3,-17,8,-17); c.stroke();
+        }
+        c.restore();
+      }
+    }
+  }
+  let ringRoute = null, seenRingMask = 0;
+  const collectedAt = new Map();
+  function drawAirRings(c, camX, w, gy, now, mask, world, reduced) {
+    const rings = Terrain.AIR_RINGS;
+    if (rings !== ringRoute) {
+      ringRoute = rings; seenRingMask = mask; collectedAt.clear();
+    }
+    if (!rings.length) return;
+    const added = mask & ~seenRingMask;
+    seenRingMask = mask;
+    for (const ring of rings) {
+      if (added & ring.bit) collectedAt.set(ring.bit,now);
+      const x = ring.x-camX;
+      if (x < -72 || x > w+72) continue;
+      const used = !!(mask & ring.bit);
+      const since = now - (collectedAt.get(ring.bit) ?? -1e6);
+      if (used && (since > 490 || reduced)) continue;
+      const water = world==='atlantis';
+      const time = reduced ? 0 : now/1000;
+      c.save(); c.translate(x,gy-ring.height);
+      if (used) {
+        // The host confirms collection separately for each rider.
+        const progress=clamp(since/490,0,1);
+        c.globalAlpha=1-progress; c.lineWidth=2.5; c.strokeStyle=water?'#bcfff6':'#fff1aa';
+        c.beginPath();
+        for(let i=0;i<8;i++){
+          const a=TAU*i/8, r=38+progress*24;
+          c.moveTo(Math.cos(a)*r,Math.sin(a)*r);
+          c.lineTo(Math.cos(a)*(r+6),Math.sin(a)*(r+6));
+        }
+        c.stroke();
+      } else {
+        // Two ribbon currents or a circlet of lanterns, with an open centre.
+        c.lineCap='round';
+        for(let k=0;k<2;k++){
+          const a=k*Math.PI+.21;
+          c.beginPath();c.ellipse(0,0,43,49,-.08,a,a+2.73);
+          c.strokeStyle=water?'#1a586b':'#655536';c.lineWidth=6;c.stroke();
+          c.strokeStyle=water?'#9eeedf':'#e8ba65';c.lineWidth=2.9;c.stroke();
+        }
+        const n=water?5:8;
+        for(let i=0;i<n;i++){
+          const a=TAU*i/n+time*(water?.40:.21);
+          const xx=Math.cos(a)*42, yy=Math.sin(a)*48;
+          c.beginPath(); c.arc(xx,yy,water?4:3.8,0,TAU);
+          if(water){c.strokeStyle='#e0fffc';c.lineWidth=2;c.stroke();}
+          else{c.fillStyle='#fff0a7';c.fill();}
+        }
+        // Same bolt as the sprint control, inside the bottom medallion.
+        c.fillStyle=water?'#1c6973':'#725b2f'; c.beginPath();c.arc(0,47,10,0,TAU);c.fill();
+        c.fillStyle='#fff4cd'; c.beginPath();c.moveTo(1,39);c.lineTo(-5,48);c.lineTo(-1,48);
+        c.lineTo(-2,54);c.lineTo(6,45);c.lineTo(1,45);c.closePath();c.fill();
+      }
+      c.restore();
+    }
+  }
+  function drawGround(ctx, camX, w, gy, t, ringMask = 0) {
+    skinOff(ctx);
+    const q=qual();
+    const A=active(camX,w); if(!A) return;
+    const reduced=!!(motionPreference && motionPreference.matches);
+    const seconds=reduced ? 0 : t/1000;
+    if (q>=2 && !Terrain.AIR_RINGS.length) return;
+    ctx.save();
+    try {
+      clipSegment(ctx,A,w,Scenery.state.h);
+      if(q<2){
+        wildlife(ctx,camX,w,gy,seconds,A,q);
+        monuments(ctx,camX,w,gy,seconds,A);
+        props(ctx,camX,w,gy,seconds,A);
+      }
+      drawAirRings(ctx,camX,w,gy,t,ringMask,A.world,reduced);
+    } finally { ctx.restore(); }
   }
   function drawFore(ctx, camX, w, gy, t, h) {
-    const q = qual(); if (q >= 2) return; const A = active(camX, w); if (!A) return;
-    fore(ctx, camX, w, gy, t / 1000, A, q);
-    if (h && (A.world === 'atlantis' || A.world === 'enchanted' || A.world === 'neon')) silhouettes(ctx, camX, w, h, t / 1000, A);
-    ctx.globalAlpha = 1;
+    const q=qual(); if(q>=2) return;
+    const A=active(camX,w); if(!A) return;
+    const seconds=motionPreference && motionPreference.matches ? 0 : t/1000;
+    ctx.save();
+    try {
+      clipSegment(ctx,A,w,h || Scenery.state.h);
+      fore(ctx,camX,w,gy,seconds,A,q);
+      if (h && (A.world==='atlantis' || A.world==='enchanted' || A.world==='neon')) silhouettes(ctx,camX,w,h,seconds,A);
+    } finally { ctx.restore(); }
   }
   return { drawGround, drawFore, skinX, skinOff, trim };
 })();

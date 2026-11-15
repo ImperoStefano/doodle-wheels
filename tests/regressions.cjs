@@ -381,4 +381,20 @@ const ctx2={};vm.createContext(ctx2);vm.runInContext(fs.readFileSync(root+'/js/c
   }
   assert.equal(seenWorlds.size,7); assert(courses.size >= 20); applied++;
 }
+// Air rings only reward a bike in flight, once per rider, including during sprint.
+{
+  const source = fs.readFileSync(root+'/js/physics.js','utf8').replace('  return {\n    init, addRacer,',
+    '  return {airRingStep,sprintStep,\n    init, addRacer,');
+  const sim = Function('Matter','Terrain',source+';return Sim')({}, {AIR_RINGS:[{bit:1,x:300,height:175}]});
+  function rider() {
+    return {chassis:{position:{x:300,y:sim.GROUND_Y-175}},ringMask:0,ringHits:0,
+      spOn:false,spCharge:.3,ringCredit:0,fw:{gapNow:0},rw:{gapNow:50}};
+  }
+  const r=rider(); sim.airRingStep(r); assert.equal(r.ringHits,0);
+  r.fw.gapNow=50; sim.airRingStep(r); sim.airRingStep(r);
+  assert.equal(r.ringHits,1); assert.equal(r.spCharge,.5);
+  const active=rider(); active.fw.gapNow=50; active.spOn=true; active.spT=8;
+  sim.airRingStep(active); sim.sprintStep(active); assert.equal(active.spCharge,.2);
+  applied++;
+}
 console.log('OK '+applied+' regression tests: ramps, jumps, landings, assets, special-world summary, white-screen recovery');

@@ -902,6 +902,33 @@ const Terrain = (() => {
     INTERACTIVE_OBSTACLES.forEach((o,i)=>o.id=i);
   }
 
+  // Two optional airborne gates. Choose safe approaches after every solid
+  // obstacle and portal has its final position; no changes to the terrain.
+  let AIR_RINGS = [];
+  function planAirRings() {
+    AIR_RINGS = [];
+    const seg = WORLD_SEGMENT;
+    if (!seg || (seg.world !== 'atlantis' && seg.world !== 'enchanted')) return;
+    const hazards = [...DYNAMIC_OBSTACLES,...INTERACTIVE_OBSTACLES,...PORTALS,
+      ...BUBBLE_VENTS,...TIDAL_CURRENTS,...ROOT_RIDGES,...CLOUD_PADS];
+    const half = (seg.end - seg.start) / 2;
+    for (let i = 0; i < 2; i++) {
+      const middle = Math.round(seg.start + (i + .5) * half);
+      for (let step = 0; ; step++) {
+        const offset = Math.ceil(step / 2) * 65;
+        if (offset > half / 2 - 280) break;
+        const x = middle + (step % 2 ? offset : -offset);
+        if (AIR_RINGS.some(r=>Math.abs(x-r.x)<750)) continue;
+        if (hazards.some(o => Math.abs(x-o.x) < (o.width || 120)/2 + 190)) continue;
+        if (![-160,0,160].every(d => landOk(x+d) && !isWater(x+d) && !isLava(x+d))) continue;
+        const h = height(x);
+        if (Math.max(Math.abs(height(x-110)-h),Math.abs(height(x+110)-h)) > 37) continue;
+        AIR_RINGS.push({x, height: h + 175, bit: 1 << i, width: 90});
+        break;
+      }
+    }
+  }
+
   // ---- costruzione delle zone ---------------------------------------------------------------
   function applyLayout(layoutKeys, force) {
     const selectedWorld = force && WORLD_KEYS.includes(force.world) ? force.world : 'classic';
@@ -981,6 +1008,7 @@ const Terrain = (() => {
       planInteractiveObstacles(keys);
     }
     PORTALS = []; if (force && force.crazy) planPortals(keys, force.np);
+    planAirRings();
     FLOWERS = generateFlowers(rnd).filter(f => !DYNAMIC_OBSTACLES.some(o => Math.abs(o.x - f.x) < 180) && !INTERACTIVE_OBSTACLES.some(o => Math.abs(o.x - f.x) < 175));
     LILIES = generateLilies();
   }
@@ -1304,7 +1332,7 @@ const Terrain = (() => {
 
   return {
     generateRandomLayout, dailyCourse, applyLayout, plainAt, SEASONS, seasonOf, PACES, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
-    get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get DYNAMIC_OBSTACLES() { return DYNAMIC_OBSTACLES; }, get INTERACTIVE_OBSTACLES() { return INTERACTIVE_OBSTACLES; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; }, get HALO_RINGS() { return HALO_RINGS; }, get ASH_GUSTS() { return ASH_GUSTS; }, get TIDAL_CURRENTS() { return TIDAL_CURRENTS; }, get ROOT_RIDGES() { return ROOT_RIDGES; }, get NEON_GATES() { return NEON_GATES; }, get EGYPT_MUMMIES() { return EGYPT_MUMMIES; },
+    get AIR_RINGS() { return AIR_RINGS; }, get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get DYNAMIC_OBSTACLES() { return DYNAMIC_OBSTACLES; }, get INTERACTIVE_OBSTACLES() { return INTERACTIVE_OBSTACLES; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; }, get HALO_RINGS() { return HALO_RINGS; }, get ASH_GUSTS() { return ASH_GUSTS; }, get TIDAL_CURRENTS() { return TIDAL_CURRENTS; }, get ROOT_RIDGES() { return ROOT_RIDGES; }, get NEON_GATES() { return NEON_GATES; }, get EGYPT_MUMMIES() { return EGYPT_MUMMIES; },
     frictionAt: x => { const f = FRICTION[zoneAt(x).key] || 0.9; return f < 0.9 && onRamp(x) ? 0.9 : f; },   // il piano della rampa tiene sempre (anche nel ghiaccio)
     colorAt: x => zoneAt(x).color || '#059669',
     zoneKeyAt: x => zoneAt(x).key,

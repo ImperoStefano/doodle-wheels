@@ -11,7 +11,7 @@ const RouteStamps = (() => {
     const first = segment ? segment.start : 500;
     const last = segment ? segment.end : Terrain.FINISH_X - 400;
     const hazards = [...Terrain.INTERACTIVE_OBSTACLES, ...Terrain.DYNAMIC_OBSTACLES,
-      ...Terrain.NEON_GATES, ...Terrain.PORTALS, ...Terrain.EGYPT_MUMMIES];
+      ...Terrain.NEON_GATES, ...Terrain.AIR_RINGS, ...Terrain.PORTALS, ...Terrain.EGYPT_MUMMIES];
     for (let i = 0; i < 3; i++) {
       const start = first + (last - first) * i / 3;
       const end = first + (last - first) * (i + 1) / 3;

@@ -40,6 +40,12 @@
   }
   const launchFeedback = document.getElementById('launch-feedback');
   const launchSummary = document.getElementById('launch-summary');
+  let ringMask = null;
+  function raceFeedback(text) {
+    launchFeedback.textContent = text;
+    clearTimeout(launchFeedbackTimer);
+    launchFeedbackTimer = setTimeout(() => { launchFeedback.textContent = ''; }, 1250);
+  }
   let seenTimedLaunches = null, launchFeedbackTimer = 0;
   function showWheelProfile(el, valid, p) {
     if (!el) return;
@@ -111,7 +117,8 @@
   let ghostRun = false, ghostClock = null, ghostResultKey = '', ghostDelta = 0;
   function courseKey() {
     const mode = crazy ? 'crazy-' + Object.keys(wheels).length : 'normal';
-    return [currentWorld === 'neon' ? 'dw_best_neon_v41' : 'dw_best_v39', currentWorld, mode, Terrain.SEASON.key, (currentLayout || []).join('-')].join('_');
+    const version = {neon:'dw_best_neon_v41', atlantis:'dw_best_v43', enchanted:'dw_best_v43'}[currentWorld] || 'dw_best_v39';
+    return [version, currentWorld, mode, Terrain.SEASON.key, (currentLayout || []).join('-')].join('_');
   }
   let currentRaceStart = 0, drawDeadline = 0;
   // A room invitation and an unguessable return token survive a closed tab.
@@ -733,6 +740,7 @@
     try { localStorage.setItem('dw_draw_tip_seen', '1'); } catch (_) {}
   });
   function enterDrawPhase(deadline) {
+    PostcardExport.clear();
     if (firstTip) { try { firstTip.hidden = localStorage.getItem('dw_draw_tip_seen') === '1'; }
       catch (_) { firstTip.hidden = false; } }
     requestWakeLock();
@@ -813,6 +821,7 @@
     ghostRun = true; ghostClock = null; ghostResultKey = '';
     clearTimeout(launchFeedbackTimer);
     launchFeedback.textContent = '';
+    ringMask = returning ? null : 0;
     seenTimedLaunches = returning ? null : 0;
     updateStamps(0, true);
     if (returning) personalStamps = null;
@@ -913,11 +922,16 @@
     if (mine && Number.isSafeInteger(mine.timedLaunches)) {
       if (seenTimedLaunches !== null && mine.timedLaunches > seenTimedLaunches) {
         if (typeof Sfx !== 'undefined') Sfx.timedLaunch();
-        launchFeedback.textContent = I18n.t('race.timedLaunch') + ' ×' + mine.timedLaunches;
-        clearTimeout(launchFeedbackTimer);
-        launchFeedbackTimer = setTimeout(() => { launchFeedback.textContent = ''; }, 1250);
+        raceFeedback(I18n.t('race.timedLaunch') + ' ×' + mine.timedLaunches);
       }
       seenTimedLaunches = mine.timedLaunches;
+    }
+    if (mine && Number.isSafeInteger(mine.ringMask)) {
+      if (ringMask !== null && (mine.ringMask & ~ringMask)) {
+        raceFeedback(I18n.t('race.ring'));
+        if (typeof Sfx !== 'undefined') Sfx.ring();
+      }
+      ringMask = mine.ringMask;
     }
     const arr = performance.now(); let t = arr;
     if (!Net.isHost && typeof ts === 'number') {
@@ -1840,7 +1854,7 @@
     for (let i = 0; i < n; i++) surfBuf[i] = Terrain.naturalHeight(camX + i * SURF_STEP);
     Scenery.drawGround(ctx2d, surfBuf, n, SURF_STEP);
     Scenery.drawWorldEffects(ctx2d, camX, w, groundY, Math.max(0, t0 - raceT0));
-    WorldFX.drawGround(ctx2d, camX, w, groundY, t0);
+    WorldFX.drawGround(ctx2d, camX, w, groundY, t0, ringMask || 0);
     if (Terrain.WORLD_SEGMENT && Terrain.WORLD_SEGMENT.world==='egypt') EgyptWorld.drawGround(ctx2d,camX,w,groundY);
     drawRampTakeoffCues(ctx2d,camX,w,groundY,t0);
 
@@ -1862,8 +1876,11 @@
         draw();
       } finally { ctx2d.restore(); }
     }
-    drawClassicLayer(() => Props.drawSigns(ctx2d, camX, w, groundY));
-    Props.drawFinish(ctx2d, camX, w, groundY, SC);
+    drawClassicLayer(() => {
+      Props.drawTracksideAnimals(ctx2d, camX, w, groundY, me, t0);
+      Props.drawSigns(ctx2d, camX, w, groundY);
+    });
+    Props.drawFinish(ctx2d, camX, w, groundY, SC, latestRacers, activeEmotes, t0);
     Props.drawBridges(ctx2d, camX, w, groundY, SC);
     // Rendering delle sagome SOLIDE V20, prima dei giocatori (collider host Matter).
     const obstacleElapsed = Net.isHost ? Sim.getObstacleTime() :
@@ -2187,22 +2204,16 @@
 
   function stopRaceLoops() { drawErrorStreak = 0; if (renderFault) renderFault.hidden = true; CurseFx.reset(); if (connectionStatus) connectionStatus.hidden = true; closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
-  const saveCard = document.getElementById('save-card');
-  saveCard.addEventListener('click', () => {
-    const mine = lastStandings && lastStandings.find(r => r.id === Net.myId);
-    if (!mine) return;
-    const canvas = document.createElement('canvas');
-    RouteStamps.postcard(canvas, currentWorld, mine, raceMeta[mine.id]?.vertices, I18n.t('world.tag.' + currentWorld));
-    const link = document.createElement('a');
-    link.download = 'Doodle-Wheels-' + currentWorld + '.png';
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-  });
   function showLaunchSummary(mine) {
     const ghostResult = document.getElementById('ghost-result');
     ghostResult.hidden = !ghostResultKey;
     if (ghostResultKey) ghostResult.textContent = I18n.t(ghostResultKey, { s: (ghostDelta/1000).toLocaleString(I18n.lang, {minimumFractionDigits:2,maximumFractionDigits:2}) });
-    saveCard.hidden = !mine || !mine.stampMask;
+    if (mine && (mine.finished || mine.stampMask)) {
+      const expanded = !document.getElementById('card-preview').hidden;
+      PostcardExport.prepare(currentWorld, canvas => {
+        RouteStamps.postcard(canvas, currentWorld, mine, raceMeta[mine.id]?.vertices, I18n.t('world.tag.' + currentWorld));
+      }, expanded);
+    } else PostcardExport.clear();
     const result = document.getElementById('stamp-result');
     const total = RouteStamps.route().length;
     result.hidden = !mine || !total;

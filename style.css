@@ -912,3 +912,12 @@ body[data-screen="race"] .page {
 .ghost-control[hidden],.ghost-result[hidden],.daily-course[hidden] { display:none; }
 
 #leave-daily[hidden] { display:none; }
+
+.card-status:empty, .card-preview[hidden], .card-actions [hidden] { display:none; }
+.stamp-recap a.btn, .card-actions a.btn { text-decoration:none; display:inline-flex; align-items:center; }
+.stamp-recap a[hidden] { display:none; }
+.card-preview { max-width:500px; margin:10px auto; }
+.card-preview img { display:block; width:100%; height:auto; border-radius:8px; -webkit-touch-callout:default; -webkit-user-select:auto; user-select:auto; }
+.card-preview .hint { margin:6px 0; }
+.card-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
+.card-actions .btn { font-size:.85rem; padding:6px 12px; }

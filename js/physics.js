@@ -325,7 +325,7 @@ const Sim = (() => {
       curseAt:-1,curseStage:0,curseLevel:0,curseHits:{},
       rampTakeoffAt:-1e9,rampInputUsed:false,rampGroundTicks:0,timedLaunches:0, stampMask:0,
       flightTicks:0,flightArmed:false,landHits:0,landPower:0,
-      stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
+      stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0, ringMask: 0, ringHits: 0, ringCredit: 0,
       spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
     meltInit(racers[id], id, vertices);
@@ -1251,7 +1251,7 @@ const Sim = (() => {
     return 1;
   }
   function sprintStep(r) {
-    if (r.spOn) { r.spT -= TICK_MS; r.spCharge = Math.max(0, r.spT / SPRINT_MS) * 0.999; if (r.spT <= 0) { r.spOn = false; r.spCharge = 0; } }
+    if (r.spOn) { r.spT -= TICK_MS; r.spCharge = Math.max(0, r.spT / SPRINT_MS) * 0.999; if (r.spT <= 0) { r.spOn = false; r.spCharge = r.ringCredit || 0; r.ringCredit = 0; } }
     else if (r.spCharge < 1) r.spCharge = Math.min(1, r.spCharge + TICK_MS / SPRINT_RECHARGE_MS);
   }
   function sprint(id) {
@@ -1407,10 +1407,23 @@ const Sim = (() => {
 
   // Correnti del Paradiso e geyser dell'Inferno: vengono applicati solo dall'host,
   // quindi restano sincronizzati con la simulazione autoritativa già esistente.
+  function airRingStep(r) {
+    if (r.righting || !(r.fw.gapNow > 20 && r.rw.gapNow > 20)) return;
+    const pos = r.chassis.position;
+    for (const ring of Terrain.AIR_RINGS) {
+      if (r.ringMask & ring.bit || Math.abs(pos.x-ring.x) > 45) continue;
+      const dx = (pos.x - ring.x) / 45, dy = (pos.y - (GROUND_Y-ring.height)) / 49;
+      if (dx*dx + dy*dy > 1) continue;
+      r.ringMask |= ring.bit; r.ringHits++;
+      if (r.spOn) r.ringCredit = Math.min(1, r.ringCredit + .20);
+      else r.spCharge = Math.min(1, r.spCharge + .20);
+    }
+  }
   function worldEffectStep(r, elapsed) {
     const bodies = [r.chassis, r.fw, r.rw], x = r.chassis.position.x;
     const segment = Terrain.WORLD_SEGMENT;
     const world = segment && x >= segment.start && x <= segment.end ? segment.world : Terrain.WORLD;
+    if (world === 'atlantis' || world === 'enchanted') airRingStep(r);
     if (world === 'paradise') {
       let lift = 0;
       for (const q of Terrain.UPDRAFTS) {
@@ -1662,7 +1675,7 @@ const Sim = (() => {
       fwX: r.fw.position.x, fwY: r.fw.position.y, fwAngle: r.fw.angle,
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
-      timedLaunches: r.timedLaunches, stampMask: r.stampMask,
+      timedLaunches: r.timedLaunches, stampMask: r.stampMask, ringHits: r.ringHits, ringMask: r.ringMask,
       finished: r.finished, finishTime: r.finishTime,
       dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, ln: r.ln || 0, ls: r.ls || 0, ld: r.landHits || 0, lp: r.landPower || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, cu: r.curseLevel || 0, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
@@ -1686,7 +1699,7 @@ const Sim = (() => {
     return Object.entries(racers).map(([id, r]) => ({
       id, name: r.name, color: r.color,
       finished: r.finished, finishTime: r.finishTime,
-      timedLaunches: r.timedLaunches, stampMask: r.stampMask,
+      timedLaunches: r.timedLaunches, stampMask: r.stampMask, ringHits: r.ringHits, ringMask: r.ringMask,
       distance: r.chassis.position.x
     })).sort((a, b) => {
       if (a.finished && b.finished) return a.finishTime - b.finishTime;

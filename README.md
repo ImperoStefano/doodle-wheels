@@ -2,6 +2,20 @@
 
 **Multiplayer 2D browser game** — disegna le ruote della tua bici, affronta rampe e ostacoli, gareggia con gli amici attraverso mondi diversi.
 
+## V45 - Luce e leggibilità del paesaggio
+
+Il sole segue la gara e passa gradualmente dalla luce velata del ghiacciaio al disco basso e ambrato del canyon. Sul crinale gli alberi lasciano spazio alle sagome degli edifici. Un sottile bordo color paglia segue il profilo dei dossi erbosi.
+
+## V44 - Prospettiva dei fondali
+
+Mulino, faro, funivia, arco e vedetta seguono il crinale su cui sorgono, con una scala ridotta e un contrasto atmosferico più leggero.
+
+## V43 - Paesaggi in movimento
+
+Le colline, la laguna, il ghiacciaio, il canyon e il bosco autunnale hanno nuovi punti di riferimento illustrati. Vicino alla pista si incontrano lepri e aironi; al traguardo gli spettatori sollevano le braccia al tuo passaggio e rispondono alle emote. In Atlantide e nel Bosco incantato gli anelli sospesi sono un bersaglio facoltativo: attraversarli con entrambe le ruote in aria recupera il 20% della ricarica dello scatto. Durante uno scatto il bonus si applica alla sua conclusione.
+
+Al traguardo, **Scarica cartolina PNG** offre un file da 1000 x 520 pixel anche a chi ha finito senza timbri. Dopo il tocco compare l'immagine, da aprire o salvare su telefono. Nei browser compatibili puoi anche condividere il file con altre app. I partecipanti che non finiscono possono salvare la cartolina se hanno raccolto almeno un timbro.
+
 ## V42 - Cronosfida del giorno e fantasma personale
 
 Nel menu, la Cronosfida del giorno apre direttamente il disegno della ruota e avvia una gara singola sul dispositivo. Tutti ricevono lo stesso mondo e la stessa pista per la data UTC. La rivincita conserva il percorso anche se nel frattempo cambia il giorno.

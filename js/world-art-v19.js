@@ -376,5 +376,128 @@ const WorldArtV19 = (() => {
     }
     c.restore();
   }
-  return Object.freeze({draw});
+  // V43: travel-poster vignettes for the natural biomes. Coordinates are relative
+  // to the centre of the hill crest. Only the blades and cable cars move.
+  function farmhouse(c,x,y,w,h) {
+    block(c,'#eed1a0',x,y-h,w,h);
+    panel(c,'#ad694f',x-4,y-h+1,x+w*.22,y-h-14,x+w*.79,y-h-14,x+w+5,y-h+1);
+    block(c,'#806254',x+w*.67,y-11,7,11);
+    for(let i=0;i<2;i++) block(c,'#6b8980',x+6+i*11,y-h+6,5,7);
+  }
+  function hillMill(c) {
+    panel(c,'#80916a',-180,11,-145,-8,-80,-23,0,-7,60,-15,135,-10,184,10,162,36,-158,36);
+    farmhouse(c,-116,-8,48,23); farmhouse(c,57,-2,68,28);
+    for(let i=0;i<3;i++) {
+      const x=-73+i*15,y=-14+i*2;
+      block(c,'#647a65',x-1,y-10,3,12);
+      c.fillStyle='#55786b';c.beginPath();c.ellipse(x,y-24,4,19-i*2,.04,0,TAU);c.fill();
+    }
+    panel(c,'#f5deb1',-29,4,-18,-93,10,-100,34,4);
+    panel(c,'#d6b68d',9,-95,21,-92,34,4,18,4);
+    panel(c,'#855844',-22,-92,-18,-105,-7,-115,4,-119,18,-103,23,-92);
+    block(c,'#756555',-4,-19,10,23); block(c,'#8ba6a0',-7,-54,8,11);
+    wire(c,'#c09a74',3,-19,-28,22,-28);
+  }
+  function millBlades(c,angle) {
+    c.save();c.translate(0,-96);c.rotate(angle);
+    for(let i=0;i<4;i++){
+      wire(c,'#866959',3,0,0,0,-64);
+      panel(c,'#e7c58e',0,-22,13,-28,11,-63,0,-64);
+      for(let j=32;j<64;j+=9) wire(c,'#ab8765',1.6,1,-j,11,-j-1);
+      c.rotate(PI/2);
+    }
+    c.fillStyle='#846452';circle(c,0,0,5,true);c.restore();
+  }
+  function harbor(c) {
+    panel(c,'#699c94',-178,14,-139,2,-103,-9,-35,-6,8,-13,63,-14,90,-6,161,-5,181,14,153,31,-141,34);
+    farmhouse(c,-123,0,45,21); farmhouse(c,-67,-3,39,19);
+    panel(c,'#f7dec1',14,0,24,-111,47,-111,59,0);
+    panel(c,'#ba645b',17,-36,51,-36,54,-63,20,-63);
+    panel(c,'#bed1c3',43,-109,47,-109,59,0,51,0);
+    block(c,'#4a7375',19,-114,34,5);block(c,'#9ab4a4',23,-130,25,16);
+    block(c,'#ffe397',27,-129,15,12);block(c,'#587e7b',35,-129,2,14);
+    panel(c,'#aa6258',18,-129,35,-144,53,-129); wire(c,'#6e7b70',2,35,-145,35,-151);
+    wire(c,'#506e70',2,16,-116,16,-122,55,-122,55,-116);
+    for(let i=0;i<2;i++) {
+      const x=80+i*49, y=3-i*6;
+      wire(c,'#547777',2,x,y-3,x,y-33+i*7);
+      panel(c,'#fff0c9',x-2,y-31+i*7,x-4,y-7,x-20,y-7);
+      panel(c,'#c77b67',x+2,y-28+i*7,x+15,y-8,x+2,y-8);
+      panel(c,'#536e74',x-23,y-4,x+20,y-4,x+14,y+2,x-14,y+2);
+    }
+  }
+  function cableStation(c) {
+    panel(c,'#8c99b0',-171,14,-128,-12,-91,-16,-43,0,38,-6,105,-30,146,-21,176,12,157,33,-151,34);
+    panel(c,'#e0e4e9',-167,9,-126,-16,-93,-23,-57,-8,-89,-11,-120,-7);
+    for(const [x,y] of [[-137,-79],[92,-112]]) {
+      panel(c,'#73859d',x-9,7,x-3,y,x+3,y,x+10,7);
+      block(c,'#435775',x-10,y-3,20,6);
+    }
+    wire(c,'#52617d',2.4,-148,-80,-42,-90,24,-100,105,-113,156,-112);
+    wire(c,'#8493a7',1.7,-148,-74,-42,-84,24,-94,105,-107,156,-106);
+    block(c,'#b7c9d7',70,-37,71,27);
+    panel(c,'#59718a',63,-38,90,-56,129,-56,150,-41);
+    panel(c,'#f1f0e7',63,-38,90,-59,129,-59,147,-45,127,-51,91,-51);
+    for(let i=0;i<3;i++) block(c,'#59748c',82+i*14,-34,10,9);
+  }
+  function gondola(c,f,paint) {
+    const x=-137+f*229;
+    const y=x<-42 ? -80-(x+148)*10/106 : x<24 ? -90-(x+42)*10/66 : -100-(x-24)*13/81;
+    wire(c,'#65748a',2,x,y,x+1,y+7,x-3,y+11);
+    panel(c,paint,x-10,y+10,x+9,y+10,x+13,y+17,x+11,y+27,x-11,y+27,x-13,y+17);
+    block(c,'#e0ece9',x-9,y+13,7,7);block(c,'#c6dfe2',x,y+13,8,7);
+  }
+  function canyonArch(c) {
+    const outline=[-169,16,-128,4,-105,-5,-86,-36,-79,-89,-53,-105,-35,-112,24,-112,38,-101,74,-92,87,-41,111,-10,150,3,172,18,150,42,-155,42];
+    c.save();c.beginPath();c.moveTo(outline[0],outline[1]);
+    for(let i=2;i<outline.length;i+=2)c.lineTo(outline[i],outline[i+1]);
+    c.closePath();
+    c.moveTo(-52,9);c.lineTo(-35,-26);
+    c.bezierCurveTo(-29,-86,15,-88,31,-52);c.lineTo(42,-22);c.lineTo(57,9);c.closePath();
+    c.fillStyle='#b57071';c.fill('evenodd');c.clip('evenodd');
+    panel(c,'#d89079',-99,-97,-35,-122,27,-116,80,-95,29,-101,-36,-100,-82,-86);
+    panel(c,'#ce8979',-100,-81,-61,-88,-23,-84,21,-87,82,-78,84,-72,19,-80,-25,-79,-61,-83,-98,-73);
+    panel(c,'#9a6472',31,-104,59,-95,80,-80,90,-38,109,-12,132,3,85,-2,65,-25,56,-61);
+    panel(c,'#cf8b79',-100,-37,-65,-46,5,-40,54,-46,83,-34,43,-37,-1,-34,-64,-39,-100,-30);
+    c.restore();
+    panel(c,'#b17a77',-149,28,-87,3,-66,-6,-20,10,25,8,64,-5,132,10,171,24,157,38,-150,38);
+  }
+  function forestLookout(c) {
+    panel(c,'#956a68',-166,20,-102,1,-73,-12,-20,-3,43,-15,97,-13,159,14,146,32,-146,34);
+    for(const [x,y] of [[-100,0],[-72,-2],[-39,7],[71,-3],[99,-2]]) {
+      wire(c,'#8e6356',4,x,y+2,x,y-47);
+      c.fillStyle=x%2===0?'#c27954':'#aa665c';c.beginPath();c.ellipse(x,y-53,13,33,x*.001,0,TAU);c.fill();
+    }
+    const oak='#7d5960';
+    for(const x of [-22,18]) wire(c,oak,5,x+3,-8,x,-100);
+    wire(c,oak,3,-19,-16,19,-65,-22,-95);
+    wire(c,oak,3,18,-16,-19,-65,18,-95);
+    block(c,'#b37a59',-30,-119,55,22);
+    block(c,'#f7ca86',-24,-117,16,10);block(c,'#ebbe7d',-3,-117,17,10);
+    panel(c,'#7f5358',-38,-118,-5,-141,30,-121,34,-117);
+    block(c,'#81585a',-35,-97,64,5);
+    for(let y=-80;y<-11;y+=10) wire(c,'#b49573',2,-6,y,2,y);
+    wire(c,'#805d5a',2,-6,-90,-6,-9);wire(c,'#805d5a',2,2,-90,2,-9);
+    wire(c,'#87626a',2,-5,-141,-5,-156);panel(c,'#dfac67',-4,-156,14,-152,-4,-148);
+  }
+  const countryside = { hills:hillMill, water:harbor, ice:cableStation, gravel:canyonArch, ramps:forestLookout };
+  const countryTiles = new Map();
+  function drawCountryside(c,kind,x,y,scale,time,detail) {
+    const paint=countryside[kind];
+    if (!paint) return;
+    let tile=countryTiles.get(kind);
+    if (!tile) {
+      tile=document.createElement('canvas');tile.width=396;tile.height=228;
+      const g=tile.getContext('2d');g.translate(198,178);g.lineJoin='round';g.lineCap='round';paint(g);
+      countryTiles.set(kind,tile);
+    }
+    c.save();c.translate(x,y);c.scale(scale,scale);c.drawImage(tile,-198,-178);
+    if(kind==='hills') millBlades(c,detail===2?.19:time*.24+.19);
+    if(kind==='ice') {
+      const f=detail===2?.30:.5-.48*Math.cos(time*.13);
+      gondola(c,f,'#b65e5c');gondola(c,1-f,'#526a89');
+    }
+    c.restore();
+  }
+  return Object.freeze({draw,drawCountryside});
 })();

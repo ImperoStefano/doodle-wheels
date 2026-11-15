@@ -85,9 +85,9 @@ const Scenery = (() => {
       flora: [[FL.ROUND, 5], [FL.BUSH, 3], [FL.PINE, 1]], dens: 0.8, soil: '#3f8d5c', surf: '#a9d66b', fg: 0, part: 'meadow' },
     { name: 'Colline', skyT: '#7fb3a2', skyB: '#dcedd2', sun: '#f9e8b0', ridge: ['#b0dcbc', '#78bba0', '#3f8d7b', '#25675f'], shape: [0.2, 0.8, 0], amp: 1.4, snow: 0,
       flora: [[FL.ROUND, 4], [FL.PINE, 4], [FL.BUSH, 2]], dens: 0.85, soil: '#388659', surf: '#9fd070', fg: 0, part: 'meadow' },
-    { name: 'Ghiacciaio', skyT: '#9bb6df', skyB: '#ebeff7', sun: '#fcf1d2', ridge: ['#e8edf8', '#bdcbe9', '#8d9fd1', '#5f6fab'], shape: [0.05, 0.95, 0], amp: 1.6, snow: 1,
+    { name: 'Ghiacciaio', skyT: '#98bad4', skyB: '#e7f0f2', sun: '#f4f8ee', ridge: ['#e8edf8', '#bdcbe9', '#8d9fd1', '#5f6fab'], shape: [0.05, 0.95, 0], amp: 1.6, snow: 1,
       flora: [[FL.SNOWPINE, 6], [FL.BUSH, 1]], dens: 0.7, soil: '#7a8dc0', surf: '#f3f6fc', fg: 2, part: 'snow' },
-    { name: 'Canyon', skyT: '#df5859', skyB: '#f7ab7c', sun: '#f8e0a4', ridge: ['#cc869b', '#a26b8e', '#705f96', '#463f7b'], shape: [0, 0.4, 0.6], amp: 1.2, snow: 0,
+    { name: 'Canyon', skyT: '#d96362', skyB: '#f7bb89', sun: '#ffd08c', ridge: ['#cc869b', '#a26b8e', '#705f96', '#463f7b'], shape: [0, 0.4, 0.6], amp: 1.2, snow: 0,
       flora: [[FL.CACTUS, 5], [FL.BUSH, 3]], dens: 0.55, soil: '#c2693b', surf: '#f3b94d', fg: 3, part: 'dust' },
     { name: 'Laguna', skyT: '#f1ad8d', skyB: '#fbe3b8', sun: '#fcead0', ridge: ['#f7cfae', '#58d4c2', '#16b9a7', '#0e8f85'], shape: [0.8, 0.2, 0], amp: 0.95, snow: 0,
       flora: [[FL.PALM, 6], [FL.BUSH, 3]], dens: 0.75, soil: '#d8924d', surf: '#f8da8c', fg: 4, part: 'lagoon', water: '#2fc4b8' },
@@ -415,6 +415,12 @@ const Scenery = (() => {
     S.bannerWorld = null;
     ACTIVE_BIOMES = makeWorldBiomes(S.world);
     zones.forEach(z => Z.push({ start: z.start, end: z.end, biome: ZONE_TO_BIOME[z.key] != null ? ZONE_TO_BIOME[z.key] : 0, key: z.key, specialWorld: z.specialWorld || null, specialPart: z.specialPart || null }));
+    countryClearings.length = 0;
+    Z.forEach((z, i) => {
+      if (!(z.key in landmarkFocus) || S.world !== 'classic') return;
+      z.landmarkX = z.start + (z.end - z.start) * (.48 + .19 * rnd(i, z.start, 42));
+      if (!S.segment || z.landmarkX < S.segment.start || z.landmarkX >= S.segment.end) countryClearings.push(z);
+    });
     S.zi = 0; S.zi0 = 0; S.lastZone = -1; S.bannerT = -10;
     P.forEach(p => { p.on = false; });
   }
@@ -618,7 +624,26 @@ const Scenery = (() => {
     if (POSTER && !LAND) { const em = (A.part === 'ember' ? 1 - t : 0) + (B.part === 'ember' ? t : 0); sT = mix(sT, sB, 0.8 * (1 - em)); }   // cielo quasi piatto (tranne il vulcano)
     sT = mix(mix(sT, DUSK_T, S.warm * (LAND ? 0.3 : 0.6)), NIGHT_T, S.night);
     sB = mix(mix(sB, DUSK_B, S.warm * (LAND ? 0.35 : 0.65)), NIGHT_B, S.night);
-    S.skyT = sT; S.skyB = sB; S.sunC = mix(A.sun, B.sun, t);
+    S.skyT = sT; S.skyB = sB;
+    // The underlying sun continues on its orbit while a special backdrop fades over it.
+    const sunA = ACTIVE_BIOMES[z.biome], sunB = zn ? ACTIVE_BIOMES[zn.biome] : sunA;
+    S.sunC = mix(sunA.sun, sunB.sun, t);
+    S.sunHaze = 0;
+    if (S.world === 'classic') {
+      const snow = (z.key === 'ice' ? 1 - t : 0) + (zn?.key === 'ice' ? t : 0);
+      const canyon = (z.key === 'gravel' ? 1 - t : 0) + (zn?.key === 'gravel' ? t : 0);
+      S.sunY += gy * (.12 * canyon - .055 * snow);
+      S.sunR *= .84 + .12 * canyon - .20 * snow;
+      S.sunHaze = .78 * snow + .12 * canyon;
+      S.sunC = mix(S.sunC, [255, 195, 135], S.warm * .32 * (1 - snow));
+    }
+    if (S.segment?.world === 'egypt') {
+      const blend = S.segmentBlend;
+      S.sunR += (clamp(w * .048, 27, 62) / 2.3 - S.sunR) * blend;
+      S.sunY -= gy * .07 * blend;
+      S.sunC = mix(S.sunC, [255, 240, 191], blend);
+      S.sunHaze *= 1 - blend;
+    }
 
     // creste: forma e colori mescolati fra i due biomi, poi tinti dall'ora del giorno
     for (let l = 0; l < 4; l++) {
@@ -1901,12 +1926,15 @@ const Scenery = (() => {
     // sole piatto (stile poster): disco arancio-rosso che "respira" piano, con un alone che pulsa; più rosso verso il tramonto
     if (LAND && (S.world === 'classic' || S.world === 'paradise')) {
       // sole enorme e pallido dietro le montagne: alone sfumato + disco morbido
-      const sx = S.sunX, sy = S.sunY, r = S.sunR * 2.3 * (1 + 0.015 * Math.sin(now * 1.2)), sc = S.sunC;
+      const sx = S.sunX, sy = S.sunY, r = S.sunR * 2.3, sc = S.sunC, haze = S.sunHaze;
       ctx.globalAlpha = 1 - S.night * 0.6;
       const hg = ctx.createRadialGradient(sx, sy, r * 0.8, sx, sy, r * 2.1);
-      hg.addColorStop(0, rgb(mix(sc, S.skyB, 0.25)) .replace('rgb(', 'rgba(').replace(')', ',0.42)')); hg.addColorStop(1, rgb(sc).replace('rgb(', 'rgba(').replace(')', ',0)'));
+      hg.addColorStop(0, rgba(sc, .30 + .25 * haze)); hg.addColorStop(1, rgba(sc, 0));
       ctx.fillStyle = hg; ctx.fillRect(sx - r * 2.2, sy - r * 2.2, r * 4.4, r * 4.4);
-      ctx.fillStyle = rgb(mix(sc, [255, 255, 255], 0.08)); ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
+      const disc = ctx.createRadialGradient(sx, sy, r * (.98 - .26 * haze), sx, sy, r);
+      disc.addColorStop(0, rgba(sc, .95 - .24 * haze));
+      disc.addColorStop(1, rgba(sc, .8 * (1 - haze)));
+      ctx.fillStyle = disc; ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
       ctx.globalAlpha = 1;
     } else if (POSTER && (S.world === 'classic' || S.world === 'paradise')) {
       const sx = S.sunX, sy = S.sunY, r = S.sunR * 1.3, col = mix(SUN_COL, SUN_WARM, S.warm * 0.7), cs = rgb(col);
@@ -1983,6 +2011,7 @@ const Scenery = (() => {
       && WORLD_ART[S.world] && WORLD_ART[S.world].complete && WORLD_ART[S.world].naturalWidth > 0;
     if (!hasDedicatedArt) {
       for (let l = 0; l < 4; l++) {
+        if (l === 2 && S.world === 'classic') drawCountryLandmarks(ctx);
         drawLayer(ctx, l);
         if (l === 0) {
           if (va > 0.02) { drawVolcanoes(ctx, va); drawInfernoCitadels(ctx); }
@@ -1995,6 +2024,33 @@ const Scenery = (() => {
     drawDanteLovers(ctx);
     drawParadiseHeaven(ctx);
     drawParadiseIslands(ctx);
+  }
+
+  // Centre and half-width of the part of each illustration visible above the ridge.
+  const landmarkFocus = {hills:[0,68], water:[35,25], ice:[-15,115], gravel:[0,56], ramps:[-4,33]};
+  const countryClearings = [];
+  const countryScale = () => clamp(S.hs * .90, .48, 1);
+  // An illustrated outcrop between the two middle ridges gives each scene
+  // a footing, including where the natural valley floor falls below the road.
+  function drawCountryLandmarks(ctx) {
+    if (typeof WorldArtV19 === 'undefined') return;
+    const {camX,w,h,gy,segment}=S, plane=RP[2], speed=LAYER[2].speed, scale=countryScale();
+    for(let i=S.zi0;i<Z.length && Z[i].start<camX+w;i++) {
+      const z=Z[i];
+      const anchor=z.landmarkX;
+      if (anchor === undefined) continue;
+      if (segment && anchor>=segment.start && anchor<segment.end) continue;
+      const left=Math.max(0,z.start-camX,segment&&anchor>=segment.end?segment.end-camX:0);
+      const right=Math.min(w,z.end-camX,segment&&anchor<segment.start?segment.start-camX:w);
+      const x=w*.56+(anchor-camX-w*.56)*speed;
+      if (x+286*scale<=left || x-286*scale>=right) continue;
+      const ridgeY=gy-plane.off-plane.A*ridgeShape(plane,camX*speed+x);
+      const perch=ridgeY+3*scale;
+      ctx.save();ctx.beginPath();ctx.rect(left,0,right-left,h);ctx.clip();
+      ctx.globalAlpha=.78-.14*S.night;
+      WorldArtV19.drawCountryside(ctx,z.key,x,perch,scale,S.now/1000,quality);
+      ctx.restore();
+    }
   }
 
   // Il Canto V non e un vulcano: e il cerchio dei lussuriosi trascinati dalla bufera.
@@ -2224,7 +2280,7 @@ const Scenery = (() => {
     const sh = R.wP + R.wM;
     if (LAND && quality < 3) {
       // montagne a facce: per ogni cima, il versante lontano dal sole è un triangolo scuro, quello vicino uno chiaro
-      const dir = S.p < 0.5 ? 1 : -1, dark = new Path2D(), lite = new Path2D(), minH = 8 * S.hs;
+      const dir = S.sunX < w * .5 ? 1 : -1, dark = new Path2D(), lite = new Path2D(), minH = 8 * S.hs;
       for (let i = 1; i < n - 1; i++) {
         const y = ysBuf[i];
         if (!(y < ysBuf[i - 1] && y <= ysBuf[i + 1])) continue;
@@ -2240,8 +2296,9 @@ const Scenery = (() => {
       const na = S.night * 0.12;
       const shadow = S.world === 'paradise' ? 'rgba(53,105,145,' : 'rgba(72,30,104,';
       const light = S.world === 'paradise' ? 'rgba(255,255,255,' : 'rgba(255,238,214,';
-      ctx.fillStyle = `${shadow}${(S.world === 'paradise' ? 0.16 + na - l * 0.02 : 0.24 + na - l * 0.025).toFixed(3)})`; ctx.fill(dark);
-      ctx.fillStyle = `${light}${(0.2 * (1 - S.night * 0.8) - l * 0.015).toFixed(3)})`; ctx.fill(lite);
+      const sideLight = smooth(Math.abs(S.sunX / w - .5) / .12);
+      ctx.fillStyle = `${shadow}${(sideLight * (S.world === 'paradise' ? 0.16 + na - l * 0.02 : 0.24 + na - l * 0.025)).toFixed(3)})`; ctx.fill(dark);
+      ctx.fillStyle = `${light}${(sideLight * (0.2 * (1 - S.night * 0.8) - l * 0.015)).toFixed(3)})`; ctx.fill(lite);
     }
     if (!LAND && sh > 0.4 && quality < 1) {
       const dir = S.p < 0.5 ? 1 : -1, shade = new Path2D();
@@ -2283,7 +2340,17 @@ const Scenery = (() => {
         const aA = rp < A.dens ? 1 - t : 0, aB = rp < B.dens ? t : 0;
         if (aA + aB < 0.02) continue;
         const kA = floraPick(A, rk), kB = floraPick(B, rk);
-        const sc = L.size * S.hs * (0.72 + 0.55 * rnd(s, l, 4));
+        let sc = L.size * S.hs * (0.72 + 0.55 * rnd(s, l, 4));
+        if (l === 2 && countryClearings.length) {
+          // Both tree and building use ridge coordinates, so the clearing stays put as the camera moves.
+          const scale = countryScale();
+          for (const z of countryClearings) {
+            const [offset, radius] = landmarkFocus[z.key];
+            const centre = z.landmarkX * L.speed + w * .56 * (1 - L.speed) + offset * scale;
+            const clearance = Math.abs(lx - centre) - radius * scale - TREE_W * sc * .20;
+            if (clearance < 28 * scale) sc *= .20 + .80 * smooth(clearance / (28 * scale));
+          }
+        }
         const y = gy - R.off - R.A * ridgeShape(R, lx) + 3 * sc;
         const dw = TREE_W * sc, dh = TREE_H * sc;
         if (kA === kB) { ctx.globalAlpha = Math.min(1, aA + aB); ctx.drawImage(atlas.trees[kA][l][v], sx - dw / 2, y - dh + 3 * sc, dw, dh); }
@@ -2434,6 +2501,28 @@ const Scenery = (() => {
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     if (!POSTER) { ctx.strokeStyle = 'rgba(15,23,42,0.55)'; ctx.lineWidth = 13; ctx.stroke(line); }
     ctx.strokeStyle = zoneGrad(ctx, z => tod(bioAt(z, z.start).surf, 0.25, 0.5)); ctx.lineWidth = POSTER ? 20 : 9; ctx.stroke(line);
+
+    // A fine sunlit edge follows the same samples as the green turf.
+    if (S.world === 'classic') {
+      const rim = (from, to) => {
+        if (to <= camX || from >= camX + w || to <= from) return;
+        const light = ctx.createLinearGradient(from - camX, 0, to - camX, 0);
+        const fade = Math.min(.5, 64 / (to - from));
+        const tint = mix([255, 237, 162], [202, 213, 166], S.night);
+        light.addColorStop(0, rgba(tint, 0)); light.addColorStop(fade, rgba(tint, .85));
+        light.addColorStop(1 - fade, rgba(tint, .85)); light.addColorStop(1, rgba(tint, 0));
+        ctx.save(); ctx.translate(0, POSTER ? -6 : -2);
+        ctx.strokeStyle = light; ctx.lineWidth = 2.6; ctx.stroke(line); ctx.restore();
+      };
+      for (let i = S.zi0; i < Z.length && Z[i].start < camX + w; i++) {
+        const z = Z[i];
+        if (z.key !== 'hills') continue;
+        if (S.segment) {
+          rim(z.start, Math.min(z.end, S.segment.start));
+          rim(Math.max(z.start, S.segment.end), z.end);
+        } else rim(z.start, z.end);
+      }
+    }
 
     // Dettagli di superficie dedicati: piccoli segni leggibili ma mai sopra la ruota.
     if (quality < 2 && (S.world === 'atlantis' || S.world === 'enchanted' || S.world === 'neon')) {
@@ -2910,15 +2999,28 @@ const Scenery = (() => {
   function drawFront(ctx) {
     if (!Z.length) return;
     const w = S.w, h = S.h, camX = S.camX;
-    if (quality < 2 && !S.segmentActive && (S.world === 'classic' || S.world === 'paradise' || S.world === 'inferno')) {
+    if (quality < 2 && (S.world === 'classic' || S.world === 'paradise' || S.world === 'inferno')) {
       const par = camX * 1.45;
+      const fringeHeight = Math.min(FG_H, h * .135);
       const draw = (b, a) => {
         const tile = atlas.fg[b.fg]; if (!tile || a < 0.02) return;
         ctx.globalAlpha = a;
         let x = -(par % FG_W); if (x > 0) x -= FG_W;
-        for (; x < w; x += FG_W) ctx.drawImage(tile, x, h - FG_H * 0.85, FG_W, FG_H);
+        for (; x < w; x += FG_W) ctx.drawImage(tile, x, h - fringeHeight * .85, FG_W, fringeHeight);
       };
-      if (S.A.fg === S.B.fg) draw(S.A, 1); else { draw(S.A, 1 - S.t); draw(S.B, S.t); }
+      const seg=S.segment;
+      if(seg && seg.end>camX && seg.start<camX+w) {
+        const fringe=(a,b) => {
+          if(b<=a) return;
+          const mid=camX+(a+b)/2;
+          const zone=Z.find(z=>z.start<=mid && mid<z.end);
+          if(!zone) return;
+          ctx.save();ctx.beginPath();ctx.rect(a,0,b-a,h);ctx.clip();
+          draw(BIOMES[zone.biome],1);ctx.restore();
+        };
+        fringe(0,Math.max(0,seg.start-camX));
+        fringe(Math.min(w,seg.end-camX),w);
+      } else if (S.A.fg === S.B.fg) draw(S.A, 1); else { draw(S.A, 1 - S.t); draw(S.B, S.t); }
       ctx.globalAlpha = 1;
     }
     drawParticles(ctx);

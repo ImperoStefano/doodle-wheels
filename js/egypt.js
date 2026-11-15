@@ -678,11 +678,11 @@ const EgyptWorld = (() => {
     const sky=c.createLinearGradient(0,0,0,gy+80);
     sky.addColorStop(0,'#a87685');sky.addColorStop(.32,'#dfa18b');sky.addColorStop(.68,'#f7c799');sky.addColorStop(1,'#f8d9a6');
     c.fillStyle=sky;c.fillRect(0,0,w,h);
-    const sunX=w*.8-cam*.009%120,sunY=gy*.17,sR=clamp(w*.048,27,62);
+    const sunX=S.sunX,sunY=S.sunY,sR=S.sunR*2.3;
     let g=c.createRadialGradient(sunX,sunY,2,sunX,sunY,sR*3.3);
     g.addColorStop(0,'rgba(255,255,220,.48)');g.addColorStop(.5,'rgba(255,218,151,.24)');g.addColorStop(1,'rgba(255,231,183,0)');
     c.fillStyle=g;c.fillRect(sunX-sR*3.3,sunY-sR*3.3,sR*6.6,sR*6.6);
-    c.fillStyle='#fff0bf';c.beginPath();c.arc(sunX,sunY,sR,0,TAU);c.fill();
+    c.fillStyle='rgb('+S.sunC.map(Math.round).join(',')+')';c.beginPath();c.arc(sunX,sunY,sR,0,TAU);c.fill();
     dune(c,w,gy,cam,.055,gy*.68,23,'#d7a47e');
     // Distant pyramids are monumental landmarks, never the whole biome texture.
     for(let i=-1;i<5;i++){
