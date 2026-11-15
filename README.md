@@ -2,7 +2,11 @@
 
 **Multiplayer 2D browser game** — disegna le ruote della tua bici, affronta rampe e ostacoli, gareggia con gli amici attraverso mondi diversi.
 
-Questa è la versione **Doodle Wheels V37 — Atlantis & Screen Recovery**. Mantiene il nome **Doodle Wheels**, la grafica egiziana approvata, le funzioni multiplayer e le probabilità dei biomi (Classico 35%, Egitto 15%, altri speciali 10% ciascuno). Migliora il rapporto fra slancio in avanti e altezza dei salti, l’interazione tra rampa e Salto, il recupero dalle voragini e la fusione delle ruote triangolari nel Vulcano. La gara non viene rallentata.
+## V39 - Dossi e salti a tempo
+
+Archi, gradoni e uscite dalle buche hanno risalite addolcite. La stabilizzazione conserva lo slancio lungo il pendio. Premi Salto al segnale SALTA sulla rampa. Gli stacchi ben sincronizzati vengono contati nel riepilogo personale.
+
+Per ripetere le verifiche esegui `node tests/slope-audit.cjs 420` e `node tests/regressions.cjs`.
 
 ## Avvio e pubblicazione
 

@@ -8,11 +8,89 @@ const terrain = {takeoffAt: () => ({kind:'jump',lip:100,tier:0,th:.45}), zoneAt:
   DYNAMIC_OBSTACLES:[],INTERACTIVE_OBSTACLES:[]};
 const Body = {setVelocity(b,v){b.velocity={...v};}};
 let source=fs.readFileSync(root+'/js/physics.js','utf8');
-source=source.replace('  return {\n    init, addRacer,', '  globalThis.__rampQA = {jumpTry,rampStep,landingStep};\n  return {\n    init, addRacer,');
+source=source.replace('  return {\n    init, addRacer,', '  globalThis.__rampQA = {jumpTry,rampStep,landingStep,assist,driveRacer,applyCalibration,ravineStep};\n  return {\n    init, addRacer,');
 assert(source.includes('__rampQA'));
 const ctx={Terrain:terrain,Matter:{Body},performance:{now:()=>0},console};
 vm.createContext(ctx);vm.runInContext(source,ctx);
 const {jumpTry,rampStep,landingStep}=ctx.__rampQA;
+// Near the ground, only the wheel's outward velocity should be damped.
+// A bike following a slope keeps its tangent speed in either direction.
+{
+  const {assist}=ctx.__rampQA;
+  const close=(a,b)=>assert(Math.abs(a-b)<1e-8,`expected ${a} ≈ ${b}`);
+  for(const grade of [-Math.tan(Math.PI/6),0,Math.tan(Math.PI/6)]){
+    const scale=Math.hypot(1,grade);
+    const tx=1/scale, ty=-grade/scale, nx=-grade/scale, ny=-1/scale;
+    for(const forward of [-6,6]) for(const outward of [-2,0,2]){
+      const vx=forward*tx+outward*nx, vy=forward*ty+outward*ny;
+      const wheel=()=>({position:{x:100},velocity:{x:vx,y:vy},gapNow:2});
+      const r={fw:wheel(),rw:wheel()};
+      r.rw.gapNow=0;
+      assist(r,x=>x*grade);
+      const v=r.fw.velocity;
+      close(v.x*tx+v.y*ty,forward);
+      close(v.x*nx+v.y*ny,outward>0 ? outward*.2 : outward);
+    }
+  }
+  applied++;
+}
+// A mirror portal reverses travel. A rider stalled below a ravine lip gets
+// the gentle recovery in the direction of the race, with fast riders left alone.
+{
+  const profile={...terrain,height:()=>0,ravineAt:()=>({D:80,a:0,u2:200,rr:150})};
+  const pit={Terrain:profile,Matter:{Body},performance:{now:()=>0}};
+  vm.createContext(pit);vm.runInContext(source,pit);
+  for(const dir of [-1,1])for(const speed of [0,5]){
+    const body=()=>({position:{x:150,y:550},velocity:{x:dir*speed,y:0},bounds:{max:{y:600}},gapNow:2});
+    const r={fw:body(),rw:body(),chassis:body(),dir,pitAt:100,pitBoostAt:-1e9};
+    pit.__rampQA.ravineStep(r,2300);
+    const expected=speed===0?3.8:speed;
+    assert.equal(r.chassis.velocity.x,dir*expected);
+    assert.equal(r.chassis.velocity.y,speed===0?-7.3:0);
+  }
+  applied++;
+}
+// The real worker loads physics without a race or Terrain. Neither the trial
+// motor nor its surface assist should need the active track.
+{
+  const body={...Body,getAngularVelocity(){return 0;},setAngularVelocity(w,v){w.spin=v;}};
+  const worker={Matter:{Body:body},performance:{now:()=>0}};
+  vm.createContext(worker);vm.runInContext(source,worker);
+  const {assist,driveRacer}=worker.__rampQA;
+  const wheel=()=>({position:{x:100},velocity:{x:6,y:0},gapNow:2});
+  const r={fw:wheel(),rw:wheel(),chassis:wheel(),roll:1,cal:[1,1,1,1],secOf:()=>0};
+  driveRacer(r,2000,false);assert(r.fw.spin>0);
+  assist(r,x=>x*.2);
+  applied++;
+}
+// Multiple riders may draw the same wheel while calibration is pending.
+// A result arriving after a redraw belongs only to the matching wheel.
+{
+  let worker;
+  class TestWorker {
+    constructor(){worker=this;this.jobs=[];}
+    postMessage(job){if(!job.init)this.jobs.push(job);}
+  }
+  const pool={Worker:TestWorker,URL,navigator:{hardwareConcurrency:2},setTimeout:()=>1,
+    clearTimeout(){},document:{baseURI:'https://example.test/',querySelector:()=>({src:'https://example.test/script.js'})}};
+  vm.createContext(pool);vm.runInContext(source,pool);
+  const apply=pool.__rampQA.applyCalibration;
+  const shape=[{x:0,y:8},{x:-8,y:-4},{x:8,y:-4}];
+  const other=[{x:8,y:8},{x:8,y:-8},{x:-8,y:-8},{x:-8,y:8}];
+  const a={},b={};
+  apply(a,shape);apply(b,shape);apply(a,other);
+  assert.deepEqual(Array.from(a.cal),[1,1,1,1]);
+  assert.deepEqual(Array.from(b.cal),[1,1,1,1]);
+  worker.onmessage({data:{ready:true}});
+  assert.equal(worker.jobs.length,1);
+  worker.onmessage({data:{id:worker.jobs[0].id,cal:[2,2,2,2]}});
+  assert.equal(worker.jobs.length,2);
+  assert.deepEqual(Array.from(a.cal),[1,1,1,1]);
+  assert.deepEqual(Array.from(b.cal),[2,2,2,2]);
+  worker.onmessage({data:{id:worker.jobs[1].id,cal:[3,3,3,3]}});
+  assert.deepEqual(Array.from(a.cal),[3,3,3,3]);
+  applied++;
+}
 function bike(){const fw={position:{x:96},velocity:{x:6,y:-3},gapNow:60},rw={position:{x:-70},velocity:{x:6,y:-3},gapNow:59};return {
  fw,rw,chassis:{position:{x:0},velocity:{x:6,y:-3}},airJ:1,rampLaunched:true,
  rampTakeoffAt:1000,rampInputUsed:false,rampFly:1,jumpAt:1000,dir:1,sc:1,
@@ -23,7 +101,7 @@ function bike(){const fw={position:{x:96},velocity:{x:6,y:-3},gapNow:60},rw={pos
 {
  const r=bike();assert.equal(jumpTry(r,1080),1);assert.equal(r.airJ,2);
  assert.equal(r.rampInputUsed,true);assert(r.fw.velocity.y>=-12.5);assert(r.fw.velocity.y<=-9);
- assert.equal(jumpTry(r,1090),0); applied++;
+ assert.equal(jumpTry(r,1090),0);assert.equal(r.timedLaunches,1); applied++;
 }
 // A genuine later double jump remains allowed if the player did not use the
 // late ramp correction.
@@ -63,6 +141,10 @@ function bike(){const fw={position:{x:96},velocity:{x:6,y:-3},gapNow:60},rw={pos
   assert.equal(jumpTry(timed,2000),1);
   assert(timed.chassis.velocity.x > 8.8,'correctly timed ramp jump is more forward');
   assert(timed.chassis.velocity.y > -18.5,'vertical boost is bounded when already rising');
+  assert.equal(timed.timedLaunches,1);
+  timed.fw.gapNow=65;timed.rw.gapNow=63;
+  assert.equal(jumpTry(timed,2180),1,'ordinary double jump remains available');
+  assert.equal(timed.timedLaunches,1,'a second tap in the same flight adds no point');
   applied++;
 }
 // The automatic ramp impulse is vectorial (forward AND upward), larger for

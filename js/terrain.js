@@ -194,7 +194,10 @@ const Terrain = (() => {
       case 'gravel': return 14 * Math.sin(u / 120 + z.ph) + 6 * Math.sin(u / 52 + z.ph * 1.7);
       case 'ice':    return 13 * Math.sin(u / 380 + z.ph);
       case 'water':  return 12 * Math.sin(u / 300 + z.ph);
-      case 'ramps':  return rampProfile(u - RAMP_LEAD);
+      case 'ramps': {
+        const x = u - RAMP_LEAD;
+        return z.waveRamps[Math.floor(x / RAMP_PERIOD)] ? rampProfile(x) : 0;
+      }
       case 'lava':   return 20 * Math.sin(u / 250 + z.ph) + 7 * Math.sin(u / 97 + z.ph * 2.3);   // basalto: dossi bassi e larghi
       default:       return 0;
     }
@@ -203,7 +206,7 @@ const Terrain = (() => {
   // V32 Ramp Flow: ingresso curvo, salita con pendenza residua al labbro,
   // breve discesa di atterraggio. Il vecchio smoothstep annullava la pendenza
   // al punto più alto e trasformava la rampa in un dosso senza decollo.
-  const RAMP_PERIOD = 610, RAMP_RISE = 260, RAMP_DROP = 165, RAMP_PEAK = 88, RAMP_GAP = 10, RAMP_LEAD = 300;
+  const RAMP_PERIOD = 610, RAMP_RISE = 260, RAMP_DROP = 280, RAMP_PEAK = 88, RAMP_GAP = 10, RAMP_LEAD = 300;
   const RAMP_BLEND_IN = 52;
   function rampProfile(x) {
     if (x < 0) return 0;
@@ -220,6 +223,16 @@ const Terrain = (() => {
     return -RAMP_GAP * (1 - smooth(t));
   }
 
+  // Accetta un ciclo intero, dal raccordo iniziale all'atterraggio. Attenuare
+  // solo la parte coperta da una patch ricreava la cresta a metà della salita.
+  function planWaveRamps(z) {
+    z.waveRamps = [];
+    for (let a = z.start + RAMP_LEAD; a + RAMP_PERIOD <= z.end; a += RAMP_PERIOD) {
+      const b = a + RAMP_PERIOD;
+      z.waveRamps.push(!z.patches.some(p => a < p.b && b > p.a));
+    }
+  }
+
 
   // ---- terreni a tema (patch) ---------------------------------------------------------------------
   // Dentro ogni bioma, un tratto di terreno che premia FORME DI RUOTA diverse (la tonda non vince
@@ -231,7 +244,7 @@ const Terrain = (() => {
   //   ripples dune a lamiera ondulata: il ritmo dei vertici decide
   //   logs    tronchi caduti: un grosso diametro li supera meglio
   //   mud     fango (nessun profilo): la ruota liscia slitta, quella con punte morde (vedi gripAt)
-    function patchOffset(p, x) {
+  function patchOffset(p, x) {
     const u = x - p.a, L = p.b - p.a;
     if (u < 0 || u > L) return 0;
     switch (p.kind) {
@@ -304,7 +317,8 @@ const Terrain = (() => {
     let m = 0;
     for (const p of z.patches) {
       const f = PATCH_FLAT[p.kind]; if (!f) continue;
-      const v = smooth((x - (p.a - 110)) / 160) * smooth(((p.b + 110) - x) / 160) * f; if (v > m) m = v;
+      const blend = 220;
+      const v = smooth(1 + (x - p.a) / blend) * smooth(1 + (p.b - x) / blend) * f; if (v > m) m = v;
     }
     return m;
   }
@@ -317,7 +331,10 @@ const Terrain = (() => {
     const S = 2 * 80 * Math.sin(Math.PI / n);
     const ac = S / (2 * Math.log(1 / Math.tan(Math.PI / (2 * n))));
     const k = Math.ceil(880 / S) + (rnd ? Math.floor(rnd() * 2) : 0);
-    return { kind: 'arch', n, S, ac, c: 1 / Math.sin(Math.PI / n), f: f == null ? 1.0 : f, len: k * S };
+    // La pendenza al piede della catenaria è sinh(S/(2·ac)). Conserviamo il
+    // passo adatto alla ruota e riduciamo la profondità delle arcate ripide.
+    const scale = Math.min(1, 0.52 / Math.sinh(S / (2 * ac)));
+    return { kind: 'arch', n, S, ac, c: 1 / Math.sin(Math.PI / n), f: f == null ? scale : f, len: k * S };
   }
   // costruttori dei tipi di patch (lunghezza e parametri); il centro lo sceglie planPatches
   function mkKicker(tier, rnd) {
@@ -328,15 +345,24 @@ const Terrain = (() => {
   function makePatch(kind, rnd) {
     switch (kind) {
       case 'arch': return archSpec(3 + Math.floor(rnd() * 4), rnd);
-      case 'stairs': { const n = 3 + Math.floor(rnd() * 2), T = 170 + Math.round(rnd() * 15), rw = 54, h = 30 + Math.round(rnd() * 8), P = 150, D = 200; return { kind, len: n * T + rw + P + D, n, T, rw, h, P, D }; }
-      case 'holes': { const k = 3 + Math.floor(rnd() * 2), sp = 340, W = 150 + Math.round(rnd() * 15); return { kind, len: k * sp, k, sp, W, D: 40, e: 68 }; }
+      case 'stairs': { const n = 3 + Math.floor(rnd() * 2), T = 170 + Math.round(rnd() * 15), h = 30 + Math.round(rnd() * 8), rw = h * 3, P = 150, D = 200; return { kind, len: n * T + rw + P + D, n, T, rw, h, P, D }; }
+      case 'holes': { const k = 3 + Math.floor(rnd() * 2), sp = 340, e = 116, W = 2 * e + 20 + Math.round(rnd() * 15); return { kind, len: k * sp, k, sp, W, D: 40, e }; }
       case 'ripples': { const lam = 100 + Math.round(rnd() * 20); return { kind, len: 8 * lam, lam, A: 17 }; }
-      case 'logs': { const k = 3 + Math.floor(rnd() * 2); return { kind, len: k * 320, k, sp: 320, w: 66, H: 34 }; }
+      case 'logs': { const k = 3 + Math.floor(rnd() * 2); return { kind, len: k * 320, k, sp: 320, w: 100, H: 34 }; }
       case 'rack': { const per = 64 + Math.round(rnd() * 12); return { kind, len: 14 * per, per, A: 15 }; }
       case 'sand': return { kind, len: 880 + Math.round(rnd() * 120) };
-      case 'boulders': { const k = 2 + Math.floor(rnd() * 2), sp = 270, rocks = []; for (let j = 0; j < k; j++) rocks.push({ c: Math.round((j + 0.5) * sp + (rnd() - 0.5) * 70), w: Math.round(92 + rnd() * 30), H: Math.round(26 + rnd() * 20) }); return { kind, len: k * sp, rocks }; }
-      case 'whoops': { const n = 4 + Math.floor(rnd() * 2), hs = []; let s = 40; for (let j = 0; j < n; j++) { const l = Math.round(190 + rnd() * 60), A = Math.round(24 + rnd() * 14); hs.push({ s, l, A }); s += l + Math.round(30 + rnd() * 30); } return { kind, len: s + 20, hs }; }
-      case 'ridges': { const k = 3 + Math.floor(rnd() * 2), sp = Math.round(210 + rnd() * 30), rocks = []; for (let j = 0; j < k; j++) rocks.push({ c: Math.round((j + 0.5) * sp), w: 62, H: Math.round(26 + rnd() * 10) }); return { kind, len: k * sp, rocks }; }
+      case 'boulders': {
+        const k = 2 + Math.floor(rnd() * 2), sp = 270, rocks = [];
+        for (let j = 0; j < k; j++) {
+          const c = Math.round((j + 0.5) * sp + (rnd() - 0.5) * 70);
+          const w = Math.min(Math.round(106 + rnd() * 25), c, k * sp - c);
+          const H = Math.min(Math.round(26 + rnd() * 20), w * 0.33);
+          rocks.push({ c, w, H });
+        }
+        return { kind, len: k * sp, rocks };
+      }
+      case 'whoops': { const n = 4 + Math.floor(rnd() * 2), hs = []; let s = 40; for (let j = 0; j < n; j++) { const l = Math.round(190 + rnd() * 60), A = Math.min(Math.round(24 + rnd() * 14), l * .155); hs.push({ s, l, A }); s += l + Math.round(30 + rnd() * 30); } return { kind, len: s + 20, hs }; }
+      case 'ridges': { const k = 3 + Math.floor(rnd() * 2), sp = Math.round(210 + rnd() * 30), rocks = []; for (let j = 0; j < k; j++) rocks.push({ c: Math.round((j + 0.5) * sp), w: 88, H: Math.round(26 + rnd() * 10) }); return { kind, len: k * sp, rocks }; }
       case 'bowl': {   // avvallamento: valle dolce di profondità e lunghezza diverse (la pendenza massima resta ≈ 0,5: più è profonda, più è lunga)
         const D = 42 + Math.round(rnd() * rnd() * 100 + rnd() * 18), L = Math.round(Math.max(420, 6.1 * D) + rnd() * 110);
         return { kind, len: L + 160, s: 80, L, D };
@@ -353,7 +379,7 @@ const Terrain = (() => {
       case 'twostage': {   // rampa a due stadi: salita dolce, pianerottolo, seconda salita ripida (più spinta al labbro)
         const h1 = 30 + Math.round(rnd() * 12), h2 = 40 + Math.round(rnd() * 24), r1 = mkRamp(h1, 13 + rnd() * 3, 120), r2 = mkRamp(h2, 29 + rnd() * 3, 170);
         const s = 70, s2 = Math.round(s + r1.run + 50 + rnd() * 40), u1 = Math.round(s2 + r2.run), ex = 46;
-        return Object.assign({ kind: 'kicker', len: u1 + ex + 130, s, u1, ex, tier: 2, s2, r2 }, r1, { H: h1 + h2 });
+        return Object.assign({ kind: 'kicker', len: u1 + ex + 130, s, u1, ex, tier: 2, s2, r2 }, r1);
       }
       case 'twin': {   // gemelle: una rampa piccola/media e una più grande, una dopo l'altra (due rampe normali, piazzate insieme)
         const t1 = rnd() < 0.6 ? 0 : 1, t2 = 1, A = mkKicker(t1, rnd), B = mkKicker(t2, rnd), off = A.u1 + A.ex + 190 - B.s;
@@ -364,18 +390,18 @@ const Terrain = (() => {
         const s2 = offK + K.u1 + K.ex + 280, rr = Math.round(210 + D * 2.2);
         return { kind, len: s2 + rr + 70, parts: [[{ kind: 'drop', len: s2 + rr + 70, D, s, ex, s2, rr }, 0], [K, offK]] };
       }
-      case 'pipe': {   // mezzo tubo: discesa, fondo, curva concava (R 250, fino a 52°) e labbro appena più alto della partenza: la discesa dà la velocità per risalire
-        const D = 90 + Math.round(rnd() * 20), Ht = Math.round(rnd() * 10), rp = mkRamp(D + Ht, 48, 250), s0 = 80, dl = Math.round(D * 2.6), s = s0 + dl + 140, u1 = Math.round(s + rp.run), ex = 20;
+      case 'pipe': {   // mezzo tubo: la discesa dà velocità per un lancio più alto delle rampe ordinarie.
+        const D = 90 + Math.round(rnd() * 20), Ht = Math.round(rnd() * 10), rp = mkRamp(D + Ht, 36, 250), s0 = 80, dl = Math.round(D * 2.6), s = s0 + dl + 140, u1 = Math.round(s + rp.run), ex = 20;
         return Object.assign({ kind, len: u1 + ex + 140, D, Ht, s0, dl, s, u1, ex, tier: 2 }, rp);
       }
       case 'gapland': {   // rampa, vuoto largo, parete, cresta e discesa: il volo deve arrivare sulla pendenza. Chi cade viene riportato sulla cresta
         const tier = 1, H = tier === 1 ? 60 + Math.round(rnd() * 24) : 100 + Math.round(rnd() * 30), rp = mkRamp(H, tier === 1 ? 29 : 32, tier === 1 ? 160 : 210);
-        const s = 70, u1 = Math.round(s + rp.run), ex = 56, pw = (tier === 1 ? 180 : 220) + Math.round(rnd() * 45), D = 105 + Math.round(rnd() * 45), Hl = Math.round(H * 0.45), rr = Math.max(165 + Math.round(rnd() * 30), Math.round((D + Hl) * 1.95)), u2 = u1 + ex + pw, u3 = u2 + rr + 60, dl = Math.round(Hl / Math.tan(18 * Math.PI / 180));
+        const s = 70, u1 = Math.round(s + rp.run), ex = 56, pw = (tier === 1 ? 180 : 220) + Math.round(rnd() * 45), D = 105 + Math.round(rnd() * 45), Hl = Math.round(H * 0.45), rr = Math.round((D + Hl) * 3 + rnd() * 30), u2 = u1 + ex + pw, u3 = u2 + rr + 60, dl = Math.round(Hl / Math.tan(18 * Math.PI / 180));
         return Object.assign({ kind, len: u3 + dl + 130, D, pw, s, u1, ex, u2, rr, u3, dl, Hl, tier }, rp);
       }
       case 'ravine': {   // burrone vero: rampa di lancio ripida, vuoto profondo SENZA ponte, parete di arrivo ripida. Si scavalca saltando (rampa + salto/doppio salto); chi cade viene riportato sul bordo dopo un po'
         const H = 50 + Math.round(rnd() * 14), D = 110 + Math.round(rnd() * 115), pw = RAVINE_W + Math.round(rnd() * 45);
-        const rp = mkRamp(H, 26, 160), s = 70, u1 = Math.round(s + rp.run) + 10, ex = 55, u2 = u1 + ex + pw, rr = Math.max(165 + Math.round(rnd() * 45), Math.round(D * 1.95));   // pendenza di risalita ≤ ~38°
+        const rp = mkRamp(H, 26, 160), s = 70, u1 = Math.round(s + rp.run), ex = 55, u2 = u1 + ex + pw, rr = Math.round(D * 3 + rnd() * 45);
         return Object.assign({ kind, len: u2 + rr + 100, D, pw, s, u1, ex, u2, rr }, rp);
       }
       case 'drop': { const D = 40 + Math.round(rnd() * rnd() * 80 + rnd() * 14), s = 70, ex = 120, pl = 200 + Math.round(rnd() * 60), s2 = s + ex + pl, rr = Math.round(210 + D * 2.2); return { kind, len: s2 + rr + 70, D, s, ex, s2, rr }; }
@@ -559,7 +585,7 @@ const Terrain = (() => {
     const collect=(q, origin, parent)=>{
       if(q.th!==undefined && Number.isFinite(q.u1)){
         out.push({kind:q.kind, parent, a:origin, u1:q.u1, s:q.s||0,
-          lip:origin+q.u1, tier:q.tier||0, th:q.th});
+          lip:origin+q.u1, tier:q.tier||0, th:q.r2 ? q.r2.th : q.th});
       }
       if(q.parts) for(const [child,offset] of q.parts) collect(child,origin+offset,parent);
     };
@@ -571,10 +597,9 @@ const Terrain = (() => {
     const out=[];
     if(z.patches) for(const p of z.patches)out.push(...patchLaunchLips(p));
     if(z.key==='ramps'){
-      for(let i=0;i<Math.ceil(z.len/RAMP_PERIOD)+1;i++){
+      for(let i=0;i<z.waveRamps.length;i++){
+        if(!z.waveRamps[i])continue;
         const lip=z.start+RAMP_LEAD+i*RAMP_PERIOD+RAMP_RISE;
-        if(lip>z.end-150)break;
-        if(z.patches&&z.patches.some(p=>lip>=p.a-90&&lip<=p.b+90))continue;
         out.push({kind:'wave',parent:'wave',a:lip-RAMP_RISE,u1:RAMP_RISE,lip,tier:0,th:Math.atan(RAMP_PEAK/(RAMP_RISE-RAMP_BLEND_IN*.5))});
       }
     }
@@ -686,8 +711,8 @@ const Terrain = (() => {
         TIDAL_CURRENTS.push({ id: TIDAL_CURRENTS.length, x: mid - 125, width: 300, period, phase: rnd() * period, burst: 2.45, push: 0.12 });
         BUBBLE_VENTS.push({ id: BUBBLE_VENTS.length, x: mid + 110, width: 180, height: 145, power: 2.7, phase: rnd() * Math.PI * 2 });
       } else if (world === 'enchanted' && ['hills', 'ramps'].includes(z.key)) {
-        const rootX = find(z, 200, [0.32, 0.66, 0.44, 0.77, 0.23]);
-        if (rootX !== null && z.key === 'hills') ROOT_RIDGES.push({ id: ROOT_RIDGES.length, x: rootX, width: 200, height: 24 + rnd() * 7 });
+        const rootX = find(z, 300, [0.32, 0.66, 0.44, 0.77, 0.23]);
+        if (rootX !== null && z.key === 'hills') ROOT_RIDGES.push({ id: ROOT_RIDGES.length, x: rootX, width: 300, height: 24 + rnd() * 7 });
         const padX = find(z, 130, slots.slice().reverse());
         if (padX !== null) CLOUD_PADS.push({ id: CLOUD_PADS.length, x: padX, width: 126, power: 6.8, kind: 'mushroom' });
       } else if (world === 'neon' && ['hills', 'ramps'].includes(z.key)) {
@@ -933,6 +958,7 @@ const Terrain = (() => {
 
     if (!(force && force.nogap)) planGaps(rnd, !!(force && force.crazy));
     planPatches(rnd, force);
+    for (const z of ZONES) if (z.key === 'ramps') planWaveRamps(z);
     planWorldEvents(keys);
     // La maledizione e le due firme del bioma hanno la precedenza. Gli ostacoli
     // dinamici vengono posizionati dopo, così non rendono introvabile la lastra.
@@ -1054,7 +1080,7 @@ const Terrain = (() => {
           // L'isolotto è fisico, non decorativo: la sommità coincide con la collisione.
           const spanI = z.gap.g1 - z.gap.g0;
           z.islands = [
-            { t: 0.52, width: 426, topDepth: 4.6, id: 0, kind: 'cathedral' },
+            { t: 0.52, width: 650, topDepth: 4.6, id: 0, kind: 'cathedral' },
           ].map(q => ({ ...q, zone: z.index, x: Math.round(z.gap.g0 + spanI * q.t) }));
           z.thorns = {
             left:  { x: Math.round(z.gap.g0 + 170), width: 210, topDepth: 18 },
@@ -1098,7 +1124,8 @@ const Terrain = (() => {
     if (win > 0) {
       let w = zoneWave(z, u);
       if (z.bridge) w *= 1 - smooth((x - (z.gap.g0 - 150)) / 150) * smooth((z.gap.g1 + 150 - x) / 150);  // piatto vicino al ponte
-      h += win * w * (1 - (z.patches && z.patches.length ? patchMask(z, x) : 0));
+      const mask = z.key !== 'ramps' && z.patches && z.patches.length ? patchMask(z, x) : 0;
+      h += win * w * (1 - mask);
     }
     if (z.patches && z.patches.length) h += patchSum(z, x);
     // Le radici incantate sono una parte della collisione reale, non un overlay grafico.
@@ -1137,7 +1164,9 @@ const Terrain = (() => {
         const a = Math.abs(x - h.x) / (h.width * 0.5);
         if (a < 1) {
           const kick = 1 - smooth((a - 0.10) / 0.90);
-          depth = depth * (1 - kick) + h.topDepth * kick;
+          // Le spine sono contrafforti bassi sul pendio dell'isola. Limitare
+          // il loro rilievo evita una seconda parete quasi verticale.
+          depth -= Math.min(4, Math.max(0, depth - h.topDepth)) * kick;
         }
       }
     }

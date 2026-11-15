@@ -125,7 +125,7 @@ const Props = (() => {
       const z = Zs[zi]; if (z.key !== 'ramps' || z.end < camX || z.start > camX + w) continue;
       for (let sx = 0; sx <= w + 14; sx += 14) {
         const wx = sx + camX, u = wx - z.start - lead;
-        if (u < 0 || wx > z.end - 200) continue;
+        if (u < 0 || !z.waveRamps[Math.floor(u / period)]) continue;
         const ph = u % period; if (ph >= rise - 8) continue;
         WorldFX.skinX(ctx, wx);
         const y = gy - Terrain.height(wx), sl = (Terrain.height(wx + 7) - Terrain.height(wx - 7)) / 14, a = Math.atan(sl);

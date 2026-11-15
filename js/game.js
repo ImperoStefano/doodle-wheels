@@ -28,6 +28,9 @@
   const preRaceDrawer = createWheelDrawer(els.drawCanvas); preRaceDrawer.init();
   const inRaceDrawer = createWheelDrawer(els.redrawCanvas); inRaceDrawer.init();
   const wheelProfile = document.getElementById('wheel-profile'), pitProfile = document.getElementById('pit-profile');
+  const launchFeedback = document.getElementById('launch-feedback');
+  const launchSummary = document.getElementById('launch-summary');
+  let seenTimedLaunches = null, launchFeedbackTimer = 0;
   function showWheelProfile(el, valid, p) {
     if (!el) return;
     const en = I18n.lang === 'en';
@@ -753,6 +756,9 @@
 
   function startCountdown(startTime, returning = false) {
     currentRaceStart = startTime;
+    clearTimeout(launchFeedbackTimer);
+    launchFeedback.textContent = '';
+    seenTimedLaunches = returning ? null : 0;
     if (Net.isHost) Net.setPhase('race');
     showScreen('race'); if (!returning && typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'flex';
     CurseFx.reset();
@@ -839,6 +845,15 @@
       lastRemoteSnapTs = ts;
     }
     const m = {}; racers.forEach(r => { m[r.id] = r; latestRacers[r.id] = r; }); updateSprintUi(m[Net.myId]);
+    const mine = m[Net.myId];
+    if (mine && Number.isSafeInteger(mine.timedLaunches)) {
+      if (seenTimedLaunches !== null && mine.timedLaunches > seenTimedLaunches) {
+        launchFeedback.textContent = I18n.t('race.timedLaunch') + ' ×' + mine.timedLaunches;
+        clearTimeout(launchFeedbackTimer);
+        launchFeedbackTimer = setTimeout(() => { launchFeedback.textContent = ''; }, 1250);
+      }
+      seenTimedLaunches = mine.timedLaunches;
+    }
     const arr = performance.now(); let t = arr;
     if (!Net.isHost && typeof ts === 'number') {
       const off = arr - ts;
@@ -1620,27 +1635,24 @@
   // davanti al giocatore. Leggibile sul telefono, senza tre frecce ripetute,
   // senza animazioni che rallentino il multiplayer o coprano la pista.
   function drawRampTakeoffCues(c,camX,w,groundY,timeMs){
-    if(!Terrain.rampLipsIn)return;
     const me=latestRacers[Net.myId];
     if(!me||me.finished||(me.dir||1)<0)return;
     const frontX=me.fwX;
     if(!Number.isFinite(frontX))return;
     // Front wheel: the exact position used by the host timing check.
-    const near=Terrain.rampLipsIn(frontX-8,frontX+280)
-      .filter(q=>q.x-frontX>-18&&q.x-frontX<255)
-      .sort((a,b)=>a.x-b.x);
-    if(!near.length)return;
-    const lip=near[0],distance=lip.x-frontX;
-    const xx=lip.x-46-camX;
+    const lip=Terrain.takeoffAt(frontX,255,18);
+    if(!lip)return;
+    const distance=lip.lip-frontX;
+    const xx=lip.lip-46-camX;
     if(xx<-28||xx>w+28)return;
     // Hover just over the ramp's surface. The bike is rendered AFTER this
     // layer, so even a giant wheel will never be covered by the marker.
-    const yy=groundY-Terrain.height(lip.x-46)-94;
+    const yy=groundY-Terrain.height(lip.lip-46)-94;
     const incoming=Math.min(1,(255-distance)/75);
     const outgoing=Math.min(1,(distance+18)/35);
     const alpha=Math.max(0,Math.min(1,incoming,outgoing));
     if(alpha<.04)return;
-    const sweet=distance>=-12&&distance<=72;
+    const sweet=me.vx>=3.8&&distance>=-12&&distance<=72;
     const pulse=0.5+0.5*Math.sin((timeMs||0)/140);
     c.save();c.translate(xx,yy-1.5*pulse);
     c.globalAlpha*=alpha;
@@ -1660,6 +1672,13 @@
     // Small gold sparkle, not an additional arrow.
     c.strokeStyle='#fff6cb';c.lineWidth=1.5;
     c.beginPath();c.moveTo(11,-14);c.lineTo(11,-8);c.moveTo(8,-11);c.lineTo(14,-11);c.stroke();
+    if (sweet) {
+      const text = I18n.t('race.launchCue');
+      c.font = '800 16px system-ui,sans-serif';
+      c.textAlign = 'center'; c.textBaseline = 'bottom';
+      c.lineWidth = 4; c.strokeStyle = '#fff5d8'; c.strokeText(text, 0, -19);
+      c.fillStyle = '#704315'; c.fillText(text, 0, -19);
+    }
     c.restore();
   }
   // Ogni rampa, inclusi i kicker piccoli, manda un evento all'animazione della gara.
@@ -2078,7 +2097,17 @@
 
   function stopRaceLoops() { drawErrorStreak = 0; if (renderFault) renderFault.hidden = true; CurseFx.reset(); if (connectionStatus) connectionStatus.hidden = true; closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
-  I18n.onChange(() => { if (document.body.dataset.screen === 'results' && lastStandings) { try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); } } });   // cambio lingua nei risultati: ridisegna la mappa coi nomi nuovi
+  function showLaunchSummary(mine) {
+    const count = mine && mine.timedLaunches;
+    launchSummary.hidden = !(count > 0);
+    launchSummary.textContent = count > 0 ? I18n.t(count === 1 ? 'res.launchOne' : 'res.launchMany', { n: count }) : '';
+  }
+  I18n.onChange(() => {
+    if (document.body.dataset.screen === 'results' && lastStandings) {
+      showLaunchSummary(lastStandings.find(s => s.id === Net.myId));
+      try { drawFinalTrace(lastStandings); } catch (e) { console.warn(e); }
+    }
+  });
   function showResults(st, ch) {
     lastStandings = st; lastCh = ch || null; if (Net.isHost) Net.setPhase('results'); stopRaceLoops(); releaseWakeLock();
     if (typeof Sfx !== 'undefined' && !aud.fin) Sfx.finish(0);
@@ -2087,10 +2116,12 @@
     st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>${ch ? `<span class="results-gain">+${ch.gains[s.id] || 0}</span>` : ''}`; els.resultsList.appendChild(li); });
     // Personal best for the *same track* only. No account, no scoreboard manipulation.
     const best = document.getElementById('personal-best'), mine = st.find(s => s.id === Net.myId);
+    showLaunchSummary(mine);
     if (best) {
       best.hidden = true;
       if (mine && mine.finished && Number.isFinite(mine.finishTime)) {
-        const key = 'dw_best_' + (currentWorld || 'classic') + '_' + (currentLayout || []).join('-');
+        const mode = crazy ? 'crazy-' + Object.keys(wheels).length : 'normal';
+        const key = ['dw_best_v39', currentWorld, mode, Terrain.SEASON.key, (currentLayout || []).join('-')].join('_');
         const ms = mine.finishTime;
         try {
           const prev = Number(localStorage.getItem(key));

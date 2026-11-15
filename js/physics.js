@@ -323,12 +323,13 @@ const Sim = (() => {
       bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0,
       cornerReleases: 0, releaseAt: -1e9, releaseTriedFor: -1, stallEvents: [],
       curseAt:-1,curseStage:0,curseLevel:0,curseHits:{},
-      rampTakeoffAt:-1e9,rampInputUsed:false,rampGroundTicks:0,
+      rampTakeoffAt:-1e9,rampInputUsed:false,rampGroundTicks:0,timedLaunches:0,
       flightTicks:0,flightArmed:false,landHits:0,landPower:0,
       stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
-      cal: calOf(vertices), spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
+      spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
     };
     meltInit(racers[id], id, vertices);
+    applyCalibration(racers[id], vertices);
     racerOrder.push(racers[id]);
   }
 
@@ -337,7 +338,7 @@ const Sim = (() => {
     if (!r || r.finished) return;
 
     meltInit(r, r.nid, vertices);   // ruota ridisegnata: materiale nuovo, niente più bruciature
-    r.cal = calOf(vertices); calibrate(vertices, v => { r.cal = v; });
+    applyCalibration(r, vertices);
     r.spike = spikiness(vertices); r.teeth = teethGrip(vertices); r.peaks = lastPeaks; r.prom = lastProm; r.roll = rollFactor(vertices, r.teeth); r.reff = lastReff; r.accelK = 1 + ACCEL_SPIKE * r.spike;
     const group = r.chassis.collisionFilter.group;
     const wOpt = wheelOptions(group);
@@ -636,8 +637,8 @@ const Sim = (() => {
   // per tutti i tipi di decollo a parita' di velocita' iniziale.
   // L'anti-saltello sul terreno e' solo una protezione, disattivata durante
   // un salto richiesto e quando una ruota attraversa una rampa reale.
-  function assist(r, H) {
-    H = H || Terrain.height;
+  function assist(r, trialHeight) {
+    const H = trialHeight || Terrain.height;
     const elapsed=performance.now()-startedAt;
     const grace=(r.jumpGraceUntil||0)>elapsed || (r.springGraceTicks||0)>0;
     if(r.springGraceTicks>0)r.springGraceTicks--;
@@ -654,9 +655,11 @@ const Sim = (() => {
     for (const w of [r.fw,r.rw]) {
       const g=w.gapNow;
       if(g===undefined || g<=TUNE.holdMin || g>=TUNE.hold ||
-         (Terrain.onRamp && Terrain.onRamp(w.position.x)))continue;
+         (!trialHeight && Terrain.onRamp && Terrain.onRamp(w.position.x)))continue;
       const v=w.velocity,x=w.position.x,slope=(H(x+3)-H(x-3))/6;
-      const len=Math.hypot(slope,1),nx=slope/len,ny=-1/len;
+      // Ground Y is GROUND_Y - H(x). Its tangent is (1, -slope), so a
+      // wheel rolling along the surface has zero outward velocity.
+      const len=Math.hypot(slope,1),nx=-slope/len,ny=-1/len;
       const vn=v.x*nx+v.y*ny;
       if(vn>0 && vn<TUNE.hopV)
         Matter.Body.setVelocity(w,{x:v.x-vn*TUNE.antiHop*nx,y:v.y-vn*TUNE.antiHop*ny});
@@ -802,7 +805,7 @@ const Sim = (() => {
     // le ruote premono DAVVERO su un piano inclinato. Non modifica velocita'
     // lineari, direzione o angolo in aria; niente boost al labbro.
     const slopeTorque=w=>{
-      if(!(Terrain.onRamp && Terrain.onRamp(w.position.x)) ||
+      if(!useGrip || !(Terrain.onRamp && Terrain.onRamp(w.position.x)) ||
          !(w.gapNow!==undefined && w.gapNow<=TUNE.airGap)) return 1;
       const x=w.position.x, slope=(Terrain.height(x+8)-Terrain.height(x-8))/16;
       return 1+Math.min(.14,Math.max(0,dir*slope)*.24);
@@ -847,6 +850,7 @@ const Sim = (() => {
   const SEC_OF_KEY = { ramps: 2, ice: 3 };
   let calRefTicks = null;
   const calCache = new Map();
+  const calWaiting = new Map();
   const calKey = v => v.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(';');
 
   function* calTrial(vertices, cal, ph) {
@@ -980,14 +984,27 @@ const Sim = (() => {
   function calibrate(vertices, cb) {
     if (!vertices || vertices.length < 3) { cb([1, 1, 1, 1]); return; }
     const key = calKey(vertices);
-    if (calCache.has(key)) { const v = calCache.get(key); if (Array.isArray(v)) { cb(v); return; } v.push(cb); return; }
-    const waiting = [cb]; calCache.set(key, waiting);
-    const done = val => { calCache.set(key, val); waiting.forEach(f => f(val)); if (calCache.size > 60) calCache.delete(calCache.keys().next().value); };
+    if (calCache.has(key)) { cb(calCache.get(key)); return; }
+    if (calWaiting.has(key)) { calWaiting.get(key).push(cb); return; }
+    const waiting = [cb];
+    calWaiting.set(key, waiting);
+    const done = val => {
+      calWaiting.delete(key);
+      calCache.set(key, val);
+      if (calCache.size > 60) calCache.delete(calCache.keys().next().value);
+      waiting.forEach(f => f(val));
+    };
     const local = () => runSliced(calibrateGen(vertices), done);
     if (!calViaPool(vertices, done, local)) local();
   }
   function calibrateSync(vertices) { const key = calKey(vertices); const v = calCache.get(key); if (Array.isArray(v)) return v; const val = drain(calibrateGen(vertices)); calCache.set(key, val); return val; }
-  function calOf(vertices) { const v = calCache.get(calKey(vertices)); return Array.isArray(v) ? v : [1, 1, 1, 1]; }
+  function applyCalibration(r, vertices) {
+    r.calShape = vertices;
+    r.cal = [1, 1, 1, 1];
+    calibrate(vertices, coefficients => {
+      if (r.calShape === vertices) r.cal = coefficients;
+    });
+  }
 
   // Per-racer logic, runs at the fixed 60Hz step.
   // Portali (modalità pazza): attraversati lungo x fra due passi. L'host decide tutto, gli altri vedono solo gli effetti.
@@ -1138,6 +1155,11 @@ const Sim = (() => {
   const JUMP_BUF_MS = 330;   // un tocco "troppo presto" (pausa dopo un salto, doppio salto prematuro, atterraggio imminente) viene ricordato e parte appena si può
   const COYOTE_MS = 170;     // tolleranza al labbro senza fermare mai il tempo della gara
   const RAMP_LATE_MS = 155;  // un tap appena dopo il labbro integra lo stacco, non diventa un doppio salto differito
+  function recordTimedLaunch(r) {
+    r.timedLaunches = (r.timedLaunches || 0) + 1;
+    r.ln = (r.ln || 0) + 1;
+    r.ls = 3;
+  }
   function jumpTry(r, elapsed) {
     const grounded = r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP;
     // A launch-edge tap that arrives a handful of frames late is part of the
@@ -1159,7 +1181,7 @@ const Sim = (() => {
       }
       r.rampInputUsed = true; r.rampFly = 0; r.airJ = 2;
       r.jumpAt = elapsed; r.jn = (r.jn||0)+1;
-      r.ln = (r.ln||0)+1; r.ls = 3;
+      recordTimedLaunch(r);
       return 1;
     }
     if (grounded) r.lastGroundAt = elapsed;
@@ -1224,7 +1246,7 @@ const Sim = (() => {
       Matter.Body.setVelocity(b, { x: vx, y: vy });
     }
     if (thorn) { r.ln = (r.ln || 0) + 1; r.ls = 2; } // stessa animazione di un grande lancio
-    if (perfect) { r.ln=(r.ln||0)+1; r.ls=3; } // conferma client: salto al labbro, non input presunto
+    if (perfect) recordTimedLaunch(r);
     r.jumpGraceUntil = elapsed + 350; r.jumpAt = elapsed; r.jn = (r.jn || 0) + 1; r.airJ = air ? 2 : 1; if (air) r.ja = (r.ja || 0) + 1;
     return 1;
   }
@@ -1247,9 +1269,8 @@ const Sim = (() => {
     return false;
   }
 
-  // V27.3: nessuna velocita' minima forzata in salita, nessun lancio
-  // aggiunto al labbro. L'unico sistema di recupero rimane l'anti-blocco
-  // generale, con diagnostica: la rampa non teletrasporta piu' la bici.
+  // Una bici sul fondo del burrone riceve prima una spinta nel senso di
+  // marcia; dopo diversi secondi sotto il bordo interviene il recupero.
   const RAVINE_ASSIST_MS = 1900, RAVINE_RESCUE_MS = 6500;
   function ravineStep(r, elapsed) {
     const p=Terrain.ravineAt?Terrain.ravineAt(r.chassis.position.x):null;
@@ -1260,17 +1281,18 @@ const Sim = (() => {
     if(!(r.pitAt>=0)){r.pitAt=elapsed;r.pitBoostAt=-1e9;return;}
     // If trapped below a lip, a small continuous rescue gives the tyres a
     // chance to climb the new, gentler exit slope without teleporting.
-    const trappedFor=elapsed-r.pitAt;
+    const trappedFor=elapsed-r.pitAt, dir=r.dir||1;
     if(trappedFor>RAVINE_ASSIST_MS&&elapsed-r.pitBoostAt>1350&&
-       r.chassis.velocity.x<2.8&&
+       dir*r.chassis.velocity.x<2.8&&
        Math.min(r.fw.gapNow,r.rw.gapNow)<22){
       for(const body of [r.chassis,r.fw,r.rw])
-        Matter.Body.setVelocity(body,{x:Math.max(3.8,body.velocity.x),y:Math.min(-7.3,body.velocity.y)});
+        Matter.Body.setVelocity(body,{x:dir*Math.max(3.8,dir*body.velocity.x),y:Math.min(-7.3,body.velocity.y)});
       r.pitBoostAt=elapsed;
     }
     if(trappedFor<RAVINE_RESCUE_MS)return;
     // Absolute multiplayer safeguard, only after several failed climbs.
-    const dir=r.dir||1,tx=dir===1?p.a+p.u2+p.rr+70:p.a+p.s-120;
+    const tx=dir===1?p.a+p.u2+p.rr+70:p.a+p.s-120;
+    r.rampRescues=(r.rampRescues||0)+1;
     teleport(r,tx-r.chassis.position.x);
     Matter.Body.setAngle(r.chassis,0);
     {const c=r.chassis.position,k=80*(r.sc||1);
@@ -1635,6 +1657,7 @@ const Sim = (() => {
       fwX: r.fw.position.x, fwY: r.fw.position.y, fwAngle: r.fw.angle,
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
+      timedLaunches: r.timedLaunches,
       finished: r.finished, finishTime: r.finishTime,
       dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, ln: r.ln || 0, ls: r.ls || 0, ld: r.landHits || 0, lp: r.landPower || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, cu: r.curseLevel || 0, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
@@ -1658,6 +1681,7 @@ const Sim = (() => {
     return Object.entries(racers).map(([id, r]) => ({
       id, name: r.name, color: r.color,
       finished: r.finished, finishTime: r.finishTime,
+      timedLaunches: r.timedLaunches,
       distance: r.chassis.position.x
     })).sort((a, b) => {
       if (a.finished && b.finished) return a.finishTime - b.finishTime;
