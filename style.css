@@ -883,3 +883,13 @@ body[data-screen="race"] .page {
   min-height:44px; padding:11px 24px; font-size:15px; font-weight:700;
   font-family:inherit; cursor:pointer; box-shadow:0 4px 0 #015a53; }
 .dw-recovery__reload:active { transform:translateY(3px); box-shadow:0 1px 0 #015a53; }
+
+@media (prefers-reduced-motion: no-preference) {
+  #screen-menu.screen--active .card--hero {
+    animation: menu-arrive 240ms ease-out;
+  }
+  @keyframes menu-arrive {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}

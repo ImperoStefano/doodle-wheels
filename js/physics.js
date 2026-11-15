@@ -1358,12 +1358,16 @@ const Sim = (() => {
       // Small ramps pop gently; big ravines give more flight time. This is a
       // single takeoff impulse, not mid-air steering or a scripted trajectory.
       const lift=3.8+(big?1.0:0)+speed*slope*(big?1.95:1.8);
-      const launchY=-Math.min(big?11.5:9.0,lift);
+      // Increase assistance over the first 2 px/tick above rolling speed.
+      const entry = Math.min(1, (speed - 3.7) / 2);
+      const blend = entry * entry * (3 - 2 * entry);
+      const launchY = -Math.min(big ? 11.5 : 9.0, lift) * blend;
+      const liftDelta = Math.min(0, launchY - r.chassis.velocity.y);
       const forwardKick=Math.min(big?RAMP_FORWARD_MAX:1.15,
         Math.max(0,(speed-3.7)*.35)+slope*1.1);
       for(const body of [r.chassis,r.fw,r.rw]){
-        Matter.Body.setVelocity(body,{x:body.velocity.x+forwardKick,
-          y:Math.min(body.velocity.y,launchY)});
+        Matter.Body.setVelocity(body,{x:body.velocity.x + forwardKick * blend,
+          y:body.velocity.y + liftDelta});
       }
     }
     // No artificial "ramp flight" state when a slow wheel merely rolls over

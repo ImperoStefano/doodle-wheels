@@ -306,4 +306,41 @@ const ctx2={};vm.createContext(ctx2);vm.runInContext(fs.readFileSync(root+'/js/c
  assert(boot.includes('window.__dwBootReady'), 'boot watchdog removed');
  applied++;
 }
+// A ramp impulse should preserve relative vertical motion between the axles.
+{
+  terrain.takeoffAt = () => ({kind:'kicker', lip:100, tier:0, th:.45});
+  const r = bike();
+  Object.assign(r, {airJ:0, rampFly:0, rampLaunched:false, rfx:95});
+  Object.assign(r.fw.position, {x:102});
+  r.fw.gapNow = r.rw.gapNow = 5;
+  r.fw.velocity.y = -4; r.rw.velocity.y = 1;
+  rampStep(r, 3000);
+  assert.equal(r.rampFly, 1);
+  assert.equal(r.fw.velocity.y - r.rw.velocity.y, -5);
+  applied++;
+}
+// Deliver actual snapshot messages with a duplicate, an older packet and a long gap.
+{
+  const game = fs.readFileSync(root + '/js/game.js', 'utf8');
+  const functions = game.slice(game.indexOf('  const snapBuf ='), game.indexOf('  function setupCanvas'));
+  const receive = game.slice(game.indexOf("    if (data.type === 'snap' &&"), game.indexOf("    if (data.type === 'results')"));
+  let clock = 100;
+  const events = [];
+  const client = {Net:{isHost:false,myId:'a'}, performance:{now:()=>clock},
+    Terrain:{TRACK_END:10000}, Perf:{on:false}, MAX_PLAYERS:5, raceMeta:{a:{}}, latestRacers:{},
+    updateSprintUi(){}, InteractiveObstacles:{receive:n=>events.push(n)},
+    DynamicObstacles:{setRemoteStates:n=>events.push(n)}, syncUsed:n=>events.push(n), hazardHostOrigin:null};
+  vm.createContext(client);
+  vm.runInContext(functions + '\nfunction deliver(data){' + receive + '}', client);
+  function send(t,x) {
+    const pose = {id:'a',x,y:0,angle:0,fwX:x+10,fwY:0,fwAngle:0,rwX:x-10,rwY:0,rwAngle:0,vx:6};
+    client.deliver({type:'snap',racers:[pose],ts:t,ht:t,io:t,obs:t,pu:t});
+  }
+  send(100,0); clock=150; send(150,10); send(100,0); send(150,10);
+  assert.deepEqual(events,[100,100,100,150,150,150]);
+  client.interpolateRacers(500); const held = client.latestRacers.a.x;
+  client.interpolateRacers(900); assert.equal(client.latestRacers.a.x,held);
+  assert(held>10);
+  applied++;
+}
 console.log('OK '+applied+' regression tests: ramps, jumps, landings, assets, special-world summary, white-screen recovery');

@@ -2,6 +2,10 @@
 
 **Multiplayer 2D browser game** — disegna le ruote della tua bici, affronta rampe e ostacoli, gareggia con gli amici attraverso mondi diversi.
 
+## V40
+
+L'assistenza allo stacco entra progressivamente con la velocità e conserva il movimento relativo delle ruote. Il client applica bici, ostacoli e portali dello stesso aggiornamento insieme. Ai confini dei mondi speciali, flora e cartelli classici vengono ritagliati. La minimappa si aggiorna insieme alla classifica. Il menu ha una breve animazione di ingresso e gli stacchi a tempo hanno un segnale musicale.
+
 ## V39 - Dossi e salti a tempo
 
 Archi, gradoni e uscite dalle buche hanno risalite addolcite. La stabilizzazione conserva lo slancio lungo il pendio. Premi Salto al segnale SALTA sulla rampa. Gli stacchi ben sincronizzati vengono contati nel riepilogo personale.

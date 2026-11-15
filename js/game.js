@@ -620,7 +620,16 @@
     if (data.type === 'goToDraw') { champ = data.champ || null; enterDrawPhase(); }
     if (data.type === 'wheel' && Net.isHost && Net.players[from] && validWheelVertices(data.vertices)) receiveWheel(from, data.vertices);
     if (data.type === 'allReady') { wheels = data.wheels || wheels; currentRaceStart = data.startTime; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
-    if (data.type === 'snap') { if (!Net.isHost) { InteractiveObstacles.receive(data.io); if (data.obs) DynamicObstacles.setRemoteStates(data.obs); } if (data.pu) syncUsed(data.pu); applySnapshot(data.racers, data.ts); if (!Net.isHost && Number.isFinite(data.ht) && Number.isFinite(data.ts) && snapOff !== null) { const origin = data.ts + snapOff - data.ht; hazardHostOrigin = hazardHostOrigin === null ? origin : hazardHostOrigin * 0.94 + origin * 0.06; } }
+    if (data.type === 'snap' && !Net.isHost) {
+      if (!applySnapshot(data.racers, data.ts)) return;
+      InteractiveObstacles.receive(data.io);
+      if (data.obs) DynamicObstacles.setRemoteStates(data.obs);
+      if (data.pu) syncUsed(data.pu);
+      if (Number.isFinite(data.ht)) {
+        const origin = data.ts + snapOff - data.ht;
+        hazardHostOrigin = hazardHostOrigin === null ? origin : hazardHostOrigin * 0.94 + origin * 0.06;
+      }
+    }
     if (data.type === 'results') showResults(data.standings, data.champ);
     if (data.type === 'lastCall') showLastCall(data.ms);
     if (data.type === 'restartToDraw') { champ = data.champ || null; enterDrawPhase(); }
@@ -848,6 +857,7 @@
     const mine = m[Net.myId];
     if (mine && Number.isSafeInteger(mine.timedLaunches)) {
       if (seenTimedLaunches !== null && mine.timedLaunches > seenTimedLaunches) {
+        if (typeof Sfx !== 'undefined') Sfx.timedLaunch();
         launchFeedback.textContent = I18n.t('race.timedLaunch') + ' ×' + mine.timedLaunches;
         clearTimeout(launchFeedbackTimer);
         launchFeedbackTimer = setTimeout(() => { launchFeedback.textContent = ''; }, 1250);
@@ -877,6 +887,7 @@
     }
     if (Perf.on && !Net.isHost) Perf.snap(arr);
     snapBuf.push({ t, m }); if (snapBuf.length > 16) snapBuf.shift();
+    return true;
   }
   const angLerp = (a, b, k) => { let d = b - a; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return a + d * k; };
   function interpolateRacers(now) {
@@ -886,12 +897,12 @@
     if (rt >= snapBuf[n - 1].t) {
       a = b = snapBuf[n - 1];
       // snapshot in ritardo: invece di fermare le bici si prosegue sulla velocità dell'ultimo intervallo (al massimo 120 ms)
-      if (n >= 2 && rt - b.t > 0 && rt - b.t < 400) {
+      if (n >= 2 && rt > b.t) {
         const p = snapBuf[n - 2], dt = b.t - p.t;
         if (dt > 1) {
           const kx = Math.min(rt - b.t, 120) / dt;
           for (const id in b.m) {
-            const rb = b.m[id], ra = p.m[id]; if (!ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
+            const rb = b.m[id], ra = p.m[id]; if (rb.finished || !ra || ra === rb || Math.abs(rb.x - ra.x) > 250 || rb.pe !== ra.pe) { latestRacers[id] = rb; continue; }
             const ex = (u, v) => v + (v - u) * kx, ea = (u, v) => { let d = v - u; if (d > Math.PI) d -= 2 * Math.PI; else if (d < -Math.PI) d += 2 * Math.PI; return v + d * kx; };
             latestRacers[id] = { id, finished: rb.finished, finishTime: rb.finishTime, x: ex(ra.x, rb.x), y: ex(ra.y, rb.y), angle: ea(ra.angle, rb.angle), vx: rb.vx, dir: rb.dir, pe: rb.pe, ge: rb.ge, gt: rb.gt, gi: rb.gi, jn: rb.jn, ja: rb.ja, ln: rb.ln, ls: rb.ls, ld: rb.ld||0, lp: rb.lp||0, sp: rb.sp, so: rb.so, pt: rb.pt, pd: rb.pd, pi: rb.pi, im: rb.im, sc: rb.sc, cu: rb.cu||0,
               fwX: ex(ra.fwX, rb.fwX), fwY: ex(ra.fwY, rb.fwY), fwAngle: ea(ra.fwAngle, rb.fwAngle), rwX: ex(ra.rwX, rb.rwX), rwY: ex(ra.rwY, rb.rwY), rwAngle: ea(ra.rwAngle, rb.rwAngle) };
@@ -1777,8 +1788,22 @@
     Props.drawPatches(ctx2d, camX, w, groundY, SC);
     Props.drawRamps(ctx2d, camX, w, groundY);
     const localWorld = Terrain.WORLD_SEGMENT;
-    const inLocalWorld = localWorld && camX + w * 0.40 >= localWorld.start - 80 && camX + w * 0.40 <= localWorld.end + 80;
-    if (!inLocalWorld && Terrain.WORLD === 'classic') Props.drawSigns(ctx2d, camX, w, groundY);
+    function drawClassicLayer(draw) {
+      if (Terrain.WORLD !== 'classic') return;
+      if (!localWorld || localWorld.end <= camX || localWorld.start >= camX + w) { draw(); return; }
+      const left = Math.max(0, localWorld.start - camX);
+      const right = Math.min(w, localWorld.end - camX);
+      if (!left && right === w) return;
+      ctx2d.save();
+      try {
+        ctx2d.beginPath();
+        ctx2d.rect(0, 0, left, h);
+        ctx2d.rect(right, 0, w - right, h);
+        ctx2d.clip();
+        draw();
+      } finally { ctx2d.restore(); }
+    }
+    drawClassicLayer(() => Props.drawSigns(ctx2d, camX, w, groundY));
     Props.drawFinish(ctx2d, camX, w, groundY, SC);
     Props.drawBridges(ctx2d, camX, w, groundY, SC);
     // Rendering delle sagome SOLIDE V20, prima dei giocatori (collider host Matter).
@@ -1789,10 +1814,10 @@
     // Pass already synchronized bike poses for a subtle, local anticipation cue.
     // This is drawing-only; clients do not alter obstacles or collision bodies.
     InteractiveObstacles.draw(ctx2d, camX, w, groundY, !Net.isHost, undefined, undefined, Object.values(latestRacers));
-    if (!inLocalWorld && Terrain.WORLD === 'classic') {
+    drawClassicLayer(() => {
       Flora.drawLilies(ctx2d, camX, w, groundY, SC);
       Flora.draw(ctx2d, camX, w, groundY, SC);
-    }
+    });
 
     portalFx(me, t0);
     if (trailOn()) { for (const id in latestRacers) trailSample(latestRacers[id]); for (const id in latestRacers) if (raceMeta[id]) drawTrail(ctx2d, camX, groundY, id, raceMeta[id].color); }
@@ -1893,8 +1918,7 @@
       });
       for (const a of placed) drawEmoteBubble(a.id, a.x / viewScale, a.y / viewScale, a.color, t0, a);
     }
-    if (t0 - hudAt > 120) { hudAt = t0; updateHud(); updateLastCall(); }
-    drawMinimap();
+    if (t0 - hudAt > 120) { hudAt = t0; updateHud(); updateLastCall(); drawMinimap(); }
     if (Perf.on) Perf.frame(ts, performance.now() - t0);
     qualityGuard(ts, performance.now() - t0);
   }
