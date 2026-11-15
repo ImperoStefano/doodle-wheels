@@ -1165,15 +1165,12 @@
       const S = ftHoverState; if (!S) return;
       const r = cv.getBoundingClientRect(), k = r.width / S.W, px = (ev.clientX - r.left) / k;
       const z = S.zones.find(q => px >= q.a && px < q.b); if (!z) { hide(); return; }
-      const sp = S.special && px >= S.special.a && px < S.special.b ? S.special : null;
-      // For special worlds only show the world name, not its underlying
-      // generated terrain ("Paradiso · Colline", "Atlantide · Laguna", etc.).
-      const nm = sp ? I18n.t('world.tag.' + sp.key) : I18n.t('sign.' + z.key);
-      tip.innerHTML = ''; const dot = document.createElement('i'); dot.style.background = sp ? sp.col : z.col; const tx = document.createElement('span'); tx.textContent = nm; tip.append(dot, tx);
+      const nm = I18n.t(z.label);
+      tip.innerHTML = ''; const dot = document.createElement('i'); dot.style.background = z.col; const tx = document.createElement('span'); tx.textContent = nm; tip.append(dot, tx);
       tip.hidden = false; hl.hidden = false;
       const ox = cv.offsetLeft, oy = cv.offsetTop, sc = cv.offsetWidth / S.W;
-      const a = sp ? sp.a : z.a, b = sp ? sp.b : z.b;
-      hl.style.left = (ox + (a + 0.8) * sc) + 'px'; hl.style.top = (oy + S.bY * sc) + 'px'; hl.style.width = (Math.max(1,b - a - 1.6) * sc) + 'px'; hl.style.height = (S.bH * sc) + 'px'; hl.style.borderRadius = (S.bH * sc / 2) + 'px';
+      const { a, b } = z;
+      hl.style.left = (ox + a * sc) + 'px'; hl.style.top = (oy + S.bY * sc) + 'px'; hl.style.width = ((b - a) * sc) + 'px'; hl.style.height = (S.bH * sc) + 'px'; hl.style.borderRadius = (S.bH * sc / 2) + 'px';
       const tw = tip.offsetWidth, cx = Math.max(tw / 2 + 4, Math.min(cv.offsetWidth - tw / 2 - 4, ox + ((a + b) / 2) * sc));
       tip.style.left = cx + 'px'; tip.style.top = (oy + S.bY * sc - 8) + 'px';
       clearTimeout(ftHideT); if (ev.pointerType && ev.pointerType !== 'mouse') ftHideT = setTimeout(hide, 2800);   // col dito non c'è "uscita": sparisce da solo
@@ -1363,6 +1360,13 @@
     // fascia dei biomi: pastiglie piene senza scritte (nome al tocco/hover)
     const bY = gB + 7, bH = H - 5 - bY;
     s.font = `700 ${fz.toFixed(1)}px Kalam, cursive`; s.textAlign = 'center'; s.textBaseline = 'middle';
+    const zones = [];
+    function drawBand(a, b, col, label) {
+      const left = a + 0.8, right = b - 0.8;
+      rr(s, left, bY, right - left, bH, bH / 2);
+      s.fillStyle = col; s.fill();
+      zones.push({ a: left, b: right, col, label });
+    }
     zs.forEach(z => {
       const a = Math.max(x0, z.start), b = Math.min(x1, z.end);
       const spans = spTrace && a < sw.end && b > sw.start
@@ -1370,19 +1374,15 @@
       spans.forEach(([left, right]) => {
         if (right <= left) return;
         const xa = X(left), xb = X(right); if (xb - xa < 4) return;
-        rr(s, xa + 0.8, bY, xb - xa - 1.6, bH, bH / 2);
-        s.fillStyle = FT_BAND[z.key] || '#94a3b8'; s.fill();
+        drawBand(xa, xb, FT_BAND[z.key] || '#94a3b8', 'sign.' + z.key);
       });
     });
     // Each special world is one solid, elegantly colored pill, exactly like all
     // the other biome pills. No "PARADISO"/"ATLANTIDE" painted inside the band.
     if (spTrace && spTrace.b - spTrace.a > 3) {
-      const bw = spTrace.b - spTrace.a;
-      rr(s, spTrace.a + 0.8, bY, bw - 1.6, bH, bH / 2);
-      s.fillStyle = spTrace.col; s.fill();
+      drawBand(spTrace.a, spTrace.b, spTrace.col, 'world.tag.' + spTrace.key);
     }
-    // The tooltip displays ONLY the special-world name, never the underlying zone.
-    ftHover(cv, { W, bY, bH, special: spTrace, zones: zs.map(z => ({ key: z.key, a: X(Math.max(x0, z.start)), b: X(Math.min(x1, z.end)), col: FT_BAND[z.key] || '#94a3b8' })) });
+    ftHover(cv, { W, bY, bH, zones });
 
     // ======= le corse (si ridisegnano a ogni fotogramma, tagliate al punto in cui è arrivato il pennello) =======
     const sparks = [], conf = []; let confMade = false, lastT = 0;
