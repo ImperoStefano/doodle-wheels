@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=Pacifico&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="img/icon-192.png">
-<link rel="stylesheet" href="style.css?v=v41">
+<link rel="stylesheet" href="style.css?v=v42">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><filter id="dw-ink" x="-20%" y="-40%" width="140%" height="180%"><feTurbulence type="fractalNoise" baseFrequency="0.07 0.1" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="5"/></filter></svg>
@@ -32,6 +32,7 @@
       </label>
       <div class="menu-actions">
         <button id="btn-host" class="btn btn--primary" data-i18n="menu.host">Crea Nuova Gara</button>
+        <button id="btn-daily" type="button" class="btn btn--secondary" data-i18n="daily.play">Cronosfida del giorno</button>
         <div class="join-row">
           <input id="input-code" type="text" maxlength="4" data-i18n-ph="menu.code.ph" placeholder="CODICE" autocomplete="off" class="code-input">
           <button id="btn-join" class="btn btn--secondary" data-i18n="menu.join">Unisciti</button>
@@ -111,6 +112,7 @@
   <section id="screen-draw" class="screen">
     <div class="card card--wide">
       <div class="draw-header">
+        <p id="daily-course" class="daily-course" hidden></p>
         <h2 class="section-title" data-i18n="draw.title">Disegna il tuo assetto</h2>
         <div class="timer-pill" id="draw-timer">30</div>
       </div>
@@ -124,6 +126,7 @@
         <button id="btn-submit-wheel" class="btn btn--primary" data-i18n="draw.send" disabled>Invia Forma</button>
       </div>
       <p class="hint" id="draw-wait"></p>
+      <button id="leave-daily" class="btn btn--ghost" type="button" data-i18n="daily.menu" hidden>Torna al menu</button>
     </div>
   </section>
 
@@ -154,6 +157,9 @@
         <canvas id="minimap-canvas" width="220" height="32" class="minimap"></canvas>
         <div class="stamp-counter" id="stamp-counter" hidden><span data-i18n="stamps.name">Timbri</span><b id="stamp-total"></b></div>
         <ol id="hud-leaderboard" class="hud-leaderboard"></ol>
+        <label id="ghost-control" class="ghost-control" hidden>
+          <input id="ghost-visible" type="checkbox" checked><span data-i18n="ghost.show">Fantasma personale</span>
+        </label>
         <div id="launch-feedback" class="launch-feedback" role="status"></div>
       </div>
 
@@ -207,6 +213,7 @@
     <div class="card">
       <h2 class="section-title" data-i18n="res.title">Traguardo</h2>
       <ol id="results-list" class="results-list"></ol>
+      <p id="ghost-result" class="ghost-result" hidden></p>
       <p id="personal-best" class="personal-best" hidden></p>
       <div class="stamp-recap">
         <p id="stamp-result" class="stamp-result" hidden></p>
@@ -228,10 +235,10 @@
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
-<script src="js/i18n.js?v=v41"></script>
-<script src="js/peer.js?v=20261114-v37-recovery"></script>
+<script src="js/i18n.js?v=v42"></script>
+<script src="js/peer.js?v=v42"></script>
 <script src="js/draw.js?v=20261114-v37-recovery"></script>
-<script src="js/terrain.js?v=v41"></script>
+<script src="js/terrain.js?v=v42"></script>
 <script src="js/world-art-v19.js?v=v41"></script>
 <script src="js/egypt.js?v=20261114-v37-recovery"></script>
 <script src="js/scenery.js?v=v41"></script>
@@ -245,7 +252,9 @@
 <script src="js/sound.js?v=v41"></script>
   <script src="js/emote-layout.js?v=20261114-v37-recovery"></script>
   <script src="js/curse-fx.js?v=20261114-v37-recovery"></script>
-<script src="js/game.js?v=v41"></script>
+<script src="js/ghost.js?v=v42"></script>
+<script src="js/ghost-art.js?v=v42"></script>
+<script src="js/game.js?v=v42"></script>
 <div id="boot-failure" class="dw-recovery dw-recovery--startup" role="alert" hidden>
   <div class="dw-recovery__panel">
     <strong>Doodle Wheels non è riuscito a caricarsi</strong>

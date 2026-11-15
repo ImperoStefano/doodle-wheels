@@ -2,6 +2,14 @@
 
 **Multiplayer 2D browser game** — disegna le ruote della tua bici, affronta rampe e ostacoli, gareggia con gli amici attraverso mondi diversi.
 
+## V42 - Cronosfida del giorno e fantasma personale
+
+Nel menu, la Cronosfida del giorno apre direttamente il disegno della ruota e avvia una gara singola sul dispositivo. Tutti ricevono lo stesso mondo e la stessa pista per la data UTC. La rivincita conserva il percorso anche se nel frattempo cambia il giorno.
+
+Al primo arrivo completo il gioco registra un fantasma. Nella rivincita puoi sfidarlo, nasconderlo con la casella nella minimappa e confrontare i tempi al traguardo. Anche le gare in stanza supportano questa funzione. I replay rimangono nel browser, separati per percorso, regole e numero di partecipanti. Sono conservati fino a sei percorsi. Se il browser impedisce il salvataggio locale, il replay rimane disponibile solo per la sessione corrente. I record delle versioni precedenti conservano il tempo; la prima nuova gara completa crea la registrazione dei movimenti.
+
+Comandi di verifica: `node tests/regressions.cjs`, `node tests/ghost.cjs`, `node tests/slope-audit.cjs 420`.
+
 ## V41 - Cartoline da Città Neon
 
 Dalla lobby l'host sceglie la destinazione oppure lascia il sorteggio. Città Neon comprende una fonderia, un mercato notturno e una ferrovia sopraelevata. Le spazzatrici rallentano la bici al contatto e si possono superare con un salto o uno scatto. Le grate annunciano il getto con una luce ambra.

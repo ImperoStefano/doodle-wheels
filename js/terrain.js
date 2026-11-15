@@ -162,22 +162,22 @@ const Terrain = (() => {
 
   // Gara normale: ogni pista estrae un "peso" casuale per ogni bioma, quindi il mix cambia da gara a gara e un bioma (acqua, canyon, vulcano…) può anche
   // mancare del tutto: niente garanzie su ponti o laghi. Mai due zone uguali di fila, mai il vulcano subito dopo la partenza, almeno 4 biomi diversi.
-  function generateFreeLayout(count, want, world = 'classic') {
+  function generateFreeLayout(count, want, world = 'classic', random = Math.random) {
     const types = worldZoneTypes(world);
-    let sr = Math.random() * SEASON_W, S = SEASONS[0]; for (const q of SEASONS) { sr -= q.w; if (sr <= 0) { S = q; break; } }   // stagione scelta in anticipo
+    let sr = random() * SEASON_W, S = SEASONS[0]; for (const q of SEASONS) { sr -= q.w; if (sr <= 0) { S = q; break; } }   // stagione scelta in anticipo
     if (want) S = SEASONS.find(q => q.key === want) || S;   // il campionato la impone
     let fallback = null;
     for (let tries = 0; tries < 600; tries++) {
       const worldBias = isSegmentWorld(world) ? {} : (world === 'atlantis' ? { water: 3.5, hills: 0.7, gravel: 0.42, ramps: 0.55, ice: 0.25 }
         : world === 'enchanted' ? { hills: 2.4, ramps: 1.3, gravel: 1.0, water: 0.42, ice: 0.32 }
         : world === 'neon' ? { gravel: 1.8, ramps: 1.65, hills: 1.05, ice: 0.48, water: 0.58 } : {}); 
-      const w = {}; types.forEach(k => { w[k] = (Math.random() < 0.18 ? 0.12 : 0.45 + 1.15 * Math.random()) * (S.bw[k] !== undefined ? S.bw[k] : 1) * (worldBias[k] || 1); });
+      const w = {}; types.forEach(k => { w[k] = (random() < 0.18 ? 0.12 : 0.45 + 1.15 * random()) * (S.bw[k] !== undefined ? S.bw[k] : 1) * (worldBias[k] || 1); });
       const out = [];
       while (out.length < count) {
         const prev = out[out.length - 1], nl = out.filter(k => k === 'lava').length;
         const lavaCap = world === 'inferno' ? Math.max(1, Math.ceil(count * 0.25)) : Math.max(1, Math.ceil(count * (S.lava || 0.2)));
         const c = types.filter(k => k !== prev && !(out.length === 0 && k === 'lava') && !(k === 'lava' && ((world !== 'inferno' && S.lava === 0) || nl >= lavaCap)) && w[k] > 0);   // vulcano: al massimo uno ogni cinque zone (ogni lago scioglie la ruota)
-        let tot = 0; c.forEach(k => { tot += w[k]; }); let r = Math.random() * tot, pick = c[c.length - 1];
+        let tot = 0; c.forEach(k => { tot += w[k]; }); let r = random() * tot, pick = c[c.length - 1];
         for (const k of c) { r -= w[k]; if (r <= 0) { pick = k; break; } }
         out.push(pick);
       }
@@ -1294,10 +1294,16 @@ const Terrain = (() => {
     return out;
   }
 
+  function dailyCourse(day) {
+    const world = WORLD_KEYS[day % WORLD_KEYS.length];
+    const random = mulberry32(hashStr('daily-v42-' + day));
+    return { world, layout: generateFreeLayout(LENGTHS.corta, null, world, random) };
+  }
+
   applyLayout(generateRandomLayout());
 
   return {
-    generateRandomLayout, applyLayout, plainAt, SEASONS, seasonOf, PACES, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
+    generateRandomLayout, dailyCourse, applyLayout, plainAt, SEASONS, seasonOf, PACES, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
     get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get DYNAMIC_OBSTACLES() { return DYNAMIC_OBSTACLES; }, get INTERACTIVE_OBSTACLES() { return INTERACTIVE_OBSTACLES; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; }, get HALO_RINGS() { return HALO_RINGS; }, get ASH_GUSTS() { return ASH_GUSTS; }, get TIDAL_CURRENTS() { return TIDAL_CURRENTS; }, get ROOT_RIDGES() { return ROOT_RIDGES; }, get NEON_GATES() { return NEON_GATES; }, get EGYPT_MUMMIES() { return EGYPT_MUMMIES; },
     frictionAt: x => { const f = FRICTION[zoneAt(x).key] || 0.9; return f < 0.9 && onRamp(x) ? 0.9 : f; },   // il piano della rampa tiene sempre (anche nel ghiaccio)
     colorAt: x => zoneAt(x).color || '#059669',

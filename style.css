@@ -905,3 +905,10 @@ body[data-screen="race"] .page {
 .stamp-recap .stamp-result { margin:4px 0; }
 .stamp-recap .btn { font-size:.85rem; padding:4px 10px; }
 .stamp-recap [hidden] { display:none; }
+
+.ghost-control { display:flex; justify-content:center; align-items:center; gap:6px; font-size:.76rem; line-height:1.2; color:var(--teal-d); cursor:pointer; pointer-events:auto; }
+.ghost-control input { accent-color:#137b76; width:1.05rem; height:1.05rem; margin:3px; }
+.ghost-result,.daily-course { text-align:center; color:var(--teal-d); font-weight:700; margin:4px auto 8px; }
+.ghost-control[hidden],.ghost-result[hidden],.daily-course[hidden] { display:none; }
+
+#leave-daily[hidden] { display:none; }

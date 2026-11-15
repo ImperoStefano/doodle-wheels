@@ -366,4 +366,19 @@ const ctx2={};vm.createContext(ctx2);vm.runInContext(fs.readFileSync(root+'/js/c
   }
   applied++;
 }
+// All players get the same UTC course without consuming global randomness.
+{
+  const T = Function(fs.readFileSync(root + '/js/terrain.js','utf8') + ';return Terrain')();
+  const seenWorlds = new Set(), courses = new Set();
+  for (let day = 21000; day < 21028; day++) {
+    const first = T.dailyCourse(day);
+    T.generateRandomLayout(11);
+    assert.deepEqual(T.dailyCourse(day), first);
+    assert.equal(first.layout.length,T.LENGTHS.corta);
+    T.applyLayout(first.layout,{world:first.world});
+    if (first.world !== 'classic') assert.equal(T.WORLD_SEGMENT.world,first.world);
+    seenWorlds.add(first.world); courses.add(first.layout.join(','));
+  }
+  assert.equal(seenWorlds.size,7); assert(courses.size >= 20); applied++;
+}
 console.log('OK '+applied+' regression tests: ramps, jumps, landings, assets, special-world summary, white-screen recovery');

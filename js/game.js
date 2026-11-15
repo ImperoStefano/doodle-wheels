@@ -100,6 +100,19 @@
   // lunghezza della pista scelta dall'host in lobby, e ultima pista giocata (per "Rigioca stessa pista")
   let trackLen = 'corta', currentLayout = null, keepTrack = false, crazy = false, currentWorld = 'classic';
   let lastCallSent = false, lastCallEnd = 0;
+  const dailyMode = new URLSearchParams(location.search).get('daily') === '1';
+  const dailyDay = Math.floor(Date.now() / 86400000);
+  const ghostControl = document.getElementById('ghost-control');
+  const ghostVisible = document.getElementById('ghost-visible');
+  try { ghostVisible.checked = localStorage.getItem('dw_show_ghost') !== 'off'; } catch (_) {}
+  ghostVisible.addEventListener('change', () => {
+    try { localStorage.setItem('dw_show_ghost', ghostVisible.checked ? 'on' : 'off'); } catch (_) {}
+  });
+  let ghostRun = false, ghostClock = null, ghostResultKey = '', ghostDelta = 0;
+  function courseKey() {
+    const mode = crazy ? 'crazy-' + Object.keys(wheels).length : 'normal';
+    return [currentWorld === 'neon' ? 'dw_best_neon_v41' : 'dw_best_v39', currentWorld, mode, Terrain.SEASON.key, (currentLayout || []).join('-')].join('_');
+  }
   let currentRaceStart = 0, drawDeadline = 0;
   // A room invitation and an unguessable return token survive a closed tab.
   // The host owns the actual race state: nothing about the physics is trusted from storage.
@@ -145,6 +158,15 @@
   function showScreen(name) { ['menu', 'lobby', 'draw', 'race', 'results'].forEach(s => els[s].classList.toggle('screen--active', s === name)); document.body.dataset.screen = name; if (typeof Sfx !== 'undefined') Sfx.mood(name === 'race' ? 'drive' : name === 'results' ? 'finale' : 'calm'); if (name === 'lobby' || name === 'menu') refreshInvite(); }
 
   els.btnHost.addEventListener('click', () => { const name = els.name.value.trim(); if (name) { try { localStorage.removeItem(REJOIN_STORAGE); } catch (_) {} updateRejoinButton(); Net.hostGame(name); try { Sim.warmCalibration && Sim.warmCalibration(); } catch (e) {} } else showMenuError(I18n.t('menu.err.name')); });
+  function dailyMenu() {
+    const url = new URL(location.href); url.searchParams.delete('daily'); location.assign(url.href);
+  }
+  document.getElementById('leave-daily').addEventListener('click', dailyMenu);
+  document.getElementById('btn-daily').addEventListener('click', () => {
+    try { sessionStorage.setItem('dw_solo_name', els.name.value.trim()); } catch (_) {}
+    const url = new URL(location.href); url.search = '?daily=1'; url.hash = '';
+    location.assign(url.href);
+  });
   els.btnJoin.addEventListener('click', () => {
     const name = els.name.value.trim(), code = els.code.value.trim();
     if (!name || code.length !== 4) return showMenuError(I18n.t('menu.err.namecode')); connectToRoom(code, name);
@@ -572,7 +594,7 @@
     Net.sendTo(id, msg);
     if (stage === 'race' && snapshotLoopHandle) {
       if (Sim.getAllMeltStates) Net.sendTo(id, { type:'meltSync', melts: Sim.getAllMeltStates() });
-      Net.sendTo(id, { type:'snap', racers: Sim.snapshot(), ts: performance.now(),
+      Net.sendTo(id, { type:'snap', racers: Sim.snapshot(), ts: performance.now(), run:currentRaceStart, elapsed:Sim.getElapsed(),
         ht: Sim.getObstacleTime(), io: Sim.getInteractiveState(),
         obs: Sim.obstacleSnapshot(), pu: Sim.usedPortals() });
     }
@@ -640,7 +662,8 @@
     if (data.type === 'wheel' && Net.isHost && Net.players[from] && validWheelVertices(data.vertices)) receiveWheel(from, data.vertices);
     if (data.type === 'allReady') { wheels = data.wheels || wheels; currentRaceStart = data.startTime; currentLayout = data.trackLayout; crazy = !!data.crazy; currentWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'].includes(data.world) ? data.world : 'classic'; const opts = { world: currentWorld }; if (crazy) { opts.crazy = true; opts.np = data.np; } if (champ && !crazy && champ.seasons && champ.seasons[champ.i]) opts.season = champ.seasons[champ.i]; Terrain.applyLayout(data.trackLayout, opts); startCountdown(data.startTime); }
     if (data.type === 'snap' && !Net.isHost) {
-      if (!applySnapshot(data.racers, data.ts)) return;
+      if (data.run !== undefined && data.run !== currentRaceStart) return;
+      if (!applySnapshot(data.racers, data.ts, data.elapsed)) return;
       InteractiveObstacles.receive(data.io);
       if (data.obs) DynamicObstacles.setRemoteStates(data.obs);
       if (data.pu) syncUsed(data.pu);
@@ -784,6 +807,10 @@
 
   function startCountdown(startTime, returning = false) {
     currentRaceStart = startTime;
+    const entrants = Object.keys(wheels).length;
+    RaceGhost.begin([courseKey(), entrants, dailyMode ? 'daily' : 'room'].join('|'), !returning);
+    ghostControl.hidden = !RaceGhost.hasGhost();
+    ghostRun = true; ghostClock = null; ghostResultKey = '';
     clearTimeout(launchFeedbackTimer);
     launchFeedback.textContent = '';
     seenTimedLaunches = returning ? null : 0;
@@ -832,16 +859,22 @@
   function beginRace() {
     Sim.ensureWorld(); let i = 0; Object.entries(raceMeta).forEach(([id, m]) => Sim.addRacer(id, m.vertices, m.color, m.name, i++));
     Sim.start(); let last = performance.now();
+    const raceOrigin = last - Sim.getElapsed();
+    const grid = Sim.snapshot();
+    applySnapshot(grid, last, 0);
+    Net.broadcast({ type:'snap', racers:grid, ts:last, run:currentRaceStart, elapsed:0,
+      ht:0, io:Sim.getInteractiveState(), obs:Sim.obstacleSnapshot(), pu:[] });
     let lastSend = 0;
     snapshotLoopHandle = Ticker.start(() => {
       const now = performance.now(), dt = Math.min(now - last, 100); last = now;
-      const pt = Perf.on ? performance.now() : 0; Sim.tick(dt); const snap = Sim.snapshot(), pu = Sim.usedPortals(); syncUsed(pu); applySnapshot(snap); if (Perf.on) Perf.tick(performance.now() - pt);
-      if (now - lastSend >= 48) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now, ht: Sim.getObstacleTime(), io: Sim.getInteractiveState(), obs:Sim.obstacleSnapshot(), pu }); }
+      const pt = Perf.on ? performance.now() : 0; Sim.tick(dt); const snap = Sim.snapshot(), pu = Sim.usedPortals(); syncUsed(pu); applySnapshot(snap, now, now - raceOrigin); if (Perf.on) Perf.tick(performance.now() - pt);
+      const raceOver = Sim.allFinished() || Sim.isTimedOut();
+      if (now - lastSend >= 48 || raceOver) { lastSend = now; Net.broadcast({ type: 'snap', racers: snap, ts: now, elapsed:now-raceOrigin, run:currentRaceStart, ht: Sim.getObstacleTime(), io: Sim.getInteractiveState(), obs:Sim.obstacleSnapshot(), pu }); }
       Sim.drainMelts().forEach(m => { applyMelt(m.id, m.f, m.r); Net.broadcast({ type: 'melt', id: m.id, f: m.f, r: m.r }); });
       // primo traguardo: gli altri hanno un tempo limitato, e lo sanno
       const gl = Sim.graceLeft();
       if (gl !== null && !lastCallSent) { lastCallSent = true; Net.broadcast({ type: 'lastCall', ms: gl }); showLastCall(gl); }
-      if (Sim.allFinished() || Sim.isTimedOut()) { Ticker.stop(snapshotLoopHandle); snapshotLoopHandle = null; const s = Sim.standings(), ch = champ ? champAward(s) : null; Net.broadcast({ type: 'results', standings: s, champ: ch }); showResults(s, ch); }
+      if (raceOver) { Ticker.stop(snapshotLoopHandle); snapshotLoopHandle = null; const s = Sim.standings(), ch = champ ? champAward(s) : null; Net.broadcast({ type: 'results', standings: s, champ: ch }); showResults(s, ch); }
     }, 16);
     startRenderLoop();
   }
@@ -865,7 +898,7 @@
   // che risale piano per seguire la deriva degli orologi: lo spaziamento resta quello dell'host.
   let snapOff = null, lastRemoteSnapTs = -Infinity;
   let snapPrevArrival = 0, snapIntervalMean = 50, snapJitter = 0, interpClientMs = 130;
-  function applySnapshot(racers, ts) {
+  function applySnapshot(racers, ts, elapsed) {
     if (!Array.isArray(racers) || racers.length > MAX_PLAYERS || racers.length < 1) return;
     if (!Net.isHost) {
       if (!Number.isFinite(ts) || ts <= lastRemoteSnapTs) return; // pacchetto vecchio: non riavvolgere i veicoli
@@ -906,6 +939,10 @@
         }
       }
       snapPrevArrival = arr;
+    }
+    if (mine && Number.isFinite(elapsed) && elapsed >= 0 && ghostRun) {
+      RaceGhost.sample(elapsed, mine);
+      ghostClock = { ms:elapsed, t };
     }
     if (Perf.on && !Net.isHost) Perf.snap(arr);
     snapBuf.push({ t, m }); if (snapBuf.length > 16) snapBuf.shift();
@@ -1848,6 +1885,12 @@
     // la propria bici per ultima: alla partenza (stesso punto per tutti) resta sopra le altre
     // In V16 ogni fumetto veniva disegnato durante la propria bici: con cinque
     // giocatori vicini i fumetti si coprivano. V17 li disegna in un passaggio finale.
+    if (ghostClock && !ghostControl.hidden && ghostVisible.checked) {
+      const delay = Net.isHost ? INTERP_HOST_MS : interpClientMs;
+      const replayTime = ghostClock.ms + Math.min(120, t0 - delay - ghostClock.t);
+      const rival = RaceGhost.pose(replayTime);
+      if (rival) RaceGhostArt.draw(ctx2d, rival, camX, groundY, Sim.GROUND_Y, w);
+    }
     const emoteAnchors = [];
     Object.entries(latestRacers).sort((a, b) => (a[0] === Net.myId) - (b[0] === Net.myId)).forEach(([id, r]) => {
       const meta = raceMeta[id]; if (!meta) return;
@@ -2156,6 +2199,9 @@
     link.click();
   });
   function showLaunchSummary(mine) {
+    const ghostResult = document.getElementById('ghost-result');
+    ghostResult.hidden = !ghostResultKey;
+    if (ghostResultKey) ghostResult.textContent = I18n.t(ghostResultKey, { s: (ghostDelta/1000).toLocaleString(I18n.lang, {minimumFractionDigits:2,maximumFractionDigits:2}) });
     saveCard.hidden = !mine || !mine.stampMask;
     const result = document.getElementById('stamp-result');
     const total = RouteStamps.route().length;
@@ -2182,12 +2228,22 @@
     st.forEach((s, i) => { const li = document.createElement('li'); li.innerHTML = `<span class="results-rank">${rankLabel(i + 1)}</span><span class="color-dot" style="background:${s.color}"></span><span>${escapeHtml(s.name)}</span><span class="results-time">${s.finished ? `${(s.finishTime / 1000).toFixed(2)}s` : I18n.t('res.dnf')}</span>${ch ? `<span class="results-gain">+${ch.gains[s.id] || 0}</span>` : ''}`; els.resultsList.appendChild(li); });
     // Personal best for the *same track* only. No account, no scoreboard manipulation.
     const best = document.getElementById('personal-best'), mine = st.find(s => s.id === Net.myId);
+    ghostResultKey = '';
+    if (ghostRun) {
+      const target = RaceGhost.bestTime();
+      const saved = RaceGhost.finish(mine?.finishTime, !!mine?.finished);
+      if (mine?.finished && Number.isFinite(target)) {
+        const delta = Math.round((mine.finishTime - target) / 10);
+        ghostDelta = Math.abs(delta) * 10;
+        ghostResultKey = delta === 0 ? 'ghost.tie' : delta < 0 ? 'ghost.win' : 'ghost.loss';
+      } else if (saved) ghostResultKey = 'ghost.ready';
+      ghostRun = false;
+    }
     showLaunchSummary(mine);
     if (best) {
       best.hidden = true;
       if (mine && mine.finished && Number.isFinite(mine.finishTime)) {
-        const mode = crazy ? 'crazy-' + Object.keys(wheels).length : 'normal';
-        const key = [currentWorld === 'neon' ? 'dw_best_neon_v41' : 'dw_best_v39', currentWorld, mode, Terrain.SEASON.key, (currentLayout || []).join('-')].join('_');
+        const key = courseKey();
         const ms = mine.finishTime;
         try {
           const prev = Number(localStorage.getItem(key));
@@ -2219,6 +2275,9 @@
     Net.broadcast({ type: 'restartToDraw', champ: champPublic() }); enterDrawPhase();
   });
   els.btnBackMenu.addEventListener('click', () => {
+    if (dailyMode) {
+      dailyMenu(); return;
+    }
     if (Net.isHost && document.body.dataset.screen === 'results') {
       // Party game: 'Nuova Pista' should not destroy everyone's room.
       // Start a fresh track in the SAME room, with all friends still connected.
@@ -2229,4 +2288,19 @@
     } else location.reload();
   }); function escapeHtml(str) { return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); } els.code.addEventListener('input', () => els.code.value = els.code.value.toUpperCase());
   document.body.dataset.screen = 'menu'; I18n.init(); applyInvite(); updateRejoinButton(); const lastRoom = readRejoin(); if (lastRoom && !els.code.value) els.code.value = lastRoom.code; if (lastRoom && !els.name.value) els.name.value = lastRoom.name; if (typeof Sfx !== 'undefined') Sfx.init(); window.__dwBootReady = true;
+  if (dailyMode) {
+    let name = '';
+    try { name = sessionStorage.getItem('dw_solo_name') || ''; } catch (_) {}
+    Net.solo(name || I18n.t('daily.pilot'));
+    const course = Terrain.dailyCourse(dailyDay);
+    currentWorld = course.world; currentLayout = course.layout; keepTrack = true;
+    const caption = document.getElementById('daily-course');
+    function labelCourse() {
+      const date = new Date(dailyDay * 86400000).toLocaleDateString(I18n.lang, {day:'numeric', month:'long', timeZone:'UTC'});
+      caption.textContent = I18n.t('daily.play') + ' · ' + date + ' · ' + I18n.t('world.tag.' + course.world);
+    }
+    caption.hidden = false; document.getElementById('leave-daily').hidden = false; labelCourse(); I18n.onChange(labelCourse);
+    els.btnBackMenu.dataset.i18n = 'daily.menu'; els.btnBackMenu.textContent = I18n.t('daily.menu');
+    enterDrawPhase();
+  }
 })();

@@ -3,6 +3,10 @@
 const I18n = (() => {
   const D = {
     it: {
+      'daily.play':'Cronosfida del giorno', 'daily.pilot':'Pilota', 'daily.menu':'Torna al menu',
+      'ghost.show':'Fantasma personale', 'ghost.ready':'Fantasma pronto per la rivincita',
+      'ghost.win':'Hai battuto il fantasma di {s} s', 'ghost.loss':'A {s} s dal fantasma', 'ghost.tie':'Stesso tempo del fantasma',
+
       'stamps.save': 'Salva cartolina', 'city.destination': 'Destinazione', 'city.random': 'A sorpresa',
       'stamps.name': 'Timbri', 'stamps.complete': 'Cartolina completa!', 'stamps.result': 'Timbri raccolti: {n} su {total}',
       'race.timedLaunch': 'Bel tempismo!', 'race.launchCue': 'SALTA',
@@ -33,6 +37,10 @@ const I18n = (() => {
       'doc.title': 'Doodle Wheels — corsa online',
     },
     en: {
+      'daily.play':'Daily time trial', 'daily.pilot':'Rider', 'daily.menu':'Back to menu',
+      'ghost.show':'Personal ghost', 'ghost.ready':'Ghost ready for your rematch',
+      'ghost.win':'You beat your ghost by {s} s', 'ghost.loss':'{s} s behind your ghost', 'ghost.tie':'You matched your ghost',
+
       'stamps.save': 'Save postcard', 'city.destination': 'Destination', 'city.random': 'Surprise me',
       'stamps.name': 'Stamps', 'stamps.complete': 'Postcard complete!', 'stamps.result': 'Route stamps: {n} of {total}',
       'race.timedLaunch': 'Nice timing!', 'race.launchCue': 'JUMP',

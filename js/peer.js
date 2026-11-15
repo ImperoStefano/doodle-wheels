@@ -85,6 +85,12 @@ const Net = (() => {
     emit('playerExpired', { id });
   }
 
+  // Entered on a new page for solo time trials, before any peer is opened.
+  function solo(name) {
+    isHost = true; myId = 'solo'; myName = name;
+    players = { solo: { id: myId, name, color: PLAYER_COLORS[0], isHost: true, connected: true } };
+  }
+
   function hostGame(name, attempt = 0) {
     isHost = true; myName = name;
     const code = makeCode(); roomCode = code;
@@ -253,7 +259,7 @@ const Net = (() => {
   }
 
   return {
-    hostGame, joinGame, broadcast, send, sendTo, on, setPhase,
+    solo, hostGame, joinGame, broadcast, send, sendTo, on, setPhase,
     get isHost() { return isHost; },
     get myId() { return myId; },
     get players() { return players; },
