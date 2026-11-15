@@ -6,7 +6,7 @@ const InteractiveObstacles = (() => {
   'use strict';
   const TAU=Math.PI*2, GY=520;
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
-    const SIZES={boulder:{r:30,rx:78},tilt:{w:282,h:22},spring:{w:170,h:20},shard:{w:114,h:54},clam:{w:148,h:40},bud:{w:114,h:54},servo:{w:125,h:52}};
+    const SIZES={boulder:{r:30,rx:78},tilt:{w:282,h:22},spring:{w:170,h:20},shard:{w:114,h:54},clam:{w:148,h:40},bud:{w:114,h:54},servo:{w:125,h:52},sweeper:{w:96,h:44},steamvent:{w:116,h:54}};
   const THEMES={
     classic:{dark:'#514539',mid:'#9a7750',light:'#f4d7a0',edge:'#5d4036',metal:'#e2b15d',glow:'#fff1bb'},
     paradise:{dark:'#5e7999',mid:'#d4bb82',light:'#fff7db',edge:'#8d6e9b',metal:'#e5bc64',glow:'#fff6cf'},
@@ -16,14 +16,14 @@ const InteractiveObstacles = (() => {
     neon:{dark:'#191736',mid:'#4749a5',light:'#77fff0',edge:'#fb63df',metal:'#8ca8ff',glow:'#36f2ed'},
     egypt:{dark:'#76452e',mid:'#be8052',light:'#e9c990',edge:'#805335',metal:'#c9a04d',glow:'#40799d'}
   };
-  let host=[], remote=new Map(), drawAt=0, activeRacers=[], pendingSprings=[],pendingVaults=[],pendingTilts=[],pendingRisers=[];
+  let host=[], remote=new Map(), drawAt=0, activeRacers=[], pendingSprings=[],pendingVaults=[],pendingTilts=[],pendingRisers=[],pendingStreet=[];
   const springVisual = new Map(); // phase-clock per obstacle, only for drawing
   const placements=()=>Terrain.INTERACTIVE_OBSTACLES||[];
   const ground=(x)=>GY-Terrain.height(x);
-  const basePose=(o)=>({x:o.x,y:ground(o.x)-({boulder:30,tilt:13,spring:21,shard:28,clam:26,bud:29,servo:29}[o.kind]||25),a:0,s:0});
+  const basePose=(o)=>({x:o.x,y:ground(o.x)-({boulder:30,tilt:13,spring:21,shard:28,clam:26,bud:29,servo:29,sweeper:22,steamvent:27}[o.kind]||25),a:0,s:0});
   const nearby=(rs,x,r=230)=>Boolean(rs&&rs.some(q=>q&&!q.finished&&q.chassis&&Math.abs(q.chassis.position.x-x)<r));
   function mount(world){
-    host=[];activeRacers=[];pendingSprings=[];pendingVaults=[];pendingTilts=[];pendingRisers=[];remote=new Map();drawAt=0;springVisual.clear();
+    host=[];activeRacers=[];pendingSprings=[];pendingVaults=[];pendingTilts=[];pendingRisers=[];pendingStreet=[];remote=new Map();drawAt=0;springVisual.clear();
     for(const config of placements()){
       const p=basePose(config); let body;
       if(config.kind==='boulder'){
@@ -39,7 +39,7 @@ const InteractiveObstacles = (() => {
         body=Matter.Bodies.rectangle(p.x,p.y,SIZES.tilt.w,SIZES.tilt.h,{
           label:'interactive-tilt',isStatic:true,isSensor:true,friction:0,slop:.02
         });
-      }else if(['shard','clam','bud','servo'].includes(config.kind)){
+      }else if(['shard','clam','bud','servo','sweeper','steamvent'].includes(config.kind)){
         // V24 replaces the disliked sinking 'drop' deck with compact, ground-rooted
         // obstacles. All have consistent collisions with their actual drawn envelope.
         const k=SIZES[config.kind];
@@ -57,22 +57,30 @@ const InteractiveObstacles = (() => {
       }else continue;
       body.interactiveId=config.id;
       // Cooldown PER PLAYER: one rider must not steal another player's bounce.
-      const entry={config,body,original:p,phase:'idle',phaseAt:0,lastTriggerAt:-1e7,reactivations:new WeakMap(),resetAt:-1,springDisarmed:new WeakMap(), tiltDisarmed:new WeakMap(), tiltAngle:0};
+      const entry={config,body,original:p,phase:'idle',phaseAt:0,lastTriggerAt:-1e7,reactivations:new WeakMap(),resetAt:-1,springDisarmed:new WeakMap(), passDisarmed:new WeakMap(), tiltAngle:0};
       host.push(entry);
       Matter.World.add(world,body);
     }
   }
   function contact(a,b,timeMs){
     const kind=v=>v&&v.label||'';
-    let obstacle=/^interactive-(spring|tilt|boulder|shard|clam|bud|servo)$/.test(kind(a))?a:null;
+    let obstacle=/^interactive-(spring|tilt|boulder|shard|clam|bud|servo|sweeper|steamvent)$/.test(kind(a))?a:null;
     let rider=obstacle?b:null;
-    if(!obstacle && /^interactive-(spring|tilt|boulder|shard|clam|bud|servo)$/.test(kind(b))){obstacle=b;rider=a;}
-    if(!obstacle || !rider || !['wheel','chassis'].includes(rider.label))return;
+    if(!obstacle && /^interactive-(spring|tilt|boulder|shard|clam|bud|servo|sweeper|steamvent)$/.test(kind(b))){obstacle=b;rider=a;}
+    if(!obstacle||!rider)return;
+    // Concave hand-drawn wheels may contact a sensor through a child polygon.
+    rider=rider.parent||rider;
+    if(rider.label!=='wheel')return;
     const entry=host.find(q=>q.body===obstacle);if(!entry)return;
     const racer=activeRacers.find(r=>r&&(r.fw===rider||r.rw===rider));
-    if(!racer)return;
+    if(!racer||racer.finished)return;
     const obstacleKind=entry.config.kind;
-    if(obstacleKind==='spring'){
+    if(obstacleKind==='sweeper'||obstacleKind==='steamvent'){
+      if(obstacleKind==='steamvent' && entry.phase!=='jet')return;
+      if(entry.passDisarmed.has(racer))return;
+      entry.passDisarmed.set(racer,true);
+      pendingStreet.push({entry,racer});
+    }else if(obstacleKind==='spring'){
       // A wheel meets the soft launch surface from ABOVE. Each racer triggers
       // exactly once while crossing, even if the solver emits many contacts.
       if(rider.position.y > obstacle.position.y-17)return;
@@ -84,7 +92,7 @@ const InteractiveObstacles = (() => {
     }else if(obstacleKind==='tilt'){
       // The tilting board feels the wheel's load, without presenting a rigid
       // step that can wedge an irregular wheel against the asphalt.
-      if(rider.label!=='wheel' || entry.tiltDisarmed.get(racer))return;
+      if(rider.label!=='wheel' || entry.passDisarmed.get(racer))return;
       if(Math.abs(rider.position.x-obstacle.position.x)>SIZES.tilt.w/2+15)return;
       if(!pendingTilts.some(q=>q.entry===entry&&q.racer===racer))
         pendingTilts.push({entry,racer,at:timeMs});
@@ -102,11 +110,25 @@ const InteractiveObstacles = (() => {
         pendingRisers.push({entry,racer,at:timeMs});
     }
   }
+  function streetPose(config,nowMs) {
+    const sweeping=config.kind==='sweeper';
+    const x=config.x+(sweeping?58*Math.sin(nowMs/1220+config.id*1.93):0);
+    const a=Math.atan2(ground(x+30)-ground(x-30),60);
+    const offset=SIZES[config.kind].h/2;
+    const cycle=(nowMs+config.id*977)%4600;
+    return {x:x+Math.sin(a)*offset,y:ground(x)-Math.cos(a)*offset,a,
+      phase:sweeping?'idle':cycle<2150?'idle':cycle<3350?'warning':'jet'};
+  }
   function beforeStep(nowMs,racers){
     activeRacers=racers||[];
     for(const entry of host){
       const b=entry.body, home=entry.original;
-      if(entry.config.kind==='tilt'){
+      if(entry.config.kind==='sweeper'||entry.config.kind==='steamvent'){
+        const p=streetPose(entry.config,nowMs);
+        Matter.Body.setPosition(b,{x:p.x,y:p.y});
+        Matter.Body.setAngle(b,p.a);
+        entry.phase=p.phase;
+      }else if(entry.config.kind==='tilt'){
         // Lean toward the rider's current load, then settle smoothly.
         // Static sensor angle controls both the displayed deck and contact area.
         let moment=0,weight=0;
@@ -141,12 +163,25 @@ const InteractiveObstacles = (() => {
     // Prevents repeat launches when both wheels touch the same pad.
     for(const entry of host)if(entry.config.kind==='spring'||entry.config.kind==='tilt'){
       const limit=(entry.config.kind==='spring'?SIZES.spring.w:SIZES.tilt.w)/2+195;
-      const map=entry.config.kind==='spring'?entry.springDisarmed:entry.tiltDisarmed;
+      const map=entry.config.kind==='spring'?entry.springDisarmed:entry.passDisarmed;
       for(const r of racers||[])if(r&&r.chassis&&Math.abs(r.chassis.position.x-entry.config.x)>limit)map.delete(r);
     }
+    for(const entry of host)if(entry.config.kind==='sweeper'||entry.config.kind==='steamvent'){
+      for(const r of racers||[])if(r.chassis&&Math.abs(r.chassis.position.x-entry.config.x)>370)entry.passDisarmed.delete(r);
+    }
+    for(const {entry,racer} of pendingStreet){
+      const sweep=entry.config.kind==='sweeper';
+      const vx=racer.chassis.velocity.x;
+      const brake=sweep&&!racer.spOn?-Math.sign(vx)*Math.min(2.4,Math.abs(vx)*0.27):0;
+      const lift=sweep?0:Math.min(0,-8.4-racer.chassis.velocity.y);
+      for(const b of [racer.chassis,racer.fw,racer.rw]){
+        Matter.Body.setVelocity(b,{x:b.velocity.x+brake,y:b.velocity.y+lift});
+      }
+    }
+    pendingStreet.length=0;
     for(const {entry,racer,at} of pendingTilts){
-      if(entry.tiltDisarmed.get(racer))continue;
-      entry.tiltDisarmed.set(racer,true);
+      if(entry.passDisarmed.get(racer))continue;
+      entry.passDisarmed.set(racer,true);
       entry.phase='react';entry.phaseAt=nowMs;
       // Gentle mechanical release, not a teleport or a speed governor.
       for(const body of [racer.chassis,racer.fw,racer.rw])if(body){
@@ -209,7 +244,7 @@ const InteractiveObstacles = (() => {
       }
     }
   }
-  const phaseCode=e=>({react:1,spring:5})[e.phase]||0;
+  const phaseCode=e=>({react:1,warning:2,jet:3,spring:5})[e.phase]||0;
   function snapshot(){return host.map(e=>[e.config.id,Math.round(e.body.position.x*10)/10,Math.round(e.body.position.y*10)/10,Math.round(e.body.angle*1000)/1000,phaseCode(e)]);}
   function receive(rows){
     if(!Array.isArray(rows))return;
@@ -499,6 +534,37 @@ const InteractiveObstacles = (() => {
     if(flash){c.fillStyle='rgba(255,255,255,'+flash+')';rounded(c,-W/2+6,-H/2+3,W-12,H-6,5);c.fill();}
     c.fillStyle=T.metal;for(const x of [-W*.43,W*.43]){c.beginPath();c.arc(x,H*.10,3,0,TAU);c.fill();}
   }
+  function drawStreet(c,o,phase,t) {
+    if(o.kind==='steamvent'){
+      rounded(c,-58,21,116,8,4);c.fillStyle='#283149';c.fill();
+      c.strokeStyle='#8995ac';c.lineWidth=3;
+      for(let x=-49;x<=49;x+=11)line(c,[x,23,x+3,26]);
+      const lamp=phase===3?'#9cf8ff':phase===2?'#ffbc51':'#597282';
+      for(const x of [-49,49])dot(c,x,20,3,lamp);
+      if(phase===2||phase===3){
+        const firing=phase===3;
+        const h=firing?51:10;
+        for(let i=-2;i<=2;i++){
+          const x=i*21, drift=4*Math.sin(t/170+i*1.3);
+          c.strokeStyle=firing?'rgba(190,253,255,.72)':'rgba(255,212,139,.63)';
+          c.lineWidth=firing?9:3;c.beginPath();c.moveTo(x,18);
+          c.bezierCurveTo(x-8,18-h*.38,x+drift+9,18-h*.68,x+drift,18-h);c.stroke();
+        }
+      }
+      return;
+    }
+    rounded(c,-45,-10,89,23,6);c.fillStyle='#313255';c.fill();
+    rounded(c,-25,-20,41,22,7);c.fillStyle='#49cecb';c.fill();
+    rounded(c,-18,-16,25,12,4);c.fillStyle='#1c385c';c.fill();
+    c.fillStyle='#f7bf63';c.fillRect(22,-14,10,5);
+    c.strokeStyle='#e2be80';c.lineWidth=3;line(c,[-37,3,-19,3]);
+    for(const x of [-24,31]){
+      dot(c,x,14,8,'#202437');dot(c,x,14,4,'#8892a0');
+    }
+    c.save();c.translate(-39,10);c.rotate(t/135);c.lineWidth=3;c.strokeStyle='#88e4db';
+    for(let i=0;i<6;i++){line(c,[3,0,10,0]);c.rotate(TAU/6);}
+    c.restore();
+  }
   function draw(ctx,camX,viewW,groundY,remoteMode,demoMs,overrideItems,visualRacers){
     const configs=overrideItems||placements();if(!configs.length)return;
     const byId=remoteMode?null:new Map(host.map(e=>[e.config.id,e]));
@@ -515,7 +581,9 @@ const InteractiveObstacles = (() => {
       else p=basePose(o);
       if(Number.isFinite(demoMs)&&!entry){
         const a=demoMs*.0015+o.id*1.7;
-        if(o.kind==='tilt')p.a=Math.sin(a)*.19;
+        if(o.kind==='steamvent'||o.kind==='sweeper'){
+          p=streetPose(o,demoMs);phase=phaseCode(p);
+        }else if(o.kind==='tilt')p.a=Math.sin(a)*.19;
         else if(o.kind==='boulder'){p.x+=Math.sin(a)*29;p.a=Math.sin(a)*.4;}
         else if(['shard','clam','bud','servo'].includes(o.kind)){p.y-=12*(.5+.5*Math.sin(a));if(o.kind==='servo')p.x+=25*Math.sin(a);phase=Math.sin(a)>.5?1:0;}
         else if(o.kind==='spring')phase=Math.sin(a)>0.68?5:0;
@@ -580,7 +648,9 @@ const InteractiveObstacles = (() => {
       ctx.translate(p.x,p.y);ctx.rotate(p.a);
       if(o.kind==='boulder')ctx.scale(SIZES.boulder.rx/SIZES.boulder.r,1);
       ctx.shadowColor=T.glow;ctx.shadowBlur=o.biome==='neon'||o.biome==='paradise'?14:6;
-      if(o.kind==='boulder')drawBoulder(ctx,o,p,T,demoMs||now);
+      if(o.kind==='steamvent'||o.kind==='sweeper'){
+        ctx.shadowBlur=0;drawStreet(ctx,o,phase,demoMs||now);
+      }else if(o.kind==='boulder')drawBoulder(ctx,o,p,T,demoMs||now);
       else if(o.kind==='tilt')drawTilt(ctx,o,p,T,demoMs||now);
       else if(['shard','clam','bud','servo'].includes(o.kind))drawChallenge(ctx,o,p,T,phase,demoMs||now);
       else if(o.kind==='spring')drawSpring(ctx,o,p,T,phase,demoMs||now,anticipation,compression);

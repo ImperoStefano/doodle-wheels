@@ -323,7 +323,7 @@ const Sim = (() => {
       bestX: startX, hopBaseX: startX, progressAt: 0, hops: 0,
       cornerReleases: 0, releaseAt: -1e9, releaseTriedFor: -1, stallEvents: [],
       curseAt:-1,curseStage:0,curseLevel:0,curseHits:{},
-      rampTakeoffAt:-1e9,rampInputUsed:false,rampGroundTicks:0,timedLaunches:0,
+      rampTakeoffAt:-1e9,rampInputUsed:false,rampGroundTicks:0,timedLaunches:0, stampMask:0,
       flightTicks:0,flightArmed:false,landHits:0,landPower:0,
       stallStreak: 0, dir: 1, lx: startX, exitId: -1, immuneUntil: 0, jn: 0, ln: 0, ls: 0, jumpAt: -1e9, pe: 0, pt: '', pd: 0, sc: 1, scT: 1, scAt: 0, pUsed: {}, gEv: {}, spCharge: 1, spOn: false, spT: 0,
       spike: spikiness(vertices), teeth: teethGrip(vertices), peaks: lastPeaks, prom: lastProm, roll: rollFactor(vertices, teethGrip(vertices)), reff: lastReff, accelK: 1 + ACCEL_SPIKE * spikiness(vertices)
@@ -1562,6 +1562,7 @@ const Sim = (() => {
     if (r.jBuf) { if (elapsed - r.jBuf > JUMP_BUF_MS) r.jBuf = 0; else if (jumpTry(r, elapsed)) r.jBuf = 0; }
     else if (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP) r.lastGroundAt = elapsed;
     if (r.airJ && elapsed - r.jumpAt > 150 && (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP)) r.airJ = 0;   // atterrata: il doppio salto si ricarica
+    r.stampMask = RouteStamps.collect(r.stampMask, r.fw.position, r.rw.position, GROUND_Y);
     checkPortals(r, elapsed);
     ravineStep(r, elapsed);
     rampStep(r, elapsed);
@@ -1661,7 +1662,7 @@ const Sim = (() => {
       fwX: r.fw.position.x, fwY: r.fw.position.y, fwAngle: r.fw.angle,
       rwX: r.rw.position.x, rwY: r.rw.position.y, rwAngle: r.rw.angle,
       vx: r.chassis.velocity.x,
-      timedLaunches: r.timedLaunches,
+      timedLaunches: r.timedLaunches, stampMask: r.stampMask,
       finished: r.finished, finishTime: r.finishTime,
       dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, ln: r.ln || 0, ls: r.ls || 0, ld: r.landHits || 0, lp: r.landPower || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, cu: r.curseLevel || 0, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
     }));
@@ -1685,7 +1686,7 @@ const Sim = (() => {
     return Object.entries(racers).map(([id, r]) => ({
       id, name: r.name, color: r.color,
       finished: r.finished, finishTime: r.finishTime,
-      timedLaunches: r.timedLaunches,
+      timedLaunches: r.timedLaunches, stampMask: r.stampMask,
       distance: r.chassis.position.x
     })).sort((a, b) => {
       if (a.finished && b.finished) return a.finishTime - b.finishTime;

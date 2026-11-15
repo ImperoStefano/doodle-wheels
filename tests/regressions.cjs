@@ -343,4 +343,27 @@ const ctx2={};vm.createContext(ctx2);vm.runInContext(fs.readFileSync(root+'/js/c
   assert(held>10);
   applied++;
 }
+// Route stamps are personal, use the final layout, and survive a repeat visit.
+{
+  const files = ['terrain', 'stamps'].map(name => fs.readFileSync(root + '/js/' + name + '.js', 'utf8'));
+  const {Terrain, RouteStamps} = Function(files.join('\n') + ';return {Terrain, RouteStamps}')();
+  const layout = ['hills','water','ramps','water','hills','water','ramps','hills','ice','hills','water'];
+  for (const world of ['classic','neon','paradise','inferno','atlantis','egypt','enchanted']) {
+    Terrain.applyLayout(layout,{ world });
+    const stamps = RouteStamps.route();
+    assert(stamps.length > 0 && stamps.length <= 3);
+    let mask = 0;
+    for (const item of stamps) {
+      const front = {x:item.x+80, y:500-item.height}, rear = {x:item.x-80,y:front.y};
+      assert.equal(RouteStamps.collect(0,{x:front.x,y:front.y-150},{x:rear.x,y:rear.y-150},500),0);
+      mask = RouteStamps.collect(mask,front,rear,500);
+      assert(mask & item.bit);
+      assert.equal(RouteStamps.collect(mask,front,rear,500),mask);
+    }
+    assert.equal(RouteStamps.count(mask),stamps.length);
+    Terrain.applyLayout(layout,{ world });
+    assert.deepEqual(RouteStamps.route(),stamps);
+  }
+  applied++;
+}
 console.log('OK '+applied+' regression tests: ramps, jumps, landings, assets, special-world summary, white-screen recovery');

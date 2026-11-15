@@ -1412,14 +1412,14 @@ const Scenery = (() => {
         ctx.restore();
       }
       drawDedicatedWorldAtmosphere(ctx, S.world, w, h, gy, now);
-      if (typeof WorldArtV19 !== "undefined") WorldArtV19.draw(ctx, S.world, w, h, gy, S.camX, now, quality);
+      if (typeof WorldArtV19 !== "undefined") WorldArtV19.draw(ctx, S.world, w, h, gy, S.camX, now, quality, S.segment);
       return;
     }
     // Fallback vettoriale immediato mentre il browser carica l'illustrazione locale.
     if (S.world === 'atlantis') drawAtlantisBackdrop(ctx, w, h, gy, now);
     else if (S.world === 'enchanted') drawEnchantedBackdrop(ctx, w, h, gy, now);
     else drawNeonBackdrop(ctx, w, h, gy, now);
-    if (typeof WorldArtV19 !== "undefined") WorldArtV19.draw(ctx, S.world, w, h, gy, S.camX, now, quality);
+    if (typeof WorldArtV19 !== "undefined") WorldArtV19.draw(ctx, S.world, w, h, gy, S.camX, now, quality, S.segment);
   }
 
   function drawDedicatedWorldAtmosphere(ctx, world, w, h, gy, now) {

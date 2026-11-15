@@ -28,6 +28,16 @@
   const preRaceDrawer = createWheelDrawer(els.drawCanvas); preRaceDrawer.init();
   const inRaceDrawer = createWheelDrawer(els.redrawCanvas); inRaceDrawer.init();
   const wheelProfile = document.getElementById('wheel-profile'), pitProfile = document.getElementById('pit-profile');
+  const stampCounter = document.getElementById('stamp-counter');
+  const stampTotal = document.getElementById('stamp-total');
+  let personalStamps = null;
+  function updateStamps(mask, silent) {
+    const total = RouteStamps.route().length;
+    stampCounter.hidden = !total;
+    stampTotal.textContent = RouteStamps.count(mask) + ' / ' + total;
+    if (!silent && personalStamps !== null && (mask & ~personalStamps) && typeof Sfx !== 'undefined') Sfx.postmark();
+    personalStamps = mask;
+  }
   const launchFeedback = document.getElementById('launch-feedback');
   const launchSummary = document.getElementById('launch-summary');
   let seenTimedLaunches = null, launchFeedbackTimer = 0;
@@ -268,7 +278,16 @@
   // soltanto sull'host. La scelta viene poi inviata con allReady, così tutti vedono lo stesso mondo.
   // Il replay conserva la pista e il mondo appena giocati. Classico 35%, Antico Egitto 15%, altri cinque mondi 10% ciascuno.
   const WORLD_CHANCES = { paradise: 0.10, inferno: 0.10, atlantis: 0.10, enchanted: 0.10, neon: 0.10, egypt: 0.15 };
+  const destination = document.getElementById('world-select');
+  destination.addEventListener('change', () => {
+    const hint = els.worldInfo.querySelector('.hint');
+    const choice = destination.value;
+    hint.dataset.i18n = choice === 'random' ? 'world.chance.desc' : choice === 'classic' ? 'world.tag.classic' : 'world.hint.' + choice;
+    hint.textContent = I18n.t(hint.dataset.i18n);
+    hint.hidden = choice === 'classic';
+  });
   function drawWorld() {
+    if (destination.value === 'classic' || Object.hasOwn(WORLD_CHANCES, destination.value)) return destination.value;
     // Modalità collaudo facoltativa (solo per l'host): ?testWorld=atlantis.
     // Nelle partite normali si applicano le probabilità configurate in WORLD_CHANCES.
     const previewWorld = new URLSearchParams(location.search).get('testWorld');
@@ -768,6 +787,8 @@
     clearTimeout(launchFeedbackTimer);
     launchFeedback.textContent = '';
     seenTimedLaunches = returning ? null : 0;
+    updateStamps(0, true);
+    if (returning) personalStamps = null;
     if (Net.isHost) Net.setPhase('race');
     showScreen('race'); if (!returning && typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'flex';
     CurseFx.reset();
@@ -855,6 +876,7 @@
     }
     const m = {}; racers.forEach(r => { m[r.id] = r; latestRacers[r.id] = r; }); updateSprintUi(m[Net.myId]);
     const mine = m[Net.myId];
+    if (mine && Number.isInteger(mine.stampMask) && mine.stampMask !== personalStamps) updateStamps(mine.stampMask, false);
     if (mine && Number.isSafeInteger(mine.timedLaunches)) {
       if (seenTimedLaunches !== null && mine.timedLaunches > seenTimedLaunches) {
         if (typeof Sfx !== 'undefined') Sfx.timedLaunch();
@@ -1819,6 +1841,7 @@
       Flora.draw(ctx2d, camX, w, groundY, SC);
     });
 
+    RouteStamps.draw(ctx2d, camX, w, groundY, personalStamps || 0, t0);
     portalFx(me, t0);
     if (trailOn()) { for (const id in latestRacers) trailSample(latestRacers[id]); for (const id in latestRacers) if (raceMeta[id]) drawTrail(ctx2d, camX, groundY, id, raceMeta[id].color); }
     if (Terrain.PORTALS.length) { Props.drawPortals(ctx2d, camX, w, groundY, t0 / 1000, pst, 'back'); drawArrivals(ctx2d, camX, w, groundY, t0, 'back'); }
@@ -2121,7 +2144,26 @@
 
   function stopRaceLoops() { drawErrorStreak = 0; if (renderFault) renderFault.hidden = true; CurseFx.reset(); if (connectionStatus) connectionStatus.hidden = true; closeEmotePicker(); if (typeof Sfx !== 'undefined') Sfx.silence(); resetPortals(); if (raceLoopHandle) cancelAnimationFrame(raceLoopHandle); if (snapshotLoopHandle) Ticker.stop(snapshotLoopHandle); raceLoopHandle = snapshotLoopHandle = null; latestRacers = {}; hideLastCall(); els.redrawUi.style.display = els.redrawModal.style.display = 'none'; if (els.btnJump) els.btnJump.style.display = 'none'; resetSlow(); hideCtrlHint(); }
   let lastStandings = null;
+  const saveCard = document.getElementById('save-card');
+  saveCard.addEventListener('click', () => {
+    const mine = lastStandings && lastStandings.find(r => r.id === Net.myId);
+    if (!mine) return;
+    const canvas = document.createElement('canvas');
+    RouteStamps.postcard(canvas, currentWorld, mine, raceMeta[mine.id]?.vertices, I18n.t('world.tag.' + currentWorld));
+    const link = document.createElement('a');
+    link.download = 'Doodle-Wheels-' + currentWorld + '.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
   function showLaunchSummary(mine) {
+    saveCard.hidden = !mine || !mine.stampMask;
+    const result = document.getElementById('stamp-result');
+    const total = RouteStamps.route().length;
+    result.hidden = !mine || !total;
+    if (!result.hidden) {
+      const count = RouteStamps.count(mine.stampMask || 0);
+      result.textContent = I18n.t(count === total ? 'stamps.complete' : 'stamps.result', { n: count, total });
+    }
     const count = mine && mine.timedLaunches;
     launchSummary.hidden = !(count > 0);
     launchSummary.textContent = count > 0 ? I18n.t(count === 1 ? 'res.launchOne' : 'res.launchMany', { n: count }) : '';
@@ -2145,7 +2187,7 @@
       best.hidden = true;
       if (mine && mine.finished && Number.isFinite(mine.finishTime)) {
         const mode = crazy ? 'crazy-' + Object.keys(wheels).length : 'normal';
-        const key = ['dw_best_v39', currentWorld, mode, Terrain.SEASON.key, (currentLayout || []).join('-')].join('_');
+        const key = [currentWorld === 'neon' ? 'dw_best_neon_v41' : 'dw_best_v39', currentWorld, mode, Terrain.SEASON.key, (currentLayout || []).join('-')].join('_');
         const ms = mine.finishTime;
         try {
           const prev = Number(localStorage.getItem(key));

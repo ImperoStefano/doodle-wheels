@@ -893,3 +893,15 @@ body[data-screen="race"] .page {
     to { opacity: 1; transform: translateY(0); }
   }
 }
+
+.world-select { display:block; width:100%; margin-top:5px; padding:8px 12px; font:inherit; font-weight:700; color:var(--slate); background:var(--cream-2); border:2px solid var(--teal); border-radius:12px; cursor:pointer; }
+.world-select:focus-visible { outline:3px solid var(--sun); outline-offset:2px; }
+.stamp-counter { display:flex; gap:8px; align-items:center; justify-content:center; font-size:.78rem; font-weight:700; color:var(--teal-d); }
+.stamp-counter b { padding:1px 8px; background:#fff0bd; border-inline:2px dotted #b98535; color:#674723; font-variant-numeric:tabular-nums; }
+.stamp-result { width:fit-content; margin:6px auto 10px; padding:4px 15px; font-weight:700; background:#fff0bd; color:#674723; border-inline:3px dotted #b98535; }
+.stamp-result[hidden], .stamp-counter[hidden] { display:none; }
+
+.stamp-recap { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; }
+.stamp-recap .stamp-result { margin:4px 0; }
+.stamp-recap .btn { font-size:.85rem; padding:4px 10px; }
+.stamp-recap [hidden] { display:none; }

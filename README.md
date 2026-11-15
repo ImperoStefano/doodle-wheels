@@ -2,6 +2,12 @@
 
 **Multiplayer 2D browser game** — disegna le ruote della tua bici, affronta rampe e ostacoli, gareggia con gli amici attraverso mondi diversi.
 
+## V41 - Cartoline da Città Neon
+
+Dalla lobby l'host sceglie la destinazione oppure lascia il sorteggio. Città Neon comprende una fonderia, un mercato notturno e una ferrovia sopraelevata. Le spazzatrici rallentano la bici al contatto e si possono superare con un salto o uno scatto. Le grate annunciano il getto con una luce ambra.
+
+Ogni gara ha una raccolta personale di biglietti illustrati. I biglietti compaiono a quote diverse nei punti adatti del tracciato. Passaci attraverso con la bici per timbrarli. Dopo averne raccolto almeno uno, al traguardo puoi salvare una cartolina PNG con il tuo nome, la ruota e il profilo della pista.
+
 ## V40
 
 L'assistenza allo stacco entra progressivamente con la velocità e conserva il movimento relativo delle ruote. Il client applica bici, ostacoli e portali dello stesso aggiornamento insieme. Ai confini dei mondi speciali, flora e cartelli classici vengono ritagliati. La minimappa si aggiorna insieme alla classifica. Il menu ha una breve animazione di ingresso e gli stacchi a tempo hanno un segnale musicale.

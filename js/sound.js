@@ -94,6 +94,11 @@ const Sfx = (() => {
   const sizzle = () => { duck(0.8, 0.2, 0.5); puff('bandpass', 2600, 1.4, 0.55, 0.075, 0, 900); puff('bandpass', 1500, 0.9, 0.38, 0.06, 0.05, 600); tone(150, 0.25, 'sine', 0.13, 0, 70); };
   // salto: un "boing" morbido che sale + un soffio d'aria (mai più di uno ogni 150 ms)
   let lastJump = 0;
+  function postmark() {
+    puff('bandpass', 1700, 1.4, 0.055, 0.08);
+    pluck(hz(79), 0.15, 0.075, 0.04);
+    pluck(hz(86), 0.24, 0.06, 0.12);
+  }
   function timedLaunch() {
     pluck(hz(74), 0.12, 0.065);
     pluck(hz(81), 0.19, 0.055, 0.07);
@@ -288,5 +293,5 @@ const Sfx = (() => {
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('button, .btn'); if (t && t.id !== 'btn-sound') { unlock(); click(); } }, true);
     document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) ctx.suspend(); else if (!muted) { ctx.resume(); if (mode === 'all') musicStart(); } });
   }
-  return { init, unlock, click, timedLaunch, beep, swoosh, finish, land, bump, splash, redraw, jump, sizzle, giant, thud, portal, portalOut, update, silence, setMuted, mood, raceStart, biome, get muted() { return muted; }, get mode() { return mode; } };
+  return { init, unlock, click, timedLaunch, postmark, beep, swoosh, finish, land, bump, splash, redraw, jump, sizzle, giant, thud, portal, portalOut, update, silence, setMuted, mood, raceStart, biome, get muted() { return muted; }, get mode() { return mode; } };
 })();

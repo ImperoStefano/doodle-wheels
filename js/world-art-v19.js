@@ -1,7 +1,7 @@
 /*
  * Doodle Wheels V19 — World signatures. Pure Canvas layer on top of the local
  * illustrated backdrops and below the collision terrain. No physics, no RNG,
- * no network resources, no offscreen allocation. All animation is deterministic
+ * no network resources; the three neon scenes share a small reusable sprite cache. All animation is deterministic
  * by world camera position and elapsed race time.
  */
 const WorldArtV19 = (() => {
@@ -18,18 +18,18 @@ const WorldArtV19 = (() => {
     for(let i=2; i<points.length; i+=2) c.lineTo(points[i],points[i+1]);
     c.stroke();
   };
-  function draw(ctx, world, w, h, gy, cam, t, quality=0) {
+  function draw(ctx, world, w, h, gy, cam, t, quality=0, segment=null) {
     if(!world || world==='classic') return;
     const small = Math.min(w/1280, h/720);
     const q = Math.max(0, Math.min(quality|0, 2));
     ctx.save();
     // The detail zone ends before the track; gameplay silhouettes never get covered.
-    ctx.beginPath(); ctx.rect(0,0,w,Math.max(gy*0.88,h*0.55)); ctx.clip();
+    ctx.beginPath(); ctx.rect(0,0,w,world==='neon' ? h : Math.max(gy*0.88,h*0.55)); ctx.clip();
     if (world==='paradise') paradise(ctx,w,gy,cam,t,small,q);
     else if(world==='inferno') inferno(ctx,w,gy,cam,t,small,q);
     else if(world==='atlantis') atlantis(ctx,w,gy,cam,t,small,q);
     else if(world==='enchanted') enchanted(ctx,w,gy,cam,t,small,q);
-    else if(world==='neon') neon(ctx,w,gy,cam,t,small,q);
+    else if(world==='neon') neon(ctx,w,h,gy,cam,t,small,q,segment);
     ctx.restore();
   }
   function paradise(c,w,gy,cam,t,s,q) {
@@ -233,43 +233,148 @@ const WorldArtV19 = (() => {
       c.fillStyle=`rgba(227,255,189,${clamp(pulse,0,.9)})`;circle(c,px,py,2.2,true);
     }
   }
-  function neon(c,w,gy,cam,t,s,q) {
-    // Iconic magenta/cyan octagonal hologram, unlike the buildings behind it.
-    const hx=w*.27-mod(cam*.009,65),hy=gy*.20;
-    const rr=clamp(w*.105,65,130);
-    c.save();c.translate(hx,hy);c.rotate(Math.sin(t*.26)*.05);
-    c.strokeStyle='rgba(100,255,246,.74)';c.lineWidth=3.5;
-    c.beginPath();for(let i=0;i<=8;i++){
-      const a=(i*TAU/8)-PI/8;
-      const xx=Math.cos(a)*rr, yy=Math.sin(a)*rr*.67;
-      if(!i)c.moveTo(xx,yy);else c.lineTo(xx,yy);
-    }c.stroke();
-    c.strokeStyle='rgba(255,108,228,.88)';c.lineWidth=2;
-    c.beginPath();c.ellipse(0,0,rr*.76,rr*.48,0,0,TAU);c.stroke();
-    c.font=`900 ${Math.round(rr*.48)}px monospace`;c.textBaseline='middle';c.textAlign='center';
-    c.fillStyle='rgba(157,250,246,.95)';c.fillText('DW',0,-rr*.035);
-    c.font=`700 ${Math.round(rr*.16)}px monospace`;
-    c.fillStyle='#ffb4ee';c.fillText('NIGHT RUN',0,rr*.38);
+  // Night-line scenery is anchored between the three large panorama landmarks.
+  // Baked masonry, lights and lettering stay still; only the ladle, noodles'
+  // steam and train move. The actual roadway is drawn over this layer.
+  const streetWidth = 460, streetHeight = 300, streetBase = 208;
+  const streetArt = [];
+  const streetStops = [0.31, 0.65, 0.945];
+  const coal = '#272540', steel = '#565777', aqua = '#8ee8d8', cream = '#ffebbb';
+  function block(c, color, x, y, w, h) {
+    c.fillStyle = color; c.fillRect(x,y,w,h);
+  }
+  function panel(c, fill, ...points) {
+    c.fillStyle = fill; c.beginPath(); c.moveTo(points[0],points[1]);
+    for (let i=2; i<points.length; i+=2) c.lineTo(points[i],points[i+1]);
+    c.closePath(); c.fill();
+  }
+  function wire(c, color, width, ...points) {
+    c.strokeStyle = color; c.lineWidth = width; line(c,points);
+  }
+  function foundry(c) {
+    // Brick bays and rooftop sawtooth skylights beneath a travelling gantry.
+    block(c,'#60435b',46,136,313,171);
+    for (let i=0;i<3;i++) {
+      const x=46+i*104;
+      panel(c,coal,x,136,x+86,96,x+103,98,x+103,139);
+      wire(c,aqua,3,x+6,133,x+85,99);
+      block(c,'#49394c',x+6,152,88,112);
+      for (let k=0;k<4;k++) block(c,k===1?'#ffd19b':'#ef925c',x+12+k*19,158,14,32);
+    }
+    for (const x of [24,355]) {
+      block(c,coal,x,56,13,245);
+      wire(c,steel,5,x+3,61,x+54,61,x+8,111);
+    }
+    block(c,coal,14,32,392,31);
+    for (let x=22;x<384;x+=32) wire(c,steel,3,x,56,x+14,38,x+30,56);
+    block(c,'#e7a278',13,31,394,4);
+    panel(c,'#594355',367,211,380,79,400,79,413,211);
+    block(c,'#dc8d7d',378,76,24,8);
+    for (let x=18;x<405;x+=45) block(c,'#ffca88',x,62,5,4);
+  }
+  function ladle(c,t) {
+    const x=144+38*Math.sin(t*.52);
+    block(c,steel,x-24,52,48,11);
+    wire(c,'#c7acc2',2,x-13,63,x-13,88,x,101,x+13,88,x+13,63);
+    c.save(); c.translate(x,102); c.rotate(-.16-.12*Math.sin(t*.70));
+    panel(c,'#a16b69',-22,-4,24,-4,16,17,-15,17);
+    block(c,'#ffba72',-23,-5,48,5);
     c.restore();
-    // Giant building-scale billboard strip. Animated equalizer on right panel.
-    const x=w*.76-mod(cam*.007,65),y=gy*.24,bw=clamp(w*.21,140,265),bh=clamp(gy*.19,65,112);
-    c.fillStyle='rgba(7,15,45,.67)';c.fillRect(x-bw/2,y-bh/2,bw,bh);
-    c.strokeStyle='rgba(92,240,252,.82)';c.lineWidth=3;c.strokeRect(x-bw/2,y-bh/2,bw,bh);
-    c.font=`800 ${Math.round(bh*.37)}px monospace`;c.fillStyle='#fe80dc';c.textAlign='left';c.textBaseline='middle';
-    c.fillText('07',x-bw*.37,y-4);
-    for(let i=0;i<8;i++) {
-      const bh0=(.25+.6*(.5+.5*Math.sin(t*2.4+i*1.7)))*bh*.56;
-      c.fillStyle=i%2?'rgba(255,99,225,.84)':'rgba(81,236,249,.9)';
-      c.fillRect(x-bw*.08+i*bw*.053,y+bh*.25-bh0,bw*.025,bh0);
-    }
-    // Falling digital pulses only in the upper air.
-    if(q<2){
-      c.globalAlpha=.48;
-      for(let i=0;i<11;i++){
-        const px=mod(i*w/11-cam*.018,w);const yy=mod(i*79+t*18,gy*.55);
-        c.fillStyle=i%2?'#e35cec':'#54dff1';c.fillRect(px,yy,2,12+(i%4)*8);
+  }
+  function nightMarket(c) {
+    const plum='#493651', rose='#ed8293';
+    block(c,plum,63,105,337,196); block(c,'#78576e',85,77,91,32);
+    for (let i=0;i<3;i++) {
+      const x=46+119*i;
+      panel(c,i===1?'#4a9794':rose,x+5,130,x+100,120,x+121,143,x,151);
+      for (let j=0;j<5;j++) {
+        const px=x+19*j+7;
+        panel(c,i===1?'#9adaca':'#fac0ac',px,132-(j*2),px+9,131-(j*2),px+13,147-(j*1.3),px,148-(j*1.3));
       }
+      block(c,coal,x+6,150,7,150); block(c,coal,x+109,144,7,155);
+      block(c,'#f3bb85',x+19,167,76,4);
+      block(c,'#534154',x+11,188,94,92);
+      block(c,i===1?aqua:rose,x+10,185,97,6);
     }
+    // The rooftop sign is a restaurant icon, legible in either game language.
+    c.fillStyle=coal; circle(c,242,91,38,true);
+    c.strokeStyle=rose; c.lineWidth=3; circle(c,242,91,35);
+    c.fillStyle=cream; c.beginPath(); c.arc(242,94,22,0,PI); c.fill();
+    block(c,rose,233,112,18,4);
+    wire(c,cream,2,242,91,266,72); wire(c,cream,2,248,91,271,75);
+    c.strokeStyle='#2f324a'; c.lineWidth=3; c.beginPath(); c.moveTo(20,68);
+    c.quadraticCurveTo(230,127,438,65);c.stroke();
+    for (let i=0;i<8;i++) {
+      const x=42+i*54, u=(x-20)/418, y=68+110*u*(1-u)-3*u;
+      wire(c,coal,2,x,y,x,y+8); c.fillStyle=i%2?'#ffb875':'#ef858f';
+      c.beginPath();c.ellipse(x,y+17,7,10,0,0,TAU);c.fill();
+      block(c,'#76465c',x-4,y+24,8,3);
+    }
+  }
+  function station(c) {
+    // Girders, three piers and a stepped terminal tower with a lit clock face.
+    block(c,'#3d465e',258,91,106,208);block(c,'#586483',273,52,74,187);
+    panel(c,coal,268,53,283,38,337,38,354,53);
+    block(c,'#8cc6c4',283,36,54,4);
+    wire(c,steel,3,310,38,310,16);
+    c.fillStyle=cream;circle(c,310,81,18,true);
+    wire(c,coal,2.5,310,69,310,81,320,86);
+    for (let i=0;i<4;i++) block(c,'#24374e',280+i*17,111,7,67);
+    for (let i=0;i<4;i++) {
+      const x=34+i*119;
+      panel(c,'#343953',x,161,x+36,161,x+25,186,x+25,300,x+8,300,x+8,185);
+      block(c,steel,x+9,182,4,118);
+    }
+    block(c,coal,14,148,432,20); block(c,aqua,15,146,430,3);
+    for(let x=18;x<423;x+=25) wire(c,steel,2,x,163,x+11,152,x+22,163);
+  }
+  function train(c,t) {
+    // Cars disappear into the station/tunnel at either end of this local line.
+    c.save();c.beginPath();c.rect(17,96,426,51);c.clip();
+    const x=mod(t*65,650)-172;
+    for(let i=0;i<3;i++) {
+      const a=x+i*56;
+      panel(c,'#d5ddcf',a,143,a,121,a+5,117,a+45,117,a+54,126,a+54,143);
+      block(c,'#c7759e',a,136,54,5);
+      for(let j=0;j<4;j++) block(c,'#415979',a+5+j*11,121,8,9);
+    }
+    c.restore();
+  }
+  function bakeStreet(index) {
+    if (!streetArt[index]) {
+      const tile=document.createElement('canvas');
+      tile.width=streetWidth;tile.height=streetHeight;
+      const c=tile.getContext('2d');
+      c.lineJoin='round'; c.lineCap='round';
+      [foundry, nightMarket, station][index](c);
+      streetArt[index]=tile;
+    }
+    return streetArt[index];
+  }
+  function neon(c,w,h,gy,cam,t,s,q,segment) {
+    const start=segment ? segment.start : 0;
+    const end=segment ? segment.end : Terrain.FINISH_X;
+    if(end<=cam || start>=cam+w) return;
+    const span=end-start, scale=Math.min(clamp(s,.70,1.28),span*.22/streetWidth);
+    const width=streetWidth*scale;
+    c.save();c.beginPath();c.rect(start-cam,0,span,h);c.clip();
+    for (let i=0;i<streetStops.length;i++) {
+      const anchor=start+span*streetStops[i], x=anchor-cam-width*.5;
+      if(x+width<0 || x>w) continue;
+      const y=gy-Terrain.height(anchor) - (streetBase-14)*scale;
+      c.save();c.translate(x,y);c.scale(scale,scale);
+      c.drawImage(bakeStreet(i),0,0);
+      if(i===0) ladle(c,q===2?0:t);
+      else if(i===2) train(c,q===2?4:t);
+      else if(q!==2) {
+        for(let j=0;j<2;j++) {
+          const a=t*1.7+j*2.4;
+          wire(c,cream,2,232+j*7,88,230+j*7+2*Math.sin(a),83,232+j*7,78);
+        }
+      }
+      c.restore();
+    }
+    c.restore();
   }
   return Object.freeze({draw});
 })();

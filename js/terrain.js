@@ -790,7 +790,7 @@ const Terrain = (() => {
         if (Math.abs(h2-h1)>29) continue;
         if (events.some(e => e.x !== undefined && Math.abs(e.x - x) < (special ? 180 : 235))) continue;
         if (EGYPT_MUMMIES.some(e => Math.abs(e.x-x)<350)) continue;
-        if (special && wd==='egypt' && INTERACTIVE_OBSTACLES.some(e=>Math.abs(e.x-x)<390)) continue;
+        if ((wd==='neon' || (special && wd==='egypt')) && INTERACTIVE_OBSTACLES.some(e=>Math.abs(e.x-x)<390)) continue;
         if (DYNAMIC_OBSTACLES.some(e => Math.abs(e.x - x) < (special ? 465 : 520))) continue;
         // PENDOLI: lunghezza 110 e oscillazione fino a 50px, con spazio libero ai lati.
         if (Math.abs(height(x + radius) - height(x - radius)) > 39) continue;
@@ -811,6 +811,9 @@ const Terrain = (() => {
     const events=[...UPDRAFTS,...GEYSERS,...CLOUD_PADS,...BUBBLE_VENTS,...NEON_BOOSTS,
       ...HALO_RINGS,...ASH_GUSTS,...TIDAL_CURRENTS,...ROOT_RIDGES,...NEON_GATES,...EGYPT_MUMMIES];
     let specials=0;
+    const neonStreet=WORLD_SEGMENT&&WORLD_SEGMENT.world==='neon'
+      ? (rng()<.5?['sweeper','steamvent']:['steamvent','sweeper']) : [];
+
     const candidates=[];
     for(const z of ZONES) {
       if(z.key==='start'||z.key==='finish')continue;
@@ -844,9 +847,9 @@ const Terrain = (() => {
       const kinds=usable.length?usable:pool;
       // Il set-piece egizio garantisce una sfera scarabeo e una lastra sacra,
       // evitando che il sorteggio li sostituisca con decorazioni generiche.
-      const kind=world==='egypt' && special ? (specials===0?'boulder':specials===1?'spring':'tilt') : kinds[Math.floor(rng()*kinds.length)];
+      const kind=world==='egypt' && special ? (specials===0?'boulder':specials===1?'spring':'tilt') : world==='neon' && specials<neonStreet.length ? neonStreet[specials] : kinds[Math.floor(rng()*kinds.length)];
       let selected=null;
-      for(const f of (world==='atlantis'?[0.15,0.85,0.17,0.82,0.23,0.77]:[0.46,0.28,0.70,0.56,0.78,0.20,0.15,0.85])){
+      for(const f of (world==='neon'?Array.from({length:43},(_,i)=>(i+4)/50):world==='atlantis'?[0.15,0.85,0.17,0.82,0.23,0.77]:[0.46,0.28,0.70,0.56,0.78,0.20,0.15,0.85])){
         const x=Math.round(z.start+z.len*f);
         if(x<z.start+350||x>z.end-350||x<1400||x>FINISH_X-650)continue;
         if(special&&(x<WORLD_SEGMENT.start+180||x>WORLD_SEGMENT.end-180))continue;
@@ -873,7 +876,7 @@ const Terrain = (() => {
     // the normal placement search found nothing; in-game it looked suspended.
     if (WORLD_SEGMENT && specials === 0) {
       const world=WORLD_SEGMENT.world;
-      const kind=({inferno:'shard',paradise:'spring',atlantis:'clam',enchanted:'bud',neon:'servo',egypt:'spring'})[world]||'tilt';
+      const kind=({inferno:'shard',paradise:'spring',atlantis:'clam',enchanted:'bud',neon:neonStreet[0],egypt:'spring'})[world]||'tilt';
       const searchZones=ZONES.filter(z=>z.key!=='start'&&z.key!=='finish'&&z.end>WORLD_SEGMENT.start&&z.start<WORLD_SEGMENT.end);
       fallback: for(const zone of searchZones){
         for(const f of [0.50,0.27,0.73,0.39,0.61]){
@@ -967,6 +970,10 @@ const Terrain = (() => {
       planEgyptMummies(keys);
       planInteractiveObstacles(keys);
       ensureEgyptSignature();
+      planDynamicObstacles(keys);
+    } else if (selectedWorld==='neon') {
+      EGYPT_MUMMIES=[]; DYNAMIC_OBSTACLES=[];
+      planInteractiveObstacles(keys);
       planDynamicObstacles(keys);
     } else {
       EGYPT_MUMMIES = [];
