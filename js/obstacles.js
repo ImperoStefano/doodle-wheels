@@ -333,9 +333,37 @@ const DynamicObstacles = (() => {
       c.fillStyle=T.l;rect(c,-W*.4,-H/2+4,W*.8,9,3);c.fill();
     }
   }
+  // Identical obstacle bodies share their painted plate. The host pose still drives
+  // translation and rotation; the jelly's moving tentacles remain live.
+  let plateTrack = null;
+  const bodyPlates = new Map();
+  function drawBody(ctx,o,p,T,ms) {
+    if (o.kind === 'jelly') { circleBody(ctx,o,p,T,ms); return; }
+    const w = p.radius ? p.radius * 2 : p.width, h = p.radius ? w : p.height;
+    let tile = o.paintPlate;
+    if (!tile || tile.w !== w || tile.h !== h) {
+      const key = o.biome+'/'+o.kind+'/'+w+'/'+h;
+      tile = bodyPlates.get(key);
+      if (!tile) {
+        const image=document.createElement('canvas'), pad=12;
+        image.width=Math.ceil(w+pad*2); image.height=Math.ceil(h+pad*2);
+        const g=image.getContext('2d'); g.translate(image.width/2,image.height/2);
+        if(p.radius) circleBody(g,o,p,T,0); else barBody(g,o,p,T,0);
+        // Two fine bristle marks catch the light on the upper edge.
+        g.fillStyle='rgba(255,240,201,.56)';
+        if (p.radius) {
+          g.beginPath();g.ellipse(-w*.20,-h*.30,w*.11,1.7,-.5,0,TAU);g.fill();
+        } else g.fillRect(-w*.31,-h*.37,w*.22,1.7);
+        tile={image,w,h}; bodyPlates.set(key,tile);
+      }
+      Object.defineProperty(o,'paintPlate',{value:tile,writable:true,configurable:true});
+    }
+    ctx.drawImage(tile.image,-tile.image.width/2,-tile.image.height/2);
+  }
   function draw(ctx,camX,viewportWidth,gy,elapsedMs,overrideItems){
     const items=overrideItems||Terrain.DYNAMIC_OBSTACLES||[];
     if(!items.length)return;
+    if (plateTrack !== items) { bodyPlates.clear(); plateTrack=items; }
     const now=typeof performance!=='undefined'?performance.now():0;
     const blend=1-Math.exp(-Math.max(8,Math.min(65,previousFrame?now-previousFrame:16))/64);
     previousFrame=now;
@@ -354,8 +382,7 @@ const DynamicObstacles = (() => {
       const T=COLORS[o.biome]||COLORS.classic;
       const groundY=GROUND_Y-Terrain.height(o.x);
       // Contact shadow and mechanical fixtures are physically intuitive.
-      ctx.fillStyle='rgba(23,26,42,.19)';ctx.beginPath();ctx.ellipse(o.x,groundY+3,
-        p.width?Math.min(p.width*.49,145):p.radius?Math.max(39,p.radius):48,6,0,0,TAU);ctx.fill();
+      Scenery.drawContact(ctx,o.x,groundY+2,p.width?Math.min(p.width*.72,155):Math.max(45,p.radius||48),0);
       if(o.kind==='ashdrum'){
         // The drum is a rolling obstacle: a compact hot contact patch, not a
         // floating glowing orb. This is decorative; the circle remains the collider.
@@ -452,8 +479,7 @@ const DynamicObstacles = (() => {
       }
       ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.angle||0);
       if (SOFT_RISERS.has(o.kind)) ctx.globalAlpha *= .72; // semi-transparent field: traversable
-      ctx.shadowColor=T.a;ctx.shadowBlur=o.biome==='paradise'||o.biome==='neon'?13:6;
-      if(p.radius)circleBody(ctx,o,p,T,elapsedMs);else barBody(ctx,o,p,T,elapsedMs);
+      drawBody(ctx,o,p,T,elapsedMs);
       ctx.restore();
     }
     ctx.restore();

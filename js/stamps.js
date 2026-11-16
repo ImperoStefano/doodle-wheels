@@ -151,6 +151,15 @@ const RouteStamps = (() => {
     c.save(); c.beginPath(); c.rect(24,24,952,338); c.clip();
     c.fillStyle = sky; c.fillRect(24,24,952,338);
     c.fillStyle = '#fff4c2'; c.beginPath(); c.arc(787,122,63,0,Math.PI*2); c.fill();
+    // Translucent, faceted ridges printed in the same two inks as the ride.
+    for (let layer=0; layer<2; layer++) {
+      const y=211+layer*38; c.fillStyle=ink; c.globalAlpha=.17+layer*.11;
+      c.beginPath(); c.moveTo(23,362);
+      for(let i=0;i<=13;i++) c.lineTo(23+i*80, y+Math.sin(i*2.37+layer*2)*26-Math.cos(i*1.4)*15);
+      c.lineTo(1000,362);c.closePath();c.fill();
+    }
+    c.globalAlpha=1;
+    if (typeof WorldArtV19 !== 'undefined') WorldArtV19.drawVisitor(c,world,190,59,150);
     if (world === 'neon') {
       for (let i=0; i<17; i++) {
         const x=20+60*i, y=145+Math.cos(i*2.3)*46;

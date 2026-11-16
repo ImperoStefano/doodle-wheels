@@ -33,7 +33,7 @@ const RaceGhost = (() => {
         if (!validRecord(rec)) continue;
         const old = bank.find(v => v.key === rec.key);
         if (!old) bank.push(rec);
-        else if (rec.ms < old.ms) Object.assign(old, rec);
+        else if (rec.ms < old.ms) Object.assign(old, rec, {wheel: rec.wheel || null});
         else old.used = Math.max(old.used, rec.used);
       }
       bank.sort((a,b) => b.used - a.used);
@@ -57,7 +57,14 @@ const RaceGhost = (() => {
     return Math.max(Date.now(), ...bank.map(r => r.used + 1));
   }
 
-  function begin(trackKey, allowRecord = true) {
+  let startingWheel=null;
+  function copyWheel(points) {
+    if (!Array.isArray(points) || points.length<3 || points.length>256 ||
+        !points.every(p=>p && Number.isFinite(p.x) && Number.isFinite(p.y) && Math.abs(p.x)<=200 && Math.abs(p.y)<=200)) return null;
+    return points.map(p=>({x:p.x,y:p.y}));
+  }
+  function begin(trackKey, allowRecord = true, wheel = null) {
+    startingWheel=copyWheel(wheel);
     key = validKey(trackKey) ? trackKey : null;
     recording = !!key && allowRecord;
     rival = null; rows = []; pending = null; previousPortal = 0; crossedFinish = false;
@@ -66,7 +73,7 @@ const RaceGhost = (() => {
     const best = bank.find(r => r.key === key);
     if (best) {
       // Keep this opponent fixed even if another race updates the local best.
-      rival = {ms: best.ms, rows: best.rows};
+      rival = {ms:best.ms, rows:best.rows, wheel:copyWheel(best.wheel)};
       best.used = accessTime(); persist();
     }
   }
@@ -125,7 +132,7 @@ const RaceGhost = (() => {
     const best = bank.find(r => r.key === key);
     if (best && best.ms <= ms) return false;
     bank = bank.filter(r => r.key !== key);
-    bank.unshift({key, ms, rows, used:accessTime()});
+    bank.unshift({key, ms, rows, wheel:startingWheel, used:accessTime()});
     persist();
     return true;
   }
@@ -152,5 +159,5 @@ const RaceGhost = (() => {
     return out;
   }
 
-  return {begin, sample, pose, finish, hasGhost: () => !!rival, bestTime: () => rival?.ms ?? null};
+  return {begin, sample, pose, finish, hasGhost: () => !!rival, bestTime: () => rival?.ms ?? null, wheel: () => rival?.wheel ?? null};
 })();

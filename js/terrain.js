@@ -12,6 +12,7 @@
  */
 const Terrain = (() => {
   let TRACK_START = -300, TRACK_END = 12000, FINISH_X = 11500;
+  let STUTTER = null;
   let SEASON = null, PACE = "classica", WORLD = 'classic', WORLD_SEGMENT = null, ZONES = [], FLOWERS = [], LILIES = [], BRIDGES = [], INFERNO_ISLANDS = [], PATCHES = [], PORTALS = [], UPDRAFTS = [], GEYSERS = [], CLOUD_PADS = [], BUBBLE_VENTS = [], NEON_BOOSTS = [], HALO_RINGS = [], ASH_GUSTS = [], TIDAL_CURRENTS = [], ROOT_RIDGES = [], NEON_GATES = [], EGYPT_MUMMIES = [], DYNAMIC_OBSTACLES = [], INTERACTIVE_OBSTACLES = [];
   const WORLD_KEYS = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'];
   const SEGMENT_WORLDS = ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'];
@@ -48,6 +49,49 @@ const Terrain = (() => {
     return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   }
   function pseudo(x) { const v = Math.sin(x * 12.9898) * 43758.5453; return v - Math.floor(v); } // 0..1
+
+  // Reserve part of the existing road. One sampled profile serves the terrain,
+  // the colliders and every copy of the painted roadside rock.
+  const STUTTER_APRON = 240, STUTTER_SAMPLE = 4;
+  function planStutter(keys, world, options) {
+    if (!options || !options.crazy || options.only || options.nopatch) return;
+    const suitable = z => ['hills', 'ice', 'gravel'].includes(z.key) && !z.gap && !overlapsWorldSegment(z);
+    let start, period, repeats, zone;
+    if ('stutter' in options) {
+      const sent = options.stutter;
+      if (!sent) return; // A layout from an older host also uses the original road.
+      ({start, period, repeats} = sent);
+      if (!Number.isSafeInteger(start) || ![360, 400, 440].includes(period) || ![2, 3].includes(repeats)) return;
+      zone = zoneAt(start);
+      if (!suitable(zone)) return;
+    } else {
+      const rnd = mulberry32(hashStr(keys.join(',') + '#stutter-1-' + world));
+      if (rnd() >= .16) return;
+      const candidates = ZONES.filter(suitable);
+      if (!candidates.length) return;
+      zone = candidates[Math.floor(rnd() * candidates.length)];
+      period = 360 + 40 * Math.floor(rnd() * 3);
+      repeats = rnd() < .48 ? 3 : 2;
+      const room = zone.len - period * repeats - 2 * STUTTER_APRON;
+      if (room < 0) return;
+      start = Math.ceil((zone.start + STUTTER_APRON + rnd() * Math.max(0, room - 40)) / 40) * 40;
+    }
+    const end = start + period * repeats;
+    if (start < zone.start + STUTTER_APRON || end > zone.end - STUTTER_APRON) return;
+    STUTTER = {start, end, period, repeats};
+    const level = (zoneBase(zone, start) + zoneBase(zone, end)) * .5;
+    const profile = new Float64Array(period / STUTTER_SAMPLE + 1);
+    const shoulder = .26 * period, rock = .66 * period;
+    const mound = (x, centre, radius, h) => {
+      const u = (x - centre) / radius;
+      return Math.abs(u) < 1 ? h * (1 - u*u) ** 2 : 0;
+    };
+    for (let i = 0; i < profile.length; ++i) {
+      const u = i * STUTTER_SAMPLE;
+      profile[i] = level + mound(u, shoulder, period * .21, -8) + mound(u, rock, period * .22, 23);
+    }
+    zone.stutterProfile = profile;
+  }
 
   // ---- layout casuale: nessuna zona uguale alla precedente, tutte le specie ben distribuite ----
   function worldZoneTypes(world) {
@@ -419,7 +463,7 @@ const Terrain = (() => {
     lava:   [],                      // vulcano: laghi di lava (con o senza ponte di basalto), nessun terreno speciale
   };
   // seconda scelta (più leggera): ostacoli corti, integrati nel bioma, che si aggiungono al terreno a tema se c'è posto
-  const LIGHT = { boulders: 1, whoops: 1, ridges: 1, bowl: 1, jump: 1, drop: 1, kicker: 1 };
+  const LIGHT = { boulders: 1, whoops: 1, ridges: 1, bowl: 1, jump: 1, drop: 1, kicker: 1, stutter: 1 };
   const PATCH_EXTRA = {   // pesi (non ordine): si pesca in proporzione a peso × sapore della gara × moltiplicatore della stagione
     hills:  [['kicker', 0.22], ['dropin', 0.14], ['twin', 0.14], ['bowl', 0.3], ['jump', 0.2], ['drop', 0.2], ['boulders', 0.2]],
     gravel: [['pipe', 0.32], ['kicker', 0.2], ['twostage', 0.14], ['bowl', 0.25], ['jump', 0.25], ['drop', 0.2], ['boulders', 0.15]],
@@ -444,6 +488,7 @@ const Terrain = (() => {
     const real = ZONES.filter(z => z.key !== 'start' && z.key !== 'finish'), lastReal = real[real.length - 1];
     ZONES.forEach(z => {
       z.patches = []; z.budget = 0;
+      if (z.stutterProfile) z.patches.push({kind: 'stutter', a: STUTTER.start, b: STUTTER.end, zone: z.index, zkey: z.key});
       if (force && (force.nopatch || (force.only && !force[z.index]))) return;
       const forced = force && force[z.index];
       const ri = real.indexOf(z), t = ri < 0 ? 0 : real.length > 1 ? ri / (real.length - 1) : 0;
@@ -931,6 +976,7 @@ const Terrain = (() => {
 
   // ---- costruzione delle zone ---------------------------------------------------------------
   function applyLayout(layoutKeys, force) {
+    STUTTER = null;
     const selectedWorld = force && WORLD_KEYS.includes(force.world) ? force.world : 'classic';
     const segmented = isSegmentWorld(selectedWorld);
     WORLD = segmented ? 'classic' : selectedWorld; // solo il tratto locale cambia mondo; il resto resta il gioco classico
@@ -987,6 +1033,7 @@ const Terrain = (() => {
     }
 
     if (!(force && force.nogap)) planGaps(rnd, !!(force && force.crazy));
+    planStutter(rawKeys, selectedWorld, force);
     planPatches(rnd, force);
     for (const z of ZONES) if (z.key === 'ramps') planWaveRamps(z);
     planWorldEvents(keys);
@@ -1152,6 +1199,12 @@ const Terrain = (() => {
 
   // quota di "riva": il profilo della zona senza vuoti né ponti
   function zoneBase(z, x) {
+    const profile = z.stutterProfile;
+    if (profile && x >= STUTTER.start && x <= STUTTER.end) {
+      const u = ((x - STUTTER.start) % STUTTER.period) / STUTTER_SAMPLE;
+      const i = Math.floor(u);
+      return profile[i] + (profile[i + 1] - profile[i]) * (u - i);
+    }
     let u = x - z.start; const len = z.len;
     if (u < 0) u = 0; else if (u > len) u = len;
     let h = z.L0 + (z.L1 - z.L0) * smooth(u / len);
@@ -1170,6 +1223,10 @@ const Terrain = (() => {
         const d = Math.abs(x - q.x) / (q.width * 0.5);
         if (d < 1) { const a = 0.5 + 0.5 * Math.cos(Math.PI * d); h += q.height * a * a; }
       }
+    }
+    if (profile) {
+      const distance = x < STUTTER.start ? STUTTER.start - x : x - STUTTER.end;
+      if (distance < STUTTER_APRON) h += (profile[0] - h) * smooth(1 - distance / STUTTER_APRON);
     }
     return h;
   }
@@ -1331,6 +1388,7 @@ const Terrain = (() => {
   applyLayout(generateRandomLayout());
 
   return {
+    get STUTTER() { return STUTTER; },
     generateRandomLayout, dailyCourse, applyLayout, plainAt, SEASONS, seasonOf, PACES, height, naturalHeight, baseHeight, waterLevel, isWater, lavaLevel, isLava, nearLava, zoneAt, bridgeAt,
     get AIR_RINGS() { return AIR_RINGS; }, get WORLD() { return WORLD; }, get WORLD_SEGMENT() { return WORLD_SEGMENT; }, get DYNAMIC_OBSTACLES() { return DYNAMIC_OBSTACLES; }, get INTERACTIVE_OBSTACLES() { return INTERACTIVE_OBSTACLES; }, get UPDRAFTS() { return UPDRAFTS; }, get GEYSERS() { return GEYSERS; }, get CLOUD_PADS() { return CLOUD_PADS; }, get BUBBLE_VENTS() { return BUBBLE_VENTS; }, get NEON_BOOSTS() { return NEON_BOOSTS; }, get HALO_RINGS() { return HALO_RINGS; }, get ASH_GUSTS() { return ASH_GUSTS; }, get TIDAL_CURRENTS() { return TIDAL_CURRENTS; }, get ROOT_RIDGES() { return ROOT_RIDGES; }, get NEON_GATES() { return NEON_GATES; }, get EGYPT_MUMMIES() { return EGYPT_MUMMIES; },
     frictionAt: x => { const f = FRICTION[zoneAt(x).key] || 0.9; return f < 0.9 && onRamp(x) ? 0.9 : f; },   // il piano della rampa tiene sempre (anche nel ghiaccio)

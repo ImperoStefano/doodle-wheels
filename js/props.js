@@ -176,6 +176,22 @@ const Props = (() => {
   // ---------- terreni a tema --------------------------------------------------------------------
   // Niente icone: il tratto si riconosce dal disegno stesso del terreno (acciottolato ad archi, gradoni,
   // buche, fango, dune, tronchi). La fisica conosce solo Terrain.height(): qui si colorano quelle curve.
+  // Painted details sample the same static profile thousands of times across a pass.
+  // Two world units per sample keeps the painted edge within a pixel on the steepest slope.
+  const patchProfiles=new WeakMap();
+  function paintedHeight(p,x) {
+    if (x < p.a || x > p.b) return Terrain.height(x);
+    let profile=patchProfiles.get(p);
+    if (!profile) {
+      const count=Math.ceil((p.b-p.a)/2)+1;
+      profile=new Float32Array(count);
+      for(let i=0;i<count;i++)profile[i]=Terrain.height(Math.min(p.b,p.a+i*2));
+      patchProfiles.set(p,profile);
+    }
+    const u=(x-p.a)/2, i=Math.min(Math.floor(u),profile.length-2);
+    const t=(x-p.a-i*2)/Math.min(2,p.b-p.a-i*2);
+    return profile[i]+(profile[i+1]-profile[i])*t;
+  }
   function drawPatches(ctx, camX, w, gy, S) {
     const ps = Terrain.PATCHES; if (!ps || !ps.length) return;
     const t = performance.now() / 1000;
@@ -183,7 +199,7 @@ const Props = (() => {
       const p = ps[i];
       if (p.b - camX < -60 || p.a - camX > w + 60) continue;
       const x0 = Math.max(p.a, camX - 40), x1 = Math.min(p.b, camX + w + 40);
-      const H = x => gy - Terrain.height(x);
+      const H = x => gy - paintedHeight(p,x);
       const sub = (step, fn) => { ctx.beginPath(); let first = true; for (let x = x0; x <= x1 + 0.1; x += step) { const px = x - camX, py = fn(x); if (first) { ctx.moveTo(px, py); first = false; } else ctx.lineTo(px, py); } };
       ctx.lineJoin = 'round'; ctx.lineCap = 'round'; WorldFX.skinX(ctx, (p.a + p.b) / 2);
       if (p.kind === 'arch') archRoad(ctx, p, camX, x0, x1, H, sub);

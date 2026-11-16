@@ -137,6 +137,7 @@ const Scenery = (() => {
   let finishX = 12000;
   let dpr = 1, viewScale = 1, pr = 1;     // pr = risoluzione degli sprite
   let quality = 0;
+  const motionPreference = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
   const S = {
     p: 0, e: 0.5, warm: 0, night: 0, day: 1, starA: 0, world: 'classic',
     sunX: 0, sunY: 0, sunR: 40,
@@ -401,6 +402,7 @@ const Scenery = (() => {
   // ---------- pista -------------------------------------------------------------------------
   function setTrack(zones, fx, world = 'classic', worldSegment = null) {
     Z.length = 0; finishX = fx;
+    for (const tile of ridgeTiles) tile.valid = false;
     const validWorld = ['classic', 'paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'].includes(world) ? world : 'classic';
     // I tre nuovi mondi sono set-piece locali: il resto della pista resta nel mondo classico.
     S.segment = worldSegment && ['paradise', 'inferno', 'atlantis', 'enchanted', 'neon', 'egypt'].includes(worldSegment.world)
@@ -415,6 +417,9 @@ const Scenery = (() => {
     S.bannerWorld = null;
     ACTIVE_BIOMES = makeWorldBiomes(S.world);
     zones.forEach(z => Z.push({ start: z.start, end: z.end, biome: ZONE_TO_BIOME[z.key] != null ? ZONE_TO_BIOME[z.key] : 0, key: z.key, specialWorld: z.specialWorld || null, specialPart: z.specialPart || null }));
+    paintSeed=0;
+    for(const z of Z) paintSeed=(Math.imul(paintSeed,31)+z.biome+Math.round(z.end))>>>0;
+    Z.forEach((z,i) => { z.visitor = rnd(i,paintSeed,63) < .48; });
     countryClearings.length = 0;
     Z.forEach((z, i) => {
       if (!(z.key in landmarkFocus) || S.world !== 'classic') return;
@@ -429,7 +434,14 @@ const Scenery = (() => {
     const npr = clamp(d * vs, 0.8, 2);
     if (Math.abs(npr - pr) > 0.15 || !atlas.trees) { pr = npr; dirty = true; }
   }
-  function warmup() { if (dirty || !atlas.trees) bakeAll(); preloadWorldArt(S.segment ? S.segment.world : S.world); }
+  function warmup() {
+    if (dirty || !atlas.trees) bakeAll();
+    if (!groundSheet) bakeBrushes();
+    prepareRepeatGrove();
+    const world = S.segment ? S.segment.world : S.world;
+    preloadWorldArt(world);
+    if (world === 'egypt') EgyptWorld.warmup();
+  }
   function bannerText() {
     if (S.bannerName === '@world') return I18n.t('world.tag.' + (S.bannerWorld || S.world));
     const i = BIOMES.findIndex(b => b.name === S.bannerName); return i >= 0 ? I18n.t('biome.' + i) : S.bannerName;
@@ -480,7 +492,7 @@ const Scenery = (() => {
     }
   }
   function updateParticles(dt, dCam) {
-    const lim = quality >= 2 ? 0 : quality === 1 ? 28 : PMAX;
+    const lim = S.still || quality >= 2 ? 0 : quality === 1 ? 28 : PMAX;
     want.fill(0); alive.fill(0);
     addWanted(S.A, 1 - S.t); addWanted(S.B, S.t);
     const glowCol = (S.A.part === 'lagoon' && S.t < 0.5) || (S.B.part === 'lagoon' && S.t >= 0.5) ? 1 : 0;
@@ -548,12 +560,13 @@ const Scenery = (() => {
   const todWarm = [255, 150, 90], todNight = [22, 30, 96];
   const tod = (c, wk, nk) => mix(mix(c, todWarm, S.warm * wk), todNight, S.night * nk);
 
-  function update(camX, w, h, gy, now) {
+  function update(camX, w, h, gy, now, bgCamX) {
     if (dirty || !atlas.trees) bakeAll();
     if (!Z.length) return;
     const dt = clamp((now - S.now) / 1000, 0.001, 0.1); S.now = now; S.dt = dt;
     const dCam = prevCam === null ? 0 : clamp(camX - prevCam, -200, 200); prevCam = camX;
-    S.camX = camX; S.w = w; S.h = h; S.gy = gy; S.hs = clamp(gy / 720, 0.7, 1.45);
+    S.still = !!motionPreference?.matches;
+    S.camX = bgCamX === undefined ? camX : bgCamX; S.w = w; S.h = h; S.gy = gy;   // bgCamX: camera del solo sfondo (zona stutter) S.hs = clamp(gy / 720, 0.7, 1.45);
     if (S.segment) {
       // Il set-piece entra in scena quando raggiunge il campo visivo e svanisce quando lo lascia.
       // La sfumatura evita un cambio di fondale brusco ai bordi delle 2,5 zone speciali.
@@ -1410,15 +1423,13 @@ const Scenery = (() => {
       // e attraversano lo schermo in modo naturale per tutta la gara.
       const scale = h / 900, tileW = 2400 * scale;
       const offset = ((S.camX * 0.23) % tileW + tileW) % tileW;
-      ctx.drawImage(img, -offset, 0, tileW, h);
-      ctx.drawImage(img, tileW - offset, 0, tileW, h);
-      if (offset < w) ctx.drawImage(img, -tileW - offset, 0, tileW, h);
+      for (let x = -offset; x < w; x += tileW) ctx.drawImage(img, x, 0, tileW, h);
 
       // Secondo piano di profondità: dettagli in primo piano (alghe/coralli, felci e rami,
       // strutture e cavi urbani) con parallasse più rapida. È disegnato prima del terreno,
       // così la pista e i corridori restano sempre perfettamente leggibili.
       const front = WORLD_FRONT_ART[S.world];
-      if (front && front.complete && front.naturalWidth > 0) {
+      if (quality < 2 && front && front.complete && front.naturalWidth > 0) {
         const frontOffset = ((S.camX * 0.52) % tileW + tileW) % tileW;
         ctx.save();
         // Il foreground è un'inquadratura, non un secondo fondale: rami, alghe e strutture
@@ -1431,9 +1442,7 @@ const Scenery = (() => {
         ctx.rect(w - edge, 72, edge, Math.max(0, gy - 28));
         ctx.clip();
         ctx.globalAlpha = 0.72;
-        ctx.drawImage(front, -frontOffset, 0, tileW, h);
-        ctx.drawImage(front, tileW - frontOffset, 0, tileW, h);
-        if (frontOffset < w) ctx.drawImage(front, -tileW - frontOffset, 0, tileW, h);
+        for (let x = -frontOffset; x < w; x += tileW) ctx.drawImage(front, x, 0, tileW, h);
         ctx.restore();
       }
       drawDedicatedWorldAtmosphere(ctx, S.world, w, h, gy, now);
@@ -1899,18 +1908,214 @@ const Scenery = (() => {
     ctx.restore();
   }
 
+  // Tiny colour ramps stretch with the camera. Repaint only on a visible colour change.
+  let skyRamp, skyGy = NaN, skyKey = -1, paintedSun, sunKey = -1;
+  function colourKey(c) {
+    return ((c[0] >> 2) * 64 + (c[1] >> 2)) * 64 + (c[2] >> 2);
+  }
+  function paintSky(ctx, w, h, gy) {
+    const key = colourKey(S.skyT) * 262144 + colourKey(S.skyB);
+    if (key !== skyKey || Math.abs(gy-skyGy)>12) {
+      skyRamp=ctx.createLinearGradient(0,0,0,gy);
+      skyRamp.addColorStop(0,rgb(S.skyT)); skyRamp.addColorStop(1,rgb(S.skyB));
+      skyKey=key; skyGy=gy;
+    }
+    ctx.fillStyle=skyRamp; ctx.fillRect(0,0,w,h);
+  }
+  function paintSun(ctx) {
+    const haze = S.sunHaze, key = colourKey(S.sunC) * 17 + Math.round(haze * 16);
+    if (key !== sunKey) {
+      if (!paintedSun) {
+        paintedSun = document.createElement('canvas'); paintedSun.width = paintedSun.height = 256;
+      }
+      const g = paintedSun.getContext('2d'), r = 60, sc = S.sunC;
+      g.clearRect(0, 0, 256, 256);
+      const halo = g.createRadialGradient(128,128,r*.8,128,128,r*2.1);
+      halo.addColorStop(0, rgba(sc,.30+.25*haze)); halo.addColorStop(1, rgba(sc,0));
+      g.fillStyle = halo; g.fillRect(0,0,256,256);
+      const disc = g.createRadialGradient(128,128,r*(.98-.26*haze),128,128,r);
+      disc.addColorStop(0, rgba(sc,.95-.24*haze)); disc.addColorStop(1, rgba(sc,.8*(1-haze)));
+      g.fillStyle = disc; g.beginPath(); g.arc(128,128,r,0,TAU); g.fill(); sunKey = key;
+    }
+    const size = S.sunR * 2.3 * (256/60);
+    ctx.globalAlpha = 1 - S.night * .6;
+    ctx.drawImage(paintedSun, S.sunX-size/2, S.sunY-size/2, size, size);
+    ctx.globalAlpha = 1;
+  }
+
+  // Twelve brush stamps on one sheet: meadow, stone, sand and ice, three variations per material.
+  const brushWidth = 80, brushHeight = 38;
+  let groundSheet, contactShade, reflection;
+  function bakeBrushes() {
+    groundSheet = document.createElement('canvas'); groundSheet.width=3*brushWidth; groundSheet.height=4*brushHeight;
+    const g=groundSheet.getContext('2d');
+    for (let row=0;row<4;row++) for (let v=0;v<3;v++) {
+      const ox=v*brushWidth, oy=row*brushHeight;
+      for (let n=0;n<13;n++) {
+        const x=ox+6+rnd(n,v,row)*55, y=oy+5+rnd(n,37+v,row)*24;
+        const length=3+rnd(n,82+row,v)*13, height=1+rnd(n,12,row)*3.2;
+        g.fillStyle=n%3===0?'rgba(48,40,58,.25)':'rgba(255,237,191,.45)';
+        g.beginPath(); g.moveTo(x,y);
+        if(row===0) { g.quadraticCurveTo(x+length*.55,y-1,x+length,y-5); g.lineTo(x+length*.65,y); }
+        if(row===1) { g.lineTo(x+length*.32,y-height); g.lineTo(x+length,y-1); g.lineTo(x+length*.56,y+height); }
+        if(row===2) { g.quadraticCurveTo(x+length*.4,y-height,x+length,y); g.quadraticCurveTo(x+length*.42,y-1,x,y+1.5); }
+        if(row===3) { g.lineTo(x+length*.66,y-height); g.lineTo(x+length,y-height*2); g.lineTo(x+length*.7,y+1); }
+        g.closePath(); g.fill();
+      }
+    }
+    contactShade=document.createElement('canvas'); contactShade.width=96; contactShade.height=24;
+    const c=contactShade.getContext('2d'); c.scale(4,1);
+    const shade=c.createRadialGradient(12,12,0,12,12,12);
+    shade.addColorStop(0,'rgba(48,34,49,.38)'); shade.addColorStop(.55,'rgba(48,34,49,.19)'); shade.addColorStop(1,'rgba(48,34,49,0)');
+    c.fillStyle=shade; c.fillRect(0,0,24,24);
+    reflection=document.createElement('canvas'); reflection.width=160; reflection.height=66;
+    const r=reflection.getContext('2d');
+    for(let i=0;i<13;i++){
+      const y=i*5, span=(60-3.5*i)*(.55+.45*rnd(i,19)), x=80+12*Math.sin(i*2.3);
+      r.fillStyle='rgba(255,235,182,'+(.54-i*.027)+')';
+      r.beginPath();r.moveTo(x-span,y+2);r.quadraticCurveTo(x-3,y-1,x+span,y+1);
+      r.quadraticCurveTo(x+8,y+3.5,x-span,y+2);r.fill();
+    }
+  }
+  function drawContact(ctx, x, y, radius, lift) {
+    if (!contactShade || lift > 170) return;
+    const near = 1-clamp(lift/170,0,1);
+    const w = radius*(1.45+.55*near);
+    ctx.save(); ctx.globalAlpha *= .30+.7*near;
+    ctx.drawImage(contactShade,x-w*.5,y-5,w,12); ctx.restore();
+  }
+  // All foreground copies print the same roadside group. The sky and distant
+  // ridges continue to move smoothly as the camera crosses each seam.
+  let repeatGrove, repeatClass, repeatGround;
+  function prepareRepeatGrove() {
+    repeatClass=Terrain.STUTTER;
+    repeatGrove=null;
+    if (!repeatClass || !atlas.trees) return;
+    const zone=Terrain.zoneAt(repeatClass.start), w=repeatClass.period;
+    repeatGround=Terrain.height(repeatClass.start);
+    repeatGrove=document.createElement('canvas');repeatGrove.width=w;repeatGrove.height=146;
+    const g=repeatGrove.getContext('2d');
+    const kind=zone.key==='ice'?FL.SNOWPINE:zone.key==='gravel'?FL.CACTUS:FL.PINE;
+    for(let i=0;i<3;i++){
+      const x=w*(.17+i*.23), h=(i===1?85:58), base=135+repeatGround-Terrain.height(repeatClass.start+x);
+      g.drawImage(atlas.trees[kind][2][i%2],x-h*.34,base-h,h*.68,h);
+      g.fillStyle='rgba(84,69,77,.38)';g.beginPath();g.ellipse(x,base-1,h*.14,2,0,0,TAU);g.fill();
+    }
+  }
+  function drawRepeatGrove(ctx) {
+    if(!repeatGrove || repeatClass!==Terrain.STUTTER) return;
+    const z=repeatClass, left=S.camX, right=left+S.w;
+    if(right<z.start || left>z.end)return;
+    const y=S.gy-repeatGround-135;
+    for(let x=z.start;x<z.end;x+=z.period)
+      if(x+z.period>left && x<right)ctx.drawImage(repeatGrove,x-left,y);
+  }
+  function drawPigment(ctx, surf, n, step) {
+    if (!groundSheet || quality >= 2) return;
+    const space=quality===0?94:163, cam=S.camX;
+    let zi=S.zi0;
+    for(let k=Math.floor(cam/space); k*space<cam+S.w+space; k++){
+      const wx=k*space+paintSeed%39, x=wx-cam;
+      if(x<0 || x>S.w) continue;
+      while(zi+1<Z.length && wx>=Z[zi].end) zi++;
+      const z=Z[zi], gap=Terrain.ZONES[zi]?.gap;
+      if(gap && wx>gap.g0-35 && wx<gap.g1+35) continue;
+      const p=clamp(x/step,0,n-1.001), i=Math.floor(p);
+      const y=S.gy-surf[i]-(surf[i+1]-surf[i])*(p-i);
+      const sand=z.specialWorld==='egypt'||z.key==='water'||Terrain.gripAt(wx)==='sand';
+      const material=sand?2:z.key==='ice'?3:(z.key==='gravel'||z.key==='lava')?1:0;
+      const v=((k+paintSeed)%3+3)%3;
+      ctx.drawImage(groundSheet,v*brushWidth,material*brushHeight,brushWidth,brushHeight,x-32,y+21,66,30);
+    }
+  }
+  function drawGlint(ctx, x0, x1, y, now) {
+    if (!reflection || quality>=2 || x1-x0<40) return;
+    const x=S.sunX+(S.still?0:Math.sin(now*.72)*9);
+    if(x<x0-70 || x>x1+70) return;
+    ctx.drawImage(reflection,x-77,y+2,154,51);
+  }
+  let paintSeed=0;
+  function drawSkyVisitor(ctx) {
+    if (quality>=2 || !S.A || typeof WorldArtV19==='undefined') return;
+    const zone=Z[S.zi];
+    if(!zone || !zone.visitor) return;
+    const world=S.segmentActive?S.segment.world:S.world;
+    const progress=(S.camX+S.w*.4-zone.start)/(zone.end-zone.start);
+    const alpha=Math.max(0,Math.min(1,progress*6,(1-progress)*6));
+    if(alpha<=0)return;
+    const width=Math.min(S.w*.20,154)*S.hs;
+    const x=S.w*(.71-progress*.42), drift=S.still?0:Math.sin(S.now*.00065+S.zi)*3;
+    ctx.save();ctx.globalAlpha*=alpha*.88;
+    WorldArtV19.drawVisitor(ctx,world,x,S.gy*.19+drift,width);ctx.restore();
+  }
+  // The low tier uses three small, seamless plates. They remain independently
+  // scrollable even when the main canvas has to run at reduced resolution.
+  const quietLayers = [];
+  function quietLayer(ctx, l) {
+    const layer = LAYER[l], R = RP[l];
+    let tile = quietLayers[l];
+    if (!tile) {
+      const c=document.createElement('canvas'); c.width=384; c.height=112;
+      tile=quietLayers[l]={c, biome:null, light:-1, blend:-1};
+    }
+    const light=Math.round(S.warm*3)+4*Math.round(S.night*3), blend=Math.round(S.t*3);
+    if (tile.biome!==S.A || tile.neighbour!==S.B || tile.light!==light || tile.blend!==blend) {
+      const g=tile.c.getContext('2d');
+      g.clearRect(0,0,384,112);
+      const ys=[];
+      for(let i=0;i<=32;i++){
+        const phase=i*TAU/32;
+        ys.push(51+(Math.sin(phase*2+l)*11+Math.cos(phase*3+.6*l)*7+Math.sin(phase+l)*10)*S.A.amp);
+      }
+      g.fillStyle=rgb(R.col);g.beginPath();g.moveTo(0,112);
+      ys.forEach((y,i)=>g.lineTo(i*12,y));g.lineTo(384,112);g.closePath();g.fill();
+      g.fillStyle=l===0?'rgba(255,238,209,.25)':'rgba(61,48,77,.15)';
+      for(let i=1;i<32;i++){
+        if(ys[i]>ys[i-1] || ys[i]>=ys[i+1])continue;
+        let j=i+1;while(j<32 && ys[j+1]>=ys[j])j++;
+        g.beginPath();g.moveTo(i*12,ys[i]);
+        for(let k=i+1;k<=j;k++)g.lineTo(k*12,ys[k]);
+        g.lineTo(i*12+3,ys[j]+10);g.closePath();g.fill();
+      }
+      if(l===3) {
+        for(const i of [3,8,16,23,28]){
+          const species=floraPick(S.A,rnd(i,3));
+          g.drawImage(atlas.trees[species][3][i%2],i*12-8,ys[i]-22,16,24);
+        }
+      }
+      tile.biome=S.A;tile.neighbour=S.B;tile.light=light;tile.blend=blend;
+    }
+    const width=(l===3?820:1160)*S.hs, height=(l===3?112:183)*S.hs;
+    const top=S.gy-layer.off*S.hs-height*.52;
+    const drift=((S.camX*layer.speed%width)+width)%width;
+    for(let x=-drift;x<S.w;x+=width)ctx.drawImage(tile.c,x,top,width+.5,height);
+    // Fill below the strip if the road dips under the visual horizon.
+    const base=top+height-1;
+    if(base<S.gy+7){ctx.fillStyle=rgb(R.col);ctx.fillRect(0,base,S.w,S.gy+8-base);}
+  }
   function drawBackdrop(ctx) {
     if (!Z.length) { ctx.fillStyle = '#bde3ff'; ctx.fillRect(0, 0, S.w, S.h); return; }
     if (S.world === 'atlantis' || S.world === 'enchanted' || S.world === 'neon') {
-      drawDedicatedWorldBackdrop(ctx);
+      drawDedicatedWorldBackdrop(ctx); drawSkyVisitor(ctx);
       return;
     }
     const w = S.w, h = S.h, gy = S.gy, now = S.now / 1000;
 
-    // cielo
-    const g = ctx.createLinearGradient(0, 0, 0, gy);
-    g.addColorStop(0, rgb(S.skyT)); g.addColorStop(1, rgb(S.skyB));
-    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+    // A fully opaque special panorama covers the entire countryside.
+    const world = S.segment && S.segment.world;
+    if (S.segmentBlend === 1 && (world === 'egypt' || WORLD_ART[world]?.naturalWidth)) {
+      drawSegmentWorldBackdrop(ctx); drawSkyVisitor(ctx);
+      return;
+    }
+    paintSky(ctx, w, h, gy);
+    if (quality === 2 && S.world === 'classic') {
+      paintSun(ctx);
+      quietLayer(ctx,0); quietLayer(ctx,1);
+      drawCountryLandmarks(ctx);
+      quietLayer(ctx,3);
+      if(S.segment && S.segmentBlend>0.001)drawSegmentWorldBackdrop(ctx);
+      return;
+    }
 
     // stelle
     if (S.starA > 0.02 && quality < 2) {
@@ -1926,16 +2131,7 @@ const Scenery = (() => {
     // sole piatto (stile poster): disco arancio-rosso che "respira" piano, con un alone che pulsa; più rosso verso il tramonto
     if (LAND && (S.world === 'classic' || S.world === 'paradise')) {
       // sole enorme e pallido dietro le montagne: alone sfumato + disco morbido
-      const sx = S.sunX, sy = S.sunY, r = S.sunR * 2.3, sc = S.sunC, haze = S.sunHaze;
-      ctx.globalAlpha = 1 - S.night * 0.6;
-      const hg = ctx.createRadialGradient(sx, sy, r * 0.8, sx, sy, r * 2.1);
-      hg.addColorStop(0, rgba(sc, .30 + .25 * haze)); hg.addColorStop(1, rgba(sc, 0));
-      ctx.fillStyle = hg; ctx.fillRect(sx - r * 2.2, sy - r * 2.2, r * 4.4, r * 4.4);
-      const disc = ctx.createRadialGradient(sx, sy, r * (.98 - .26 * haze), sx, sy, r);
-      disc.addColorStop(0, rgba(sc, .95 - .24 * haze));
-      disc.addColorStop(1, rgba(sc, .8 * (1 - haze)));
-      ctx.fillStyle = disc; ctx.beginPath(); ctx.arc(sx, sy, r, 0, TAU); ctx.fill();
-      ctx.globalAlpha = 1;
+      paintSun(ctx);
     } else if (POSTER && (S.world === 'classic' || S.world === 'paradise')) {
       const sx = S.sunX, sy = S.sunY, r = S.sunR * 1.3, col = mix(SUN_COL, SUN_WARM, S.warm * 0.7), cs = rgb(col);
       ctx.fillStyle = cs; ctx.globalAlpha = 1 - S.night * 0.4;
@@ -1976,7 +2172,7 @@ const Scenery = (() => {
     drawInfernoAtmosphere(ctx);
 
     // uccelli (solo di giorno): nel look poster sono gabbiani scuri e spessi, in stormi da tre che sbattono le ali
-    if ((S.world === 'classic' || S.world === 'paradise') && S.day > 0.3 && quality < 2) {
+    if ((S.world === 'classic' || S.world === 'paradise') && S.day > 0.3 && !S.still && quality < 2) {
       ctx.strokeStyle = S.world === 'paradise' ? 'rgba(255,255,255,0.92)' : LAND ? `rgba(96,44,84,${(0.8 * S.day).toFixed(2)})` : POSTER ? `rgba(36,52,58,${(0.95 * S.day).toFixed(2)})` : `rgba(40,50,80,${(0.6 * S.day).toFixed(2)})`;
       ctx.lineWidth = LAND ? 2.6 : POSTER ? 3.4 : 2; ctx.lineCap = 'round';
       const bp = new Path2D(), nf = POSTER ? 3 : 1;
@@ -2023,7 +2219,7 @@ const Scenery = (() => {
     // Gerarchia: i landmark principali vivono nel fondale precomposto; nessun tempietto ripetuto sopra di essi.
     drawDanteLovers(ctx);
     drawParadiseHeaven(ctx);
-    drawParadiseIslands(ctx);
+    drawParadiseIslands(ctx); drawSkyVisitor(ctx);
   }
 
   // Centre and half-width of the part of each illustration visible above the ridge.
@@ -2245,8 +2441,37 @@ const Scenery = (() => {
   }
 
   const SNOW_COL = [250, 253, 255];
+  // Four independent scrolling strips. Camera bounce only moves the destination.
+  // Bake a short overhang in both directions so mirror portals can reverse smoothly.
+  const ridgeTiles = LAYER.map(() => ({ valid: false }));
   function drawLayer(ctx, l) {
-    const R = RP[l], L = LAYER[l], w = S.w, gy = S.gy, par = S.camX * L.speed;
+    const tile = ridgeTiles[l], par = S.camX * LAYER[l].speed;
+    const w = S.w, gy = S.gy, pad = 144, R = RP[l];
+    const span = Math.ceil((w + 2 * pad) / 64) * 64;
+    const top = Math.ceil((LAYER[l].off + 1.9 * LAYER[l].amp + 170 * LAYER[l].size) * S.hs / 16) * 16;
+    const blend = Math.round(S.t * 8), light = Math.round(S.warm * 6) + 8*Math.round(S.night * 6);
+    if (!tile.valid || par < tile.origin || par + w > tile.origin + span ||
+        tile.span !== span || tile.top !== top || tile.a !== S.A || tile.b !== S.B ||
+        tile.blend !== blend || tile.light !== light || tile.quality !== quality ||
+        Math.abs(tile.hs - S.hs) > .045 || Math.abs(tile.sun - S.sunX/w) > .07) {
+      const scale = Math.min(.82, Math.max(.3, dpr*viewScale*.76), 1600/span);
+      if (!tile.canvas) tile.canvas = document.createElement('canvas');
+      const cw = Math.ceil(span * scale), ch = Math.ceil((top + 8) * scale);
+      if (tile.canvas.width !== cw) tile.canvas.width = cw;
+      if (tile.canvas.height !== ch) tile.canvas.height = ch;
+      const g = tile.canvas.getContext('2d');
+      g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,cw,ch);
+      g.setTransform(cw/span,0,0,ch/(top+8),0,(top-gy)*ch/(top+8));
+      tile.origin = Math.floor(par - pad);
+      bakeRidge(g, l, span, tile.origin);
+      tile.span = span; tile.top = top; tile.a = S.A; tile.b = S.B; tile.blend = blend;
+      tile.light = light; tile.hs = S.hs; tile.quality = quality; tile.sun = S.sunX/w;
+      tile.valid = true;
+    }
+    ctx.drawImage(tile.canvas, tile.origin-par, gy-top, span, top+8);
+  }
+  function bakeRidge(ctx, l, w, par) {
+    const R = RP[l], L = LAYER[l], gy = S.gy;
     const step = quality >= 2 ? 26 : (l === 0 ? 20 : 12);
     const n = Math.min(399, Math.ceil((w + step * 2) / step) + 1);
     let yMin = 1e9;
@@ -2280,7 +2505,7 @@ const Scenery = (() => {
     const sh = R.wP + R.wM;
     if (LAND && quality < 3) {
       // montagne a facce: per ogni cima, il versante lontano dal sole è un triangolo scuro, quello vicino uno chiaro
-      const dir = S.sunX < w * .5 ? 1 : -1, dark = new Path2D(), lite = new Path2D(), minH = 8 * S.hs;
+      const dir = S.sunX < S.w * .5 ? 1 : -1, dark = new Path2D(), lite = new Path2D(), minH = 8 * S.hs;
       for (let i = 1; i < n - 1; i++) {
         const y = ysBuf[i];
         if (!(y < ysBuf[i - 1] && y <= ysBuf[i + 1])) continue;
@@ -2296,7 +2521,7 @@ const Scenery = (() => {
       const na = S.night * 0.12;
       const shadow = S.world === 'paradise' ? 'rgba(53,105,145,' : 'rgba(72,30,104,';
       const light = S.world === 'paradise' ? 'rgba(255,255,255,' : 'rgba(255,238,214,';
-      const sideLight = smooth(Math.abs(S.sunX / w - .5) / .12);
+      const sideLight = smooth(Math.abs(S.sunX / S.w - .5) / .12);
       ctx.fillStyle = `${shadow}${(sideLight * (S.world === 'paradise' ? 0.16 + na - l * 0.02 : 0.24 + na - l * 0.025)).toFixed(3)})`; ctx.fill(dark);
       ctx.fillStyle = `${light}${(sideLight * (0.2 * (1 - S.night * 0.8) - l * 0.015)).toFixed(3)})`; ctx.fill(lite);
     }
@@ -2346,7 +2571,7 @@ const Scenery = (() => {
           const scale = countryScale();
           for (const z of countryClearings) {
             const [offset, radius] = landmarkFocus[z.key];
-            const centre = z.landmarkX * L.speed + w * .56 * (1 - L.speed) + offset * scale;
+            const centre = z.landmarkX * L.speed + S.w * .56 * (1 - L.speed) + offset * scale;
             const clearance = Math.abs(lx - centre) - radius * scale - TREE_W * sc * .20;
             if (clearance < 28 * scale) sc *= .20 + .80 * smooth(clearance / (28 * scale));
           }
@@ -2366,7 +2591,9 @@ const Scenery = (() => {
   // ---------- disegno: terreno --------------------------------------------------------------
   // gradiente orizzontale con un colore per zona (sfumato ai confini): un'unica fill per tutto lo schermo
   function zoneGrad(ctx, pick) {
-    const w = S.w, camX = S.camX, g = ctx.createLinearGradient(0, 0, w, 0), sg = S.segment;
+    const w = S.w, camX = S.camX, sg = S.segment, zone = Z[S.zi0];
+    if (camX + w <= zone.end && !(sg && zone.specialWorld && zone.start < sg.end && zone.end > sg.end)) return rgb(pick(zone));
+    const g = ctx.createLinearGradient(0, 0, w, 0);
     let last = 0;
     const stop = (zs, ze, zz) => {
       const a = clamp((zs - camX + 110) / w, 0, 1), b = clamp((ze - camX - 110) / w, 0, 1);
@@ -2426,6 +2653,7 @@ const Scenery = (() => {
   function drawGround(ctx, surf, n, step) {
     if (!Z.length) return;
     const w = S.w, h = S.h, gy = S.gy, camX = S.camX, xLast = (n - 1) * step;
+    drawRepeatGrove(ctx);
     drawGapWalls(ctx, surf, n, step);
 
     // 1. terriccio: colore per zona, poi scurisce verso il basso
@@ -2499,8 +2727,10 @@ const Scenery = (() => {
     const line = new Path2D();
     for (let i = 0; i < n; i++) { const y = gy - surf[i]; if (i === 0) line.moveTo(0, y); else line.lineTo(i * step, y); }
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    if (!POSTER) { ctx.strokeStyle = 'rgba(15,23,42,0.55)'; ctx.lineWidth = 13; ctx.stroke(line); }
+    ctx.strokeStyle = 'rgba(47,38,53,.62)'; ctx.lineWidth = POSTER ? 24 : 13; ctx.stroke(line);
     ctx.strokeStyle = zoneGrad(ctx, z => tod(bioAt(z, z.start).surf, 0.25, 0.5)); ctx.lineWidth = POSTER ? 20 : 9; ctx.stroke(line);
+
+    drawPigment(ctx, surf, n, step);
 
     // A fine sunlit edge follows the same samples as the green turf.
     if (S.world === 'classic') {
@@ -2678,6 +2908,7 @@ const Scenery = (() => {
       if (!POSTER) { ctx.fillStyle = g; ctx.fill(); }
       if (quality < 2) {
         ctx.save(); ctx.clip();
+        drawGlint(ctx,x0,x1,yTop,now);
         // vene luminose che scorrono
         ctx.strokeStyle = damned ? 'rgba(248,157,199,0.48)' : POSTER ? 'rgba(245,229,148,0.5)' : 'rgba(255,226,120,0.34)'; ctx.lineWidth = POSTER ? 3 : 2.4; ctx.beginPath();
         for (let k = 1; yTop + 7 + k * 13 < yBot; k++) {
@@ -2981,6 +3212,7 @@ const Scenery = (() => {
       }
       if (quality < 2) {
         ctx.save(); ctx.clip();
+        drawGlint(ctx,x0,x1,yTop,now);
         ctx.strokeStyle = POSTER ? 'rgba(248,244,220,0.3)' : 'rgba(255,255,255,0.13)'; ctx.lineWidth = POSTER ? 3 : 2.5; ctx.beginPath();
         for (let k = 1; yTop + 9 + k * 15 < yBot; k++) {
           const y = yTop + 9 + k * 15; ctx.moveTo(x0, y);
@@ -3067,6 +3299,6 @@ const Scenery = (() => {
 
   return {
     setTrack, setView, update, drawBackdrop, drawGround, drawWater, drawFront, drawWorldEffects, setQuality, warmup, announce,
-    get quality() { return quality; }, get state() { return S; },
+    drawContact, get quality() { return quality; }, get state() { return S; },
   };
 })(); // scenery

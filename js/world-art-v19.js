@@ -499,5 +499,62 @@ const WorldArtV19 = (() => {
     }
     c.restore();
   }
-  return Object.freeze({draw,drawCountryside});
+  // Small painted silhouettes for the sky layer, each cut from its own world palette.
+  // A race only prepares the plates it will use. The same plate also prints on the postcard.
+  const visitors = new Map();
+  function visitorPlate(world) {
+    if (visitors.has(world)) return visitors.get(world);
+    const plate = document.createElement('canvas'); plate.width = 200; plate.height = 126;
+    const c = plate.getContext('2d'), {sky, ink} = RouteStamps.colors(world);
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    const wash = (path, color) => { c.fillStyle = color; c.fill(new Path2D(path)); };
+    if (world === 'classic') {
+      wash('M44 41 C41 0 111 -5 119 32 C124 55 103 69 92 88 L73 88 C66 72 45 61 44 41Z',ink);
+      wash('M50 42 C46 19 60 8 72 6 C58 26 59 51 78 84 C60 70 53 55 50 42Z','#d67e5c');
+      wash('M76 6 C92 2 107 15 110 31 C114 49 99 69 90 83 C99 54 100 24 76 6Z',sky);
+      wash('M71 8 C64 28 64 49 82 82 C72 43 81 26 84 8Z','#ecc18f');
+      wire(c,ink,1.8,71,85,78,101,88,101,94,85);
+      panel(c,'#865242',76,100,91,100,89,110,78,110);
+      block(c,'#ddaf79',77,101,12,3);
+    } else if (world === 'atlantis') {
+      wash('M12 39 Q36 19 83 42 Q101 48 108 40 Q124 24 165 13 Q148 43 123 57 Q105 67 98 73 Q85 78 74 68 Q37 53 12 39Z',ink);
+      wash('M20 38 Q54 27 85 45 Q90 49 97 53 Q67 46 51 45Z','#76b9b2');
+      wash('M100 60 Q124 44 157 19 Q142 45 121 54Z',sky);
+      c.strokeStyle = ink; c.lineWidth=3; c.beginPath(); c.moveTo(93,69); c.bezierCurveTo(110,90,142,81,169,111); c.stroke();
+      for (let i=0;i<5;i++) {
+        const x=15+i*14, y=83+(i%3)*6;
+        wash('M'+x+' '+y+'q6 -5 13 -1q-5 7 -13 1l-4 2 1 -5Z','#d4e7c0');
+      }
+    } else if (world === 'enchanted') {
+      wash('M100 60 Q75 30 37 28 Q36 50 58 70 Q37 64 56 86 Q70 109 55 119 Q76 112 88 87 L99 74 Q116 99 140 105 Q149 111 149 119 Q165 102 143 79 Q164 66 170 34 Q132 34 106 59Z',ink);
+      wash('M95 59 Q65 32 42 32 Q47 60 78 73Z',sky);
+      wash('M112 60 Q142 36 165 37 Q155 62 129 70Z','#d3c1ce');
+      for (const [x,y] of [[72,54],[138,55],[75,84],[132,85]]) { c.fillStyle='#bc925f';circle(c,x,y,4,true); c.fillStyle=ink;circle(c,x,y,1.7,true); }
+      wire(c,'#e6be81',4,101,58,105,82);wire(c,sky,1.5,101,61,98,49,90,43);wire(c,sky,1.5,104,61,110,48,117,44);
+    } else if (world === 'neon') {
+      wash('M19 53 Q46 17 113 26 Q147 31 163 47 L184 33 L178 54 L188 65 L161 59 Q109 87 44 72 Q25 68 19 53Z',ink);
+      wash('M26 51 Q55 23 112 30 Q136 32 149 40 Q83 34 40 54Z',sky);
+      wash('M30 59 Q88 72 155 48 Q110 80 49 69Z','#b17b8f');
+      panel(c,ink,77,74,120,70,116,86,85,89);block(c,'#d3cfaa',88,79,21,3);
+      for(let i=0;i<5;i++)block(c,'#95e6da',52+15*i,52-i,8,2);
+    } else {
+      // Long-necked ibis, pale doves and dark swifts have different wing and body proportions.
+      for (let i=0;i<3;i++) {
+        c.save(); c.translate(16+i*54,41+(i===1?27:0)); c.scale(1-i*.16,1-i*.16);
+        const plumage=world==='paradise'?'#fff7df':world==='egypt'?'#d7bc9b':'#65394d';
+        wash('M1 32 Q17 24 27 26 Q14 13 7 1 Q30 5 39 22 Q51 10 67 7 Q56 23 46 28 Q40 36 29 32 L8 38Z',plumage);
+        wash('M7 1 Q26 8 39 22 L33 26 Q17 15 7 1Z',ink);
+        if(world==='egypt') {
+          c.strokeStyle=ink;c.lineWidth=2.3;c.beginPath();c.moveTo(43,28);c.quadraticCurveTo(59,31,65,24);c.quadraticCurveTo(70,20,75,26);c.stroke();
+        } else panel(c,sky,43,26,53,24,48,29);
+        c.restore();
+      }
+    }
+    visitors.set(world,plate);
+    return plate;
+  }
+  function drawVisitor(ctx, world, x, y, width) {
+    ctx.drawImage(visitorPlate(world),x-width/2,y,width,width*.63);
+  }
+  return Object.freeze({draw,drawCountryside,drawVisitor});
 })();

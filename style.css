@@ -943,3 +943,30 @@ body[data-screen="race"] .page {
 
 /* Keyboard focus stays visible over the race canvas. */
 .jump-btn:focus-visible, .sprint-btn:focus-visible { outline: 3px solid #fff; outline-offset: 5px; }
+
+/* Carta da viaggio, bordi stampati e campiture opache. */
+.hud, #screen-results .card, #screen-menu .card--hero {
+  color:#382e36; background-color:#fff2d8;
+  border:1.5px solid #705848; border-radius:14px 19px 13px 17px;
+  box-shadow:3px 4px 0 rgba(68,49,54,.24);
+}
+.hud { border-inline-start:4px solid #6c6352; }
+.hud-leaderboard li { border-radius:5px 9px 7px 4px; background:#f2dfbd; color:#362e36; }
+.hud-leaderboard li.is-me { background:#834432; color:#fff9e3; }
+.stamp-counter { color:#4e493b; font-weight:700; font-size:max(.8rem,12px); }
+.stamp-counter b { border:1px dashed #865741; background:#ffe9b4; color:#5f3d31; border-radius:3px; }
+.jump-btn,.sprint-btn { border:2px solid #473a40; border-radius:44% 50% 45% 47%; }
+.jump-btn { background-color:#b55032; }
+.sprint-btn.ready { background-color:#376b60; }
+.sprint-cd { color:#382f39; font-variant-numeric:tabular-nums; }
+.results-list li { border-radius:3px 7px 4px 6px; background:#f0ddbb; border-bottom:1px solid #ba9c76; }
+#screen-menu .title, #screen-results .section-title { color:#315b4e; }
+#screen-menu .title::after, #screen-results .section-title::after {
+  content:""; display:block; width:4.2em; height:4px; margin:.15em auto .12em;
+  background:#b26a45; border-radius:90% 16% 80% 18%; transform:rotate(-1deg);
+}
+.screen--active:not(#screen-race) > .card { animation:paper-arrive .24s ease-out; }
+@keyframes paper-arrive { from { opacity:.65; transform:translateY(4px); } }
+@media (prefers-reduced-motion:reduce) {
+  .screen--active > .card, .jump-btn, .sprint-btn, .ctrl-hint, .sprint-tip, .sprint-btn::after { animation:none!important; transition:none!important; }
+}

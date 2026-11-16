@@ -671,6 +671,26 @@ const EgyptWorld = (() => {
   }
   // No repeated wallpaper. Each of the three unique landmarks is tied to an
   // actual world-coordinate section; sky & dunes scroll with slower parallax.
+  const stageAnchors = [.15, .49, .84], stageWidths = [1860,1150,1100], stageHeights = [735,495,495];
+  const stages = [];
+  function stageArt(i) {
+    if (stages[i]) return stages[i];
+    const tile = document.createElement('canvas'), w = stageWidths[i], h = stageHeights[i];
+    tile.width = Math.ceil(w*.8); tile.height = Math.ceil(h*.8);
+    const g = tile.getContext('2d'); g.scale(tile.width/w,tile.height/h);
+    g.translate(w/2,h-16);
+    if (i === 0) {
+      ancientPylon(g,665,-26,.88); sphinx(g,-120,-62,1.55); heritageFlags(g,-760,-20,.83);
+      g.save(); g.translate(205,-104); chariotRelief(g,0,0,.45); g.restore();
+    } else if (i === 1) {
+      templeAvenue(g,0,-18,.91); heritageFlags(g,-490,-17,.75); heritageFlags(g,495,-17,.75);
+    } else {
+      royalTomb(g,0,-21,1.06); treasureObelisk(g,-480,-19,.9); treasureObelisk(g,477,-19,.9);
+    }
+    stages[i] = tile;
+    return tile;
+  }
+  function warmup() { for (let i=0; i<3; i++) stageArt(i); }
   function drawBackdrop(c,S){
     const w=S.w,h=S.h,gy=S.gy,cam=S.camX,seg=S.segment;
     // This world is architecturally distinct from ordinary gravel/desert:
@@ -704,30 +724,17 @@ const EgyptWorld = (() => {
     }
     if(seg){
       const span=seg.end-seg.start;
-      const st=[.15,.49,.84].map(q=>seg.start+q*span-cam);
-      // Entrance: an enormous Sphinx and royal pylons; second act: temple
-      // colonnade; final act: monumental lapis tomb with jackal guardians.
-      if(st[0]>-950&&st[0]<w+950){
-        ancientPylon(c,st[0]+665,gy-26,.88);
-        sphinx(c,st[0]-120,gy-62,1.55);
-        heritageFlags(c,st[0]-760,gy-20,.83);
-        // Discrete ceremonial-chariot relief set behind the monumental threshold.
-        c.save();c.translate(st[0]+205,gy-104);chariotRelief(c,0,0,.45);c.restore();
-      }
-      if(st[1]>-1100&&st[1]<w+1100){
-        templeAvenue(c,st[1],gy-18,.91);
-        heritageFlags(c,st[1]-490,gy-17,.75);
-        heritageFlags(c,st[1]+495,gy-17,.75);
-      }
-      if(st[2]>-1100&&st[2]<w+1100){
-        royalTomb(c,st[2],gy-21,1.06);
-        treasureObelisk(c,st[2]-480,gy-19,.9);
-        treasureObelisk(c,st[2]+477,gy-19,.9);
+      for (let i=0; i<3; i++) {
+        const x = seg.start + stageAnchors[i]*span - cam;
+        const half = stageWidths[i]/2;
+        if (x+half <= 0 || x-half >= w) continue;
+        const image = stageArt(i);
+        c.drawImage(image, x-half, gy-stageHeights[i]+16, stageWidths[i], stageHeights[i]);
       }
       // Keep foreground palms off the silhouette of the Sphinx; the monument
       // must read as a single uninterrupted landmark. Other scenes retain palms.
       for(let i=1;i<3;i++){
-        const xx=st[i]+380*(i-1);
+        const xx=seg.start+stageAnchors[i]*span-cam+380*(i-1);
         if(xx>-180&&xx<w+180)palm(c,xx,gy-25,.65);
       }
     }
@@ -981,5 +988,5 @@ const EgyptWorld = (() => {
     }
     c.restore();
   }
-  return {P,shot,detects,morph,drawBandages,drawBackdrop,drawGround,drawHazards};
+  return {P,warmup,shot,detects,morph,drawBandages,drawBackdrop,drawGround,drawHazards};
 })();

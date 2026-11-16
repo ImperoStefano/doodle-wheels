@@ -33,8 +33,27 @@ const Flora = (() => {
   let flowers = [], st = [], lilies = [];
   let quality = 0;
 
+  // Zona stutter: i fiori del primo tratto vengono copiati nelle ripetizioni (stessi fiori, stessa posizione relativa) e ordinati per x.
+  function echoRepeat(list) {
+    const z = Terrain.STUTTER, out = list.slice();
+    if (z) {
+      const keep = out.filter(f => f.x < z.start || f.x >= z.end), first = out.filter(f => f.x >= z.start && f.x < z.start + z.period);
+      for (let k = 0; k < z.repeats; k++) for (const f of first) keep.push(k ? Object.assign({}, f, {x: f.x + k * z.period}) : f);
+      return keep.sort((a, b) => a.x - b.x);
+    }
+    return out.sort((a, b) => a.x - b.x);
+  }
+  function firstVisible(list, x) {
+    let low = 0, high = list.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (list[mid].x < x) low = mid + 1;
+      else high = mid;
+    }
+    return low;
+  }
   function setTrack() {
-    flowers = Terrain.FLOWERS || []; lilies = Terrain.LILIES || [];
+    flowers = echoRepeat(Terrain.FLOWERS || []); lilies = echoRepeat(Terrain.LILIES || []);
     st = flowers.map(f => ({ ang: 0, vel: 0, squash: 0, sv: 0, cool: 0, wob: 0, bee: rnd(f.x, 5) < 0.4 && (f.species === 3 || f.species === 0), flee: 0 }));
     petals.forEach(p => { p.on = false; });
   }
@@ -75,9 +94,9 @@ const Flora = (() => {
   function update(dt, camX, w, racers) {
     dt = Math.min(dt, 0.05);
     const t = performance.now() / 1000;
-    for (let i = 0; i < flowers.length; i++) {
+    for (let i = firstVisible(flowers, camX - 150); i < flowers.length; i++) {
       const f = flowers[i];
-      if (f.x < camX - 150 || f.x > camX + w + 150) continue;
+      if (f.x > camX + w + 150) break;
       const s = st[i];
       // vento: onda lenta che passa + piccoli scarti per fiore
       const wind = (Math.sin(t * 0.9 + f.x * 0.0045) * 0.5 + Math.sin(t * 0.37 + f.x * 0.011) * 0.5) * 0.045 + Math.sin(t * 2.3 + f.seed * 6.28) * 0.012;
@@ -217,9 +236,9 @@ const Flora = (() => {
   function draw(ctx, camX, w, gy, S) {
     const t = performance.now() / 1000, sunX = S.sunX, open = smooth((S.day - 0.1) / 0.5);
     let bees = 0;
-    for (let i = 0; i < flowers.length; i++) {
+    for (let i = firstVisible(flowers, camX - 60); i < flowers.length; i++) {
       const f = flowers[i], fx = f.x - camX;
-      if (fx < -60 || fx > w + 60) continue;
+      if (fx > w + 60) break;
       const s = st[i], by = gy - Terrain.height(f.x);
       const vr = f.r * BLOOM, sp = f.species;
       let stemH = vr * 1.6 * f.stemScale;
@@ -292,8 +311,8 @@ const Flora = (() => {
   // ninfee sulla superficie dell'acqua (decorazione): ondeggiano con le onde
   function drawLilies(ctx, camX, w, gy, S) {
     const t = performance.now() / 1000;
-    for (let i = 0; i < lilies.length; i++) {
-      const l = lilies[i], fx = l.x - camX; if (fx < -50 || fx > w + 50) continue;
+    for (let i = firstVisible(lilies, camX - 50); i < lilies.length; i++) {
+      const l = lilies[i], fx = l.x - camX; if (fx > w + 50) break;
       const wl = Terrain.waterLevel(l.x); if (wl === -Infinity) continue;
       const bob = Math.sin(l.x * 0.03 + t * 2.1) * 2.2, y = gy - wl + bob, sc = l.size * 16;
       ctx.save(); ctx.translate(fx, y);

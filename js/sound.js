@@ -27,7 +27,7 @@ const Sfx = (() => {
     sfxBus.__in = soft;
     // musica: bus proprio (il livello cambia con l'umore), un po' più riverbero
     musBus = ctx.createGain(); musBus.gain.value = mode === 'all' ? MUSIC.calm : 0; musBus.connect(master);
-    musFilt = ctx.createBiquadFilter(); musFilt.type = 'lowpass'; musFilt.frequency.value = 18000; musFilt.Q.value = 0.5; musDuck = ctx.createGain(); musDuck.connect(musFilt); musFilt.connect(musBus);   // clip → (abbassa per gli effetti) → (ovatta in acqua) → livello
+    musFilt = ctx.createBiquadFilter(); musFilt.type = 'lowpass'; musFilt.frequency.value = 18000; musFilt.Q.value = 0.5; musDuck = ctx.createGain(); musDuck.connect(musFilt); musFilt.connect(musBus); musMain = ctx.createGain(); musMain.connect(musDuck);   // clip → (abbassa per gli effetti) → (ovatta in acqua) → livello
     const n = ctx.sampleRate * 2; noiseBuf = ctx.createBuffer(1, n, ctx.sampleRate); const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     return ctx;
@@ -182,7 +182,7 @@ const Sfx = (() => {
   const PACK = { src: 'audio/musica.mp3', total: 70.4 }, BAR = 2, XF = 0.08, DROP = 14, RACE_END = 50;
   const SEQ = { calm: [[0, 8], [50.2, 58.2]], race: [[18, 50]], fin: [[58.4, 70.4]] };   // pezzi [inizio, fine] in secondi dentro al file
   const mus = { want: 'calm', buf: null, loading: false, live: [], sec: 'calm', i: 0, nextT: 0, grid: 0, xIn: 0.5, first: null, timer: 0, startMs: 0, pad: 0, off: 0, beepsUntil: 0 };
-  let musDuck = null, musFilt = null, wetNow = false;
+  let musDuck = null, musFilt = null, musMain = null, wetNow = false;
   const CURVE = (() => { const n = 24, a = new Float32Array(n), b = new Float32Array(n); for (let k = 0; k < n; k++) { a[k] = Math.sin(k / (n - 1) * Math.PI / 2); b[k] = Math.cos(k / (n - 1) * Math.PI / 2); } return { in: a, out: b }; })();
 
   function musLoad() {   // scarica e decodifica una volta sola (~1,3 MB di mp3; in memoria sono circa 25 MB)
@@ -218,16 +218,16 @@ const Sfx = (() => {
     if (xi <= 0.1) { const pre = Math.min(xi, a); ts = t - pre; off = a - pre; const w = Math.max(pre, 0.004); g.gain.setValueAtTime(0, ts); g.gain.setValueCurveAtTime(CURVE.in, ts, w); }
     else { g.gain.setValueAtTime(0, t); g.gain.setValueCurveAtTime(CURVE.in, t, xi); }
     g.gain.setValueAtTime(1, e - XF); g.gain.setValueCurveAtTime(CURVE.out, e - XF, XF);
-    src.connect(g); g.connect(gx); gx.connect(musDuck);
+    src.connect(g); g.connect(gx); gx.connect(musMain);
     src.start(Math.max(ts, ctx.currentTime), off + mus.pad + (ts < ctx.currentTime ? ctx.currentTime - ts : 0), dur + (t - ts) + 0.02);
-    mus.live.push({ src, g, gx, t0: t, t1: e }); mus.nextT = e; mus.xIn = XF;
+    mus.live.push({ src, g, gx, t0: t, t1: e, a }); mus.nextT = e; mus.xIn = XF;
   }
   function pump() {
     if (!ctx || !mus.buf || mode !== 'all') return;
     let guard = 0; while (mus.nextT < ctx.currentTime + 1.5 && guard++ < 6) schedNext();
     const c = ctx.currentTime; mus.live = mus.live.filter(n => n.t1 + 0.3 > c);
   }
-  function killAll() { clearInterval(mus.timer); mus.timer = 0; mus.live.forEach(n => { try { n.src.stop(); } catch (e) {} try { n.gx.disconnect(); } catch (e) {} }); mus.live = []; }
+  function killAll() { gbStop(true); clearInterval(mus.timer); mus.timer = 0; mus.live.forEach(n => { try { n.src.stop(); } catch (e) {} try { n.gx.disconnect(); } catch (e) {} }); mus.live = []; }
   const secondsToStart = () => (mus.startMs - Date.now()) / 1000 - Math.min(0.25, ctx.outputLatency || 0);
   function raceEntry() {   // la gara parte su una battuta: si arriva al drop con le battute dell'intro e il colpo cade esattamente al "via"
     const c = ctx.currentTime, left = secondsToStart(), tGo = c + left;
@@ -294,6 +294,78 @@ const Sfx = (() => {
     b.title = I18n.t('sound.' + mode); b.setAttribute('aria-label', b.title);
     b.removeAttribute('aria-pressed');
   }
+
+  // ---- Gross Beat (portale stutter) -------------------------------------------------------------------------
+  // Nella zona stutter la canzone "balbetta" a tempo, come l'effetto Gross Beat: tape-stop all'ingresso, poi ripetizioni di una fetta della
+  // canzone (1/8, 1/16, ancora 1/8 e mezza velocità) con gate sul volume. La canzone vera continua sulla sua griglia ma muta: gli effetti sono
+  // pezzi dello STESSO file programmati sull'orologio audio, quindi all'uscita (un battito di rullo a 1/16) rientra esattamente a tempo.
+  // Lo sente solo chi è dentro la sua zona. Con musica spenta o solo effetti non fa nulla.
+  const BEAT = BAR / 4, gb = { on: false, nodes: [], timer: 0, p0: 0, bar: 0, tNext: 0, tEnd: 0, clean: 0 };
+  const beatAt = from => mus.grid + BEAT * Math.max(0, Math.ceil((from + 0.03 - mus.grid) / BEAT - 1e-6));   // prossimo battito sulla griglia
+  function songPos(T) {   // dove si trova la canzone (secondi nel file) all'istante T
+    let best = null; for (const n of mus.live) if (n.t0 <= T + 1e-3 && T <= n.t1 + 1e-3 && (!best || n.t0 > best.t0)) best = n;
+    return best ? best.a + Math.max(0, T - best.t0) : -1;
+  }
+  function mainGate(to, t, ramp) { if (!musMain) return; const g = musMain.gain; g.cancelScheduledValues(t - 0.01); g.setValueAtTime(to ? 0 : 1, t); g.linearRampToValueAtTime(to, t + ramp); }
+  function gbNode(src, g, t0, t1) { gb.nodes.push({ src, g, t0, t1 }); }
+  // `repeats` ripetizioni di una fetta lunga L secondi di canzone a partire da pos, con gate (attacco 4 ms, taglio a fine fetta: niente click)
+  function gbSlice(t, pos, L, repeats, rate) {
+    const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = mus.buf; src.loop = true;
+    const ls = pos + mus.pad; src.loopStart = ls; src.loopEnd = ls + L; src.playbackRate.value = rate;
+    const per = L / rate, end = t + per * repeats;
+    g.gain.setValueAtTime(0, t);
+    for (let k = 0; k < repeats; k++) { const a = t + k * per; g.gain.setValueAtTime(0, a); g.gain.linearRampToValueAtTime(1, a + 0.004); g.gain.setValueAtTime(1, a + per * 0.72); g.gain.linearRampToValueAtTime(0, a + per - 0.002); }
+    src.connect(g); g.connect(musDuck); src.start(t, ls); src.stop(end + 0.02); gbNode(src, g, t, end);
+  }
+  function gbTapeStop(t, pos) {   // la canzone rallenta fino a fermarsi (0,42 s), nel punto esatto in cui era
+    const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = mus.buf;
+    src.playbackRate.setValueAtTime(1, t); src.playbackRate.exponentialRampToValueAtTime(0.18, t + 0.42);
+    g.gain.setValueAtTime(1, t); g.gain.setValueAtTime(1, t + 0.24); g.gain.linearRampToValueAtTime(0, t + 0.46);
+    src.connect(g); g.connect(musDuck); src.start(t, pos + mus.pad, 0.7); src.stop(t + 0.5); gbNode(src, g, t, t + 0.5);
+  }
+  function gbPlan() {   // programma le battute di balbettio un secondo in anticipo
+    if (!gb.on || !ctx) return;
+    const c = ctx.currentTime;
+    if (gb.tNext < c) gb.tNext += BAR * Math.ceil((c - gb.tNext) / BAR);   // scheda rimasta in secondo piano: si riprende dalla prossima battuta
+    while (gb.tNext < c + 1) {
+      const t = gb.tNext, P = gb.p0 + (gb.bar % 2 ? BEAT : 0);   // una battuta sul battito d'ingresso, la successiva su quello dopo
+      gbSlice(t, P, BEAT / 2, 2, 1);            // battito 1: 1/8 ×2
+      gbSlice(t + BEAT, P, BEAT / 4, 4, 1);     // battito 2: 1/16 ×4
+      gbSlice(t + 2 * BEAT, P, BEAT / 2, 2, 1); // battito 3: 1/8 ×2
+      gbSlice(t + 3 * BEAT, P, BEAT / 2, 1, 0.5); // battito 4: mezza velocità
+      gb.tNext += BAR; gb.bar++;
+    }
+    gb.nodes = gb.nodes.filter(n => n.t1 + 0.1 > c);
+  }
+  function gbStop(hard) {   // hard: spegne subito tutto (musica fermata o cambio modo)
+    clearInterval(gb.timer); gb.timer = 0; clearTimeout(gb.clean);
+    if (!hard) return;
+    for (const n of gb.nodes) { try { n.src.stop(); } catch (e) {} try { n.g.disconnect(); } catch (e) {} }
+    gb.nodes = []; gb.on = false;
+    if (musMain && ctx) { musMain.gain.cancelScheduledValues(0); musMain.gain.setValueAtTime(1, ctx.currentTime); }
+  }
+  function stutter(active) {
+    if (!!active === gb.on) return;
+    if (!ctx || !mus.buf || mode !== 'all' || muted || !mus.live.length) return;
+    const c = ctx.currentTime;
+    if (active) {
+      const tB = beatAt(c), p = songPos(tB);
+      if (p < 0 || p + 2.4 > mus.buf.duration - mus.pad) return;   // nessun punto sicuro della canzone: niente effetto
+      gbStop(true); gb.on = true; gb.p0 = p; gb.bar = 0; gb.tEnd = tB + BEAT; gb.tNext = tB + BEAT;
+      mainGate(0, tB, 0.006); gbTapeStop(tB, p); gbPlan(); gb.timer = setInterval(gbPlan, 150);
+    } else {
+      gb.on = false; clearInterval(gb.timer); gb.timer = 0;
+      const tX = Math.max(beatAt(c), gb.tEnd), tR = tX + BEAT;   // un battito di rullo a 1/16 e la canzone rientra sul battere
+      for (const n of gb.nodes) {
+        if (n.t0 >= tX - 0.001) { try { n.src.stop(); } catch (e) {} try { n.g.disconnect(); } catch (e) {} n.dead = true; }
+        else if (n.t1 > tX) { n.g.gain.cancelScheduledValues(tX); n.g.gain.setTargetAtTime(0, tX, 0.004); try { n.src.stop(tX + 0.04); } catch (e) {} }
+      }
+      gb.nodes = gb.nodes.filter(n => !n.dead);
+      gbSlice(tX, gb.p0, BEAT / 4, 4, 1);
+      musMain.gain.cancelScheduledValues(tR - 0.01); musMain.gain.setValueAtTime(0, tR - 0.002); musMain.gain.linearRampToValueAtTime(1, tR + 0.012);
+      clearTimeout(gb.clean); gb.clean = setTimeout(() => { if (!gb.on) { gb.nodes = []; } }, (tR - c + 0.6) * 1000);
+    }
+  }
   function setMode(m) {
     mode = m; muted = m === 'off'; try { localStorage.setItem(KEY, m); } catch (e) {}
     if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER, ctx.currentTime, 0.05);
@@ -315,5 +387,5 @@ const Sfx = (() => {
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('button, .btn'); if (t && t.id !== 'btn-sound') { unlock(); click(); } }, true);
     document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) ctx.suspend(); else if (!muted) { ctx.resume(); if (mode === 'all') musicStart(); } });
   }
-  return { init, unlock, click, timedLaunch, postmark, ring, beep, swoosh, finish, land, bump, splash, redraw, jump, sizzle, giant, thud, portal, portalOut, update, silence, setMuted, mood, raceStart, biome, get muted() { return muted; }, get mode() { return mode; } };
+  return { init, unlock, click, stutter, timedLaunch, postmark, ring, beep, swoosh, finish, land, bump, splash, redraw, jump, sizzle, giant, thud, portal, portalOut, update, silence, setMuted, mood, raceStart, biome, get muted() { return muted; }, get mode() { return mode; } };
 })();

@@ -1044,12 +1044,22 @@ const Sim = (() => {
     r.scT = target;
   }
   // le ruote passano sopra il bordo alto dell'anello (le uscite non si scavalcano: riportano comunque la bici in avanti)
-  function overPortal(r, q) {
-    return r.airJ >= 1 && GROUND_Y - Math.max(r.fw.bounds.max.y, r.rw.bounds.max.y) - Terrain.height(q.x) >= PORTAL_SKIP_H;
+  function overPortal(r, edgeX) {
+    return r.airJ >= 1 && GROUND_Y - Math.max(r.fw.bounds.max.y, r.rw.bounds.max.y) - Terrain.height(edgeX) >= PORTAL_SKIP_H;
   }
   function checkPortals(r, elapsed) {
-    const P = Terrain.PORTALS; if (!P || !P.length) return;
+    const P = Terrain.PORTALS, echo = Terrain.STUTTER;
+    if ((!P || !P.length) && !echo) return;
     const x = r.chassis.position.x, lx = r.lx; r.lx = x;
+    // Each rider crosses independently, in either direction. A skipped gate
+    // stays skipped until that rider leaves the zone and crosses it again.
+    if (echo) {
+      if (x < echo.start || x >= echo.end) r.stutter = false;
+      else if (lx < echo.start || lx >= echo.end) {
+        const edgeX = lx < echo.start ? echo.start : echo.end;
+        r.stutter = elapsed >= r.immuneUntil && elapsed >= (r.jumpGraceUntil || 0) && !overPortal(r, edgeX);
+      }
+    }
     if (r.dir === -1) {   // rete di sicurezza: se la bici ha oltrepassato la SUA uscita senza "toccarla" (sblocco all'indietro), torna comunque normale
       const ex = P.find(e => e.id === r.exitId);
       if (ex && x <= ex.x) { portalUsed[ex.id] = true; r.exitId = -1; r.dir = 1; r.immuneUntil = elapsed + IMMUNE_MS; r.bestX = x; r.hopBaseX = x; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'x', 0, ex.id); return; }
@@ -1061,11 +1071,12 @@ const Sim = (() => {
       if (portalUsed[q.id]) continue;   // già consumato: da chiunque, spariscono per tutti
       if (q.kind !== 'exit' && elapsed < r.immuneUntil) continue;   // immune: ci passa attraverso, il portale resta per gli altri
       if ((lx - q.x) * (x - q.x) > 0 || (lx === q.x && x === q.x)) continue;
-      if (q.kind !== 'exit' && overPortal(r, q)) continue;   // scavalcato col salto: il portale resta lì (per chi lo vuole prendere)
+      if (q.kind !== 'exit' && overPortal(r, q.x)) continue;   // scavalcato col salto: il portale resta lì (per chi lo vuole prendere)
       if (q.kind === 'shift') {
         let d = 150 + Math.random() * 250; if (Math.random() < 0.5) d = -d;
         if (!Terrain.landOk(x + d)) d = -d; if (!Terrain.landOk(x + d)) continue;
         portalUsed[q.id] = true; teleport(r, d); r.lx = r.chassis.position.x;
+        if (r.stutter && (r.lx < echo.start || r.lx >= echo.end)) r.stutter = false;
         r.immuneUntil = elapsed + IMMUNE_MS;
         r.bestX = r.dir * r.chassis.position.x; r.hopBaseX = r.bestX; r.progressAt = elapsed; portalEvent(r, 's', d, q.id);
       } else if (q.kind === 'mirror') {
@@ -1691,7 +1702,8 @@ const Sim = (() => {
   }
 
   function snapshot() {
-    return Object.entries(racers).map(([id, r]) => ({
+    return Object.entries(racers).map(([id, r]) => {
+      const state = {
       id,
       x: r.chassis.position.x, y: r.chassis.position.y, angle: r.chassis.angle,
       fwX: r.fw.position.x, fwY: r.fw.position.y, fwAngle: r.fw.angle,
@@ -1700,7 +1712,10 @@ const Sim = (() => {
       timedLaunches: r.timedLaunches, stampMask: r.stampMask, ringHits: r.ringHits, ringMask: r.ringMask,
       finished: r.finished, finishTime: r.finishTime,
       dir: r.dir || 1, sc: Math.round((r.sc || 1) * 100) / 100, pe: r.pe || 0, ge: r.ge || 0, gt: r.gt || '', gi: r.gi === undefined ? -1 : r.gi, jn: r.jn || 0, ja: r.ja || 0, ln: r.ln || 0, ls: r.ls || 0, ld: r.landHits || 0, lp: r.landPower || 0, pt: r.pt || '', pd: r.pd || 0, pi: r.pi === undefined ? -1 : r.pi, cu: r.curseLevel || 0, sp: Math.round((r.spCharge === undefined ? 1 : r.spCharge) * 100) / 100, so: r.spOn ? 1 : 0, im: Math.max(0, Math.round((r.immuneUntil || 0) - (performance.now() - startedAt)))
-    }));
+      };
+      if (r.stutter && !r.finished) state.st = 1;
+      return state;
+    });
   }
 
   function allFinished() {
