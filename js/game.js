@@ -26,6 +26,7 @@
   };
 
   const preRaceDrawer = createWheelDrawer(els.drawCanvas); preRaceDrawer.init();
+  const ghostWheel = preRaceDrawer.fallbackCircle();
   const inRaceDrawer = createWheelDrawer(els.redrawCanvas); inRaceDrawer.init();
   const wheelProfile = document.getElementById('wheel-profile'), pitProfile = document.getElementById('pit-profile');
   const stampCounter = document.getElementById('stamp-counter');
@@ -1906,7 +1907,7 @@
       const delay = Net.isHost ? INTERP_HOST_MS : interpClientMs;
       const replayTime = ghostClock.ms + Math.min(120, t0 - delay - ghostClock.t);
       const rival = RaceGhost.pose(replayTime);
-      if (rival) RaceGhostArt.draw(ctx2d, rival, camX, groundY, Sim.GROUND_Y, w);
+      if (rival) drawGhostBike(rival, me, camX, groundY, w);
     }
     const emoteAnchors = [];
     Object.entries(latestRacers).sort((a, b) => (a[0] === Net.myId) - (b[0] === Net.myId)).forEach(([id, r]) => {
@@ -2030,6 +2031,31 @@
     }
     ctx2d.restore();
   }
+  // Replays share the default race artwork and never draw an avatar or nameplate.
+  function drawGhostBike(pose, player, camX, groundY, viewWidth) {
+    const scale = pose.sc || 1, x = pose.x - camX;
+    const left = Math.min(pose.rwX, pose.fwX, pose.x) - camX - 110 * scale;
+    const right = Math.max(pose.rwX, pose.fwX, pose.x) - camX + 110 * scale;
+    if (right < 0 || left > viewWidth) return;
+
+    let visibility = 1;
+    if (player) {
+      const size = (scale + (player.sc || 1)) * .5;
+      const distance = Math.hypot((pose.x - player.x) / (265 * size), (pose.y - player.y) / (156 * size));
+      const t = Math.min(1, distance);
+      visibility = t * t * (3 - 2 * t);
+    }
+    const tint = '#829fa9', dy = groundY - Sim.GROUND_Y;
+    ctx2d.save();
+    ctx2d.globalAlpha *= .07 + .29 * visibility;
+    drawWheel(pose.rwX - camX, pose.rwY + dy, pose.rwAngle, ghostWheel, tint, false, 0, null, null, scale);
+    drawWheel(pose.fwX - camX, pose.fwY + dy, pose.fwAngle, ghostWheel, tint, false, 0, null, null, scale);
+    ctx2d.translate(x, pose.y + dy);
+    ctx2d.scale(scale, scale);
+    drawBike(0, 0, pose.angle, tint);
+    ctx2d.restore();
+  }
+
   function drawBike(x, y, a, c) {
     ctx2d.save(); ctx2d.translate(x, y); ctx2d.rotate(a); ctx2d.lineCap = 'round'; ctx2d.lineJoin = 'round';
     const dk = `rgb(${mixRgb(hexRgb(c), 0.72)})`;

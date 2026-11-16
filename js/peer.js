@@ -96,12 +96,15 @@ const Net = (() => {
     const code = makeCode(); roomCode = code;
     peer = new Peer(ROOM_PREFIX + code, { debug: 1, config: ICE_CONFIG });
     const currentPeer = peer;
+    let roomReady = false;
     const timer = setTimeout(() => {
       if (peer !== currentPeer) return;
       emit('error', { message: I18n.t('err.server') }); currentPeer.destroy();
     }, SIGNAL_TIMEOUT_MS);
     peer.on('open', id => {
-      clearTimeout(timer); if (peer !== currentPeer) return;
+      clearTimeout(timer); if (peer !== currentPeer || roomReady) return;
+      // The signalling socket can reopen while the WebRTC race is still live.
+      roomReady = true;
       myId = id; players = {};
       players[id] = { id, name: myName, color: nextColor(), isHost: true, connected: true };
       emit('roomReady', { code, players: { ...players } });
@@ -174,21 +177,24 @@ const Net = (() => {
     });
     peer.on('error', err => {
       clearTimeout(timer);
-      if (err.type === 'unavailable-id' && attempt < 5) {
+      if (peer !== currentPeer) return;
+      if (!roomReady && err.type === 'unavailable-id' && attempt < 5) {
         try { currentPeer.destroy(); } catch (_) {}
         hostGame(name, attempt + 1);
       } else emit('error', err);
     });
-    peer.on('disconnected', () => { if (!peer.destroyed) { try { peer.reconnect(); } catch (_) {} } });
+    peer.on('disconnected', () => { if (peer === currentPeer && !currentPeer.destroyed) { try { currentPeer.reconnect(); } catch (_) {} } });
   }
 
   function joinGame(code, name, resumeToken = '') {
     isHost = false; myName = name; roomCode = code.trim().toUpperCase();
     const targetId = ROOM_PREFIX + roomCode;
     peer = new Peer(undefined, { debug: 1, config: ICE_CONFIG });
+    const currentPeer = peer;
+    hostConn = null;
     let retryTimer = null, attempts = 0, connectedOnce = false, stopped = false;
     function scheduleRetry() {
-      if (stopped || retryTimer) return;
+      if (stopped || peer !== currentPeer || retryTimer) return;
       if (connectedOnce) emit('reconnecting');
       if (++attempts > (connectedOnce ? 60 : 8)) {
         stopped = true;
@@ -200,25 +206,27 @@ const Net = (() => {
       retryTimer = setTimeout(() => { retryTimer = null; connect(); }, Math.min(5000, 500 * Math.pow(1.35, Math.min(attempts, 10))));
     }
     function connect() {
-      if (stopped || !peer || peer.destroyed) return;
+      if (stopped || peer !== currentPeer || currentPeer.destroyed || hostConn) return;
+      if (currentPeer.disconnected) { scheduleRetry(); return; }
       let conn;
-      try { conn = peer.connect(targetId, { reliable: true }); } catch (_) { scheduleRetry(); return; }
+      try { conn = currentPeer.connect(targetId, { reliable: true }); } catch (_) { scheduleRetry(); return; }
+      if (!conn) { scheduleRetry(); return; }
       hostConn = conn;
-      let opened = false;
       const timeout = setTimeout(() => {
-        if (stopped || hostConn !== conn || opened) return;
+        if (stopped || hostConn !== conn) return;
+        hostConn = null;
         try { conn.close(); } catch (_) {}
         scheduleRetry();
       }, JOIN_TIMEOUT_MS);
       conn.on('open', () => {
         if (stopped || hostConn !== conn) return;
-        opened = true; clearTimeout(timeout); clearTimeout(retryTimer);
-        attempts = 0;
         safeSend(conn, { type: 'join', name, token: resumeToken, resume: connectedOnce });
       });
       conn.on('data', data => {
         if (stopped || hostConn !== conn || !data) return;
         if (data.type === 'welcome') {
+          clearTimeout(timeout);
+          attempts = 0;
           const wasConnected = connectedOnce;
           myId = data.id; connectedOnce = true;
           if (wasConnected || data.resumed) emit('reconnected');
@@ -239,23 +247,33 @@ const Net = (() => {
       const lost = () => {
         clearTimeout(timeout);
         if (stopped || hostConn !== conn) return;
+        hostConn = null;
+        try { conn.close(); } catch (_) {}
         scheduleRetry();
       };
       conn.on('close', lost); conn.on('error', lost);
     }
     const signalTimer = setTimeout(() => {
-      if (!peer || peer.destroyed || connectedOnce || stopped) return;
+      if (peer !== currentPeer || currentPeer.destroyed || connectedOnce || stopped) return;
       emit('error', { message: I18n.t('err.server') });
       stopped = true; try { peer.destroy(); } catch (_) {}
     }, SIGNAL_TIMEOUT_MS);
-    peer.on('open', id => { clearTimeout(signalTimer); myId = id; connect(); });
+    peer.on('open', () => {
+      clearTimeout(signalTimer);
+      if (peer !== currentPeer || stopped || hostConn) return;
+      clearTimeout(retryTimer); retryTimer = null;
+      connect();
+    });
     peer.on('error', err => {
       clearTimeout(signalTimer);
-      if (stopped) return;
-      if (connectedOnce && err && err.type === 'network') { scheduleRetry(); return; }
+      if (peer !== currentPeer || stopped) return;
+      if (connectedOnce && err && err.type === 'network') {
+        if (!hostConn) scheduleRetry();
+        return;
+      }
       emit('error', err);
     });
-    peer.on('disconnected', () => { if (!peer.destroyed) { try { peer.reconnect(); } catch (_) {} } });
+    peer.on('disconnected', () => { if (peer === currentPeer && !stopped && !currentPeer.destroyed) { try { currentPeer.reconnect(); } catch (_) {} } });
   }
 
   return {

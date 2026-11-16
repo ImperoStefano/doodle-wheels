@@ -32,7 +32,12 @@ const Sfx = (() => {
     for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     return ctx;
   }
-  function unlock() { const c = ensure(); if (c && c.state === 'suspended') c.resume(); if (c && mode === 'all') musicStart(); }
+  function unlock() {
+    if (muted) return;
+    const c = ensure();
+    if (c && c.state === 'suspended') c.resume().catch(() => {});
+    if (c && mode === 'all') musicStart();
+  }
   const ok = () => ctx && !muted && ctx.state === 'running';
   const out = () => sfxBus.__in;
 
@@ -153,6 +158,7 @@ const Sfx = (() => {
   function giant(k, v, air) {
     if (!ctx || !ok()) { if (gnt && ctx) gnt.g.gain.setTargetAtTime(0, ctx.currentTime, 0.1); return; }
     if (!gnt) {
+      if (k <= 0.02) return;
       const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), f = ctx.createBiquadFilter(), s = ctx.createBufferSource(), nf = ctx.createBiquadFilter(), ng = ctx.createGain();
       o1.type = 'sine'; o2.type = 'sine'; o1.frequency.value = 41; o2.frequency.value = 61.5; f.type = 'lowpass'; f.frequency.value = 160; g.gain.value = 0;
       s.buffer = noiseBuf; s.loop = true; nf.type = 'lowpass'; nf.frequency.value = 130; ng.gain.value = 0.5;
@@ -175,7 +181,7 @@ const Sfx = (() => {
   // Il motore programma i pezzi sull'orologio dell'audio (ctx.currentTime), non con i timer: niente ritardi o scatti.
   const PACK = { src: 'audio/musica.mp3', total: 70.4 }, BAR = 2, XF = 0.08, DROP = 14, RACE_END = 50;
   const SEQ = { calm: [[0, 8], [50.2, 58.2]], race: [[18, 50]], fin: [[58.4, 70.4]] };   // pezzi [inizio, fine] in secondi dentro al file
-  const mus = { want: 'calm', buf: null, loading: false, live: [], sec: 'calm', i: 0, nextT: 0, grid: 0, xIn: 0.5, first: null, timer: 0, goT: 0, pad: 0, off: 0, beepsUntil: 0 };
+  const mus = { want: 'calm', buf: null, loading: false, live: [], sec: 'calm', i: 0, nextT: 0, grid: 0, xIn: 0.5, first: null, timer: 0, startMs: 0, pad: 0, off: 0, beepsUntil: 0 };
   let musDuck = null, musFilt = null, wetNow = false;
   const CURVE = (() => { const n = 24, a = new Float32Array(n), b = new Float32Array(n); for (let k = 0; k < n; k++) { a[k] = Math.sin(k / (n - 1) * Math.PI / 2); b[k] = Math.cos(k / (n - 1) * Math.PI / 2); } return { in: a, out: b }; })();
 
@@ -222,8 +228,9 @@ const Sfx = (() => {
     const c = ctx.currentTime; mus.live = mus.live.filter(n => n.t1 + 0.3 > c);
   }
   function killAll() { clearInterval(mus.timer); mus.timer = 0; mus.live.forEach(n => { try { n.src.stop(); } catch (e) {} try { n.gx.disconnect(); } catch (e) {} }); mus.live = []; }
+  const secondsToStart = () => (mus.startMs - Date.now()) / 1000 - Math.min(0.25, ctx.outputLatency || 0);
   function raceEntry() {   // la gara parte su una battuta: si arriva al drop con le battute dell'intro e il colpo cade esattamente al "via"
-    const c = ctx.currentTime, tGo = mus.goT, left = tGo - c;
+    const c = ctx.currentTime, left = secondsToStart(), tGo = c + left;
     if (left > 0.5) { const k = Math.min(7, Math.floor((left - 0.2) / BAR)); if (k >= 1) goto('race', { at: tGo - k * BAR, x: 0.5, first: [DROP - k * BAR, RACE_END], grid: tGo }); else goto('race', { at: c + 0.05, x: 0.3, first: [DROP - (left - 0.05), RACE_END], grid: tGo }); }
     else goto('race', { at: c + 0.05, x: 0.5 });   // già in gara (musica riaccesa dopo il via): si entra nel ciclo
   }
@@ -245,11 +252,12 @@ const Sfx = (() => {
   }
   // la gara parte a startMs (Date.now): programma 3-2-1-via sull'orologio dell'audio e il drop della canzone sul "via"
   function raceStart(startMs) {
-    if (!ensure()) return; const left = (startMs - Date.now()) / 1000, lat = Math.min(0.25, ctx.outputLatency || 0);
-    mus.goT = ctx.currentTime + left - lat; mus.want = 'race';
+    mus.startMs = startMs; mus.want = 'race';
+    if (muted || !ensure()) return;
     if (ctx.state === 'running' && !muted) {
+      const left = secondsToStart();
       mus.beepsUntil = now() + left * 1000 + 1200;
-      [3, 2, 1, 0].forEach(n => { const w = mus.goT - n - ctx.currentTime; if (w > -0.02) beep(n, Math.max(0, w), true); });
+      [3, 2, 1, 0].forEach(n => { const w = left - n; if (w > -0.02) beep(n, Math.max(0, w), true); });
     }
     if (mode === 'all') { if (mus.buf) raceEntry(); else musicStart(); }
   }
@@ -279,7 +287,13 @@ const Sfx = (() => {
   }
 
   // ---- modalità audio: 'all' (musica + effetti) → 'fx' (solo effetti) → 'off' (muto) ---------------------------
-  function paintBtn() { const b = document.getElementById('btn-sound'); if (!b) return; b.classList.toggle('muted', mode === 'off'); b.classList.toggle('fx', mode === 'fx'); b.setAttribute('aria-pressed', mode === 'off' ? 'true' : 'false'); b.dataset.mode = mode; }
+  function paintBtn() {
+    const b = document.getElementById('btn-sound'); if (!b) return;
+    b.classList.toggle('muted', mode === 'off'); b.classList.toggle('fx', mode === 'fx');
+    b.dataset.mode = mode;
+    b.title = I18n.t('sound.' + mode); b.setAttribute('aria-label', b.title);
+    b.removeAttribute('aria-pressed');
+  }
   function setMode(m) {
     mode = m; muted = m === 'off'; try { localStorage.setItem(KEY, m); } catch (e) {}
     if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER, ctx.currentTime, 0.05);
@@ -291,8 +305,12 @@ const Sfx = (() => {
   function init() {
     const b = document.getElementById('btn-sound');
     paintBtn();
-    if (b) b.addEventListener('click', e => { e.stopPropagation(); unlock(); setMode(mode === 'all' ? 'fx' : mode === 'fx' ? 'off' : 'all'); if (mode !== 'off') click(); });
-    const first = () => { unlock(); };
+    I18n.onChange(paintBtn);
+    if (b) b.addEventListener('click', e => {
+      e.stopPropagation(); setMode(mode === 'all' ? 'fx' : mode === 'fx' ? 'off' : 'all');
+      if (!muted) { unlock(); click(); }
+    });
+    const first = e => { if (!e.target?.closest?.('#btn-sound')) unlock(); };
     ['pointerdown', 'touchend', 'keydown'].forEach(ev => window.addEventListener(ev, first, { passive: true }));
     document.addEventListener('click', e => { const t = e.target.closest && e.target.closest('button, .btn'); if (t && t.id !== 'btn-sound') { unlock(); click(); } }, true);
     document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.hidden) ctx.suspend(); else if (!muted) { ctx.resume(); if (mode === 'all') musicStart(); } });

@@ -504,13 +504,16 @@ const Sim = (() => {
     accumulator = 0; obstacleClockMs = 0;
   }
 
-  function isWater(x) {
-    if (typeof Terrain.isWater === 'function') return Terrain.isWater(x);
-    if (typeof Terrain.colorAt === 'function') {
-      const c = Terrain.colorAt(x);
-      return typeof c === 'string' && c.toLowerCase() === '#3b82f6';
+  function wheelImmersion(wheel) {
+    if (!Number.isFinite(Terrain.waterLevel(wheel.position.x))) return 0;
+    let depth = 0;
+    for (const v of wheel.vertices) {
+      const below = v.y - (GROUND_Y - Terrain.waterLevel(v.x));
+      if (below <= depth || !Terrain.isWater(v.x)) continue;
+      if (below >= 24) return 1;
+      depth = below;
     }
-    return false;
+    return depth / 24;
   }
 
   // "Spigolosità" di una forma: 0 = tonda, ~0.3 quadrato, ~0.5 triangolo, ~0.6+ stella.
@@ -1419,7 +1422,7 @@ const Sim = (() => {
       else r.spCharge = Math.min(1, r.spCharge + .20);
     }
   }
-  function worldEffectStep(r, elapsed) {
+  function worldEffectStep(r, elapsed, immersion) {
     const bodies = [r.chassis, r.fw, r.rw], x = r.chassis.position.x;
     const segment = Terrain.WORLD_SEGMENT;
     const world = segment && x >= segment.start && x <= segment.end ? segment.world : Terrain.WORLD;
@@ -1471,8 +1474,10 @@ const Sim = (() => {
       // bassa, controbilanciando l'attrito dell'acqua senza creare teletrasporti.
       for (const q of Terrain.TIDAL_CURRENTS) {
         const phase = ((elapsed / 1000 + q.phase) % q.period + q.period) % q.period;
-        if (phase < q.burst && Math.abs(x - q.x) < q.width * 0.5 && Terrain.isWater(x)) {
-          for (const b of bodies) Matter.Body.setVelocity(b, { x: Math.min(9.5, b.velocity.x + q.push), y: b.velocity.y });
+        if (immersion > 0 && phase < q.burst && Math.abs(x - q.x) < q.width * 0.5) {
+          for (const b of bodies) {
+            if (b.velocity.x < 9.5) Matter.Body.setVelocity(b, { x: Math.min(9.5, b.velocity.x + q.push * immersion), y: b.velocity.y });
+          }
         }
       }
       r.bubbleVentHits = r.bubbleVentHits || {};
@@ -1580,7 +1585,8 @@ const Sim = (() => {
     ravineStep(r, elapsed);
     rampStep(r, elapsed);
     sprintStep(r);
-    worldEffectStep(r, elapsed);
+    const immersion = (wheelImmersion(r.fw) + wheelImmersion(r.rw)) * .5;
+    worldEffectStep(r, elapsed, immersion);
 
     // progress = furthest x reached IN THE DIRECTION OF TRAVEL (dir·x); if it hasn't improved enough for STALL_MS, hop
     const dir = r.dir || 1, px = dir * r.chassis.position.x;
@@ -1609,12 +1615,12 @@ const Sim = (() => {
       }
       if (f > 0) { const k = 1 - (1 - LAVA_DRAG) * f; Matter.Body.setVelocity(r.chassis, { x: r.chassis.velocity.x * k, y: r.chassis.velocity.y * k }); }
     }
-    if (isWater(r.chassis.position.x)) {
+    if (immersion > 0) {
       const seg = Terrain.WORLD_SEGMENT;
       const atl = seg && seg.world === 'atlantis' && r.chassis.position.x >= seg.start && r.chassis.position.x < seg.end;
       // Atlantide: acqua bassa, attraversabile anche con ruote non tonde.
       // L'acqua delle altre zone mantiene il drag originale.
-      const drag = atl ? 0.982 : 0.94;
+      const drag = 1 - immersion * (atl ? .018 : .06);
       Matter.Body.setVelocity(r.chassis, {
         x: r.chassis.velocity.x * drag,
         y: r.chassis.velocity.y * drag

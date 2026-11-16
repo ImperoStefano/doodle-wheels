@@ -397,4 +397,25 @@ const ctx2={};vm.createContext(ctx2);vm.runInContext(fs.readFileSync(root+'/js/c
   sim.airRingStep(active); sim.sprintStep(active); assert.equal(active.spCharge,.2);
   applied++;
 }
-console.log('OK '+applied+' regression tests: ramps, jumps, landings, assets, special-world summary, white-screen recovery');
+// Water must act on immersed wheels. The same channel can be crossed in flight,
+// partly in the water or on a bridge, in either direction.
+{
+  const src=fs.readFileSync(root+'/js/physics.js','utf8').replace('  return {\n    init, addRacer,',
+    '  return {wheelImmersion,worldEffectStep,\n    init, addRacer,');
+  const channel={WORLD:'atlantis', AIR_RINGS:[], TIDAL_CURRENTS:[{x:10,width:100,phase:0,burst:1,period:2,push:1}],
+    BUBBLE_VENTS:[], waterLevel:x=>x<100?0:-Infinity, isWater:x=>x<40};
+  const sim=Function('Matter','Terrain',src+';return Sim')({Body},channel);
+  const wheel=(x,depth)=>({position:{x},vertices:[{x,y:sim.GROUND_Y+depth}],velocity:{x:2,y:0}});
+  assert.equal(sim.wheelImmersion(wheel(10,-40)),0);
+  assert.equal(sim.wheelImmersion(wheel(50,30)),0); // bridge
+  assert.equal(sim.wheelImmersion(wheel(200,30)),0); // dry land
+  assert.equal(sim.wheelImmersion(wheel(10,12)),.5);
+  assert.equal(sim.wheelImmersion(wheel(10,30)),1);
+  const r={chassis:wheel(10,-40),fw:wheel(10,-40),rw:wheel(10,-40)};
+  sim.worldEffectStep(r,0,0); assert.equal(r.chassis.velocity.x,2);
+  sim.worldEffectStep(r,0,.5); assert.equal(r.chassis.velocity.x,2.5);
+  r.chassis.velocity.x=11;
+  sim.worldEffectStep(r,0,1); assert.equal(r.chassis.velocity.x,11);
+  applied++;
+}
+console.log('OK '+applied+' regression tests: ramps, jumps, landings, water, assets, special-world summary, white-screen recovery');

@@ -2,6 +2,16 @@
 
 **Multiplayer 2D browser game** — disegna le ruote della tua bici, affronta rampe e ostacoli, gareggia con gli amici attraverso mondi diversi.
 
+## V47 - Bici predefinita e continuità di gara
+
+Il fantasma usa le ruote e il telaio della bici predefinita del gioco, con la sella vuota. Diventa più trasparente durante un sorpasso. I replay già registrati vengono visualizzati con questo disegno.
+
+La bici rallenta quando le ruote entrano nell'acqua. La corrente di Atlantide tiene conto dell'immersione e della velocità di scatto. In multiplayer il ripristino del collegamento con il servizio di segnalazione conserva la gara in corso. L'audio rispetta la preferenza di muto anche al primo tocco.
+
+## V46 - Bici fantasma
+
+Rigiocando una pista con un record personale, vedrai il tuo giro precedente su una bici da turismo traslucida con ciclista, ruote a raggi e catarifrangenti. Durante un sorpasso il fantasma sfuma per lasciare leggibile la tua bici. Anche i record salvati nelle versioni precedenti usano il nuovo disegno.
+
 ## V45 - Luce e leggibilità del paesaggio
 
 Il sole segue la gara e passa gradualmente dalla luce velata del ghiacciaio al disco basso e ambrato del canyon. Sul crinale gli alberi lasciano spazio alle sagome degli edifici. Un sottile bordo color paglia segue il profilo dei dossi erbosi.
