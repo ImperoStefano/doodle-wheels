@@ -32,12 +32,45 @@
   const stampCounter = document.getElementById('stamp-counter');
   const stampTotal = document.getElementById('stamp-total');
   let personalStamps = null;
+  const hexA = (hex, a) => { const n = parseInt(hex.slice(1), 16); return 'rgba(' + (n >> 16 & 255) + ',' + (n >> 8 & 255) + ',' + (n & 255) + ',' + a + ')'; };
+  // Colori del mondo sul pulsante di scatto: l'inchiostro fa da contorno, il cielo da glow (si accendono a timbri completi).
+  function paintSprintColors() {
+    const b = els.btnSprint; if (!b) return;
+    const {sky, ink} = RouteStamps.colors(RouteStamps.worldKey());
+    b.style.setProperty('--bi', ink); b.style.setProperty('--bs', sky); b.style.setProperty('--bg', hexA(ink, .5));
+    const tip = document.getElementById('sprint-tip'); if (tip) tip.style.setProperty('--bi', ink);
+  }
+  // Pallini di progresso accanto al pulsante: uno per timbro, pieni man mano che li raccogli.
+  function renderPips(mask, popBits) {
+    const box = document.getElementById('sprint-pips'); if (!box) return;
+    const list = RouteStamps.route();
+    if (box.children.length !== list.length) { box.textContent = ''; list.forEach(() => box.appendChild(document.createElement('i'))); }
+    list.forEach((st, i) => {
+      const dot = box.children[i], got = !!(mask & st.bit);
+      dot.classList.toggle('on', got);
+      if (popBits && (popBits & st.bit)) { dot.classList.remove('pop'); void dot.offsetWidth; dot.classList.add('pop'); }
+    });
+  }
+  // Al set completo: il pulsante scatta, si accende e una riga spiega cosa è cambiato.
+  let buffTipT = 0;
+  function announceBuff() {
+    const bf = RouteStamps.buff(personalStamps || 0); if (!bf) return;
+    const b = els.btnSprint, tip = document.getElementById('sprint-tip');
+    if (b) { b.classList.remove('buff-pop'); void b.offsetWidth; b.classList.add('buff-pop'); setTimeout(() => b.classList.remove('buff-pop'), 700); }
+    if (tip) {
+      tip.textContent = ''; const sp = document.createElement('span'); sp.textContent = I18n.t('buff.lead') + ' ' + I18n.t('buff.' + bf.id); tip.appendChild(sp);
+      tip.classList.add('buff-msg'); tip.style.display = 'block'; clearTimeout(buffTipT); buffTipT = setTimeout(() => { tip.style.display = 'none'; }, 5000);
+    }
+  }
   function updateStamps(mask, silent) {
     const total = RouteStamps.route().length;
     stampCounter.hidden = !total;
     stampTotal.textContent = RouteStamps.count(mask) + ' / ' + total;
-    if (!silent && personalStamps !== null && (mask & ~personalStamps) && typeof Sfx !== 'undefined') Sfx.postmark();
+    const gained = (!silent && personalStamps !== null) ? (mask & ~personalStamps) : 0;
+    if (gained) { RouteStamps.burst(gained); if (typeof Sfx !== 'undefined') Sfx.postmark(); }
     personalStamps = mask;
+    paintSprintColors(); renderPips(mask, gained);
+    if (gained && RouteStamps.complete(mask)) announceBuff();
   }
   const launchFeedback = document.getElementById('launch-feedback');
   const launchSummary = document.getElementById('launch-summary');
@@ -551,28 +584,59 @@
     { const tip = document.getElementById('sprint-tip'); if (tip) tip.style.display = 'none'; }
     if (Net.isHost) Sim.sprint(Net.myId); else Net.send({ type: 'sprint' });
   }
-  window.addEventListener('keydown', e => {
-    if (e.repeat || (e.code !== 'ShiftLeft' && e.code !== 'ShiftRight' && e.code !== 'KeyE' && e.code !== 'ArrowRight') || document.body.dataset.screen !== 'race') return;
-    const tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable)) return;
-    e.preventDefault(); if (tg && tg.tagName === 'BUTTON' && tg.blur) tg.blur(); trySprint();
-  });
-  if (els.btnSprint) els.btnSprint.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); trySprint(); });
   function updateSprintUi(me) {
     const b = els.btnSprint; if (!b || !me) return;
     const p = me.sp === undefined ? 1 : me.sp, on = !!me.so;
+    const bf = RouteStamps.buff(me.stampMask || 0), rcS = bf ? bf.rc / 1000 : SPRINT_RECHARGE_S;   // ricarica del proprio scatto
+    b.classList.toggle('buffed', !!bf);
     b.style.setProperty('--p', p); b.classList.toggle('ready', !on && p >= 1); b.classList.toggle('on', on); b.classList.toggle('cool', !on && p < 1);
     const cd = document.getElementById('sprint-cd');   // secondi che mancano al prossimo scatto, in trasparenza sopra il fulmine
-    if (cd) { const recharging = !on && p < 1 && Number.isFinite(p); const sec = recharging ? Math.max(1, Math.ceil((1 - p) * SPRINT_RECHARGE_S - 0.001)) : 0; if (cd.dataset.s !== String(sec) || (!recharging && cd.textContent !== '')) { cd.dataset.s = String(sec); cd.textContent = sec ? String(sec) : ''; } }
+    if (cd) { const recharging = !on && p < 1 && Number.isFinite(p); const sec = recharging ? Math.max(1, Math.ceil((1 - p) * rcS - 0.001)) : 0; if (cd.dataset.s !== String(sec) || (!recharging && cd.textContent !== '')) { cd.dataset.s = String(sec); cd.textContent = sec ? String(sec) : ''; } }
   }
   const SPRINT_RECHARGE_S = 22;   // = SPRINT_RECHARGE_MS della fisica
-  window.addEventListener('keydown', e => {
-    if (e.repeat || (e.code !== 'Space' && e.code !== 'ArrowUp' && e.code !== 'KeyW') || document.body.dataset.screen !== 'race') return;
-    const tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.isContentEditable)) return;
-    e.preventDefault(); if (tg && tg.tagName === 'BUTTON' && tg.blur) tg.blur(); tryJump();
+  // V48 race controls: one action per press, including native button activation.
+  function raceShortcut(e) {
+    if (e.repeat || e.altKey || e.ctrlKey || e.metaKey || document.body.dataset.screen !== 'race') return;
+    const tg = e.target;
+    if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT' || tg.isContentEditable)) return;
+    // Space/Enter on a focused button keep their native, accessible action.
+    if (tg && tg.closest && tg.closest('button') && (e.code === 'Space' || e.code === 'Enter')) return;
+    const jump = ['Space', 'ArrowUp', 'KeyW'].includes(e.code);
+    const sprint = ['ShiftLeft', 'ShiftRight', 'KeyE', 'ArrowRight'].includes(e.code);
+    if (!jump && !sprint) return;
+    e.preventDefault();
+    (jump ? tryJump : trySprint)();
+  }
+  window.addEventListener('keydown', raceShortcut);
+  function bindRaceButton(button, action) {
+    if (!button) return;
+    let pointer = null;
+    const release = e => {
+      if (e && e.pointerId !== pointer) return;
+      pointer = null; button.classList.remove('press');
+    };
+    button.addEventListener('pointerdown', e => {
+      if (e.button !== 0 || pointer !== null) return;
+      e.preventDefault(); e.stopPropagation();
+      pointer = e.pointerId; button.classList.add('press');
+      try { button.setPointerCapture(pointer); } catch (_) {}
+      action();
+    });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => button.addEventListener(ev, release));
+    // Keyboard and assistive technologies dispatch click without a pointer.
+    button.addEventListener('click', e => {
+      e.preventDefault(); e.stopPropagation();
+      if (e.detail === 0) action();
+    });
+    window.addEventListener('blur', () => release());
+    document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
+  }
+  bindRaceButton(els.btnJump, tryJump);
+  bindRaceButton(els.btnSprint, trySprint);
+  els.raceCanvas.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.isPrimary === false) return;
+    e.preventDefault(); tryJump();
   });
-  els.raceCanvas.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' && e.button !== 0) return; tryJump(); });
-  if (els.btnJump) els.btnJump.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); els.btnJump.classList.add('press'); tryJump(); });
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => { if (els.btnJump) els.btnJump.addEventListener(ev, () => els.btnJump.classList.remove('press')); });
 
   // Messaggi host-only: i client non possono imporre gara, classifica o snapshot.
   const HOST_EVENTS = new Set(['goToDraw','allReady','snap','results','lastCall','restartToDraw','wheelUpdated','melt','resumeState']);
@@ -829,7 +893,7 @@
     if (Net.isHost) Net.setPhase('race');
     showScreen('race'); if (!returning && typeof Sfx !== 'undefined') Sfx.raceStart(startTime); setupCanvas(); myRedrawsLeft = redrawsForTrack(); els.btnRedrawTrigger.textContent = I18n.t('race.change', { n: myRedrawsLeft }); els.redrawUi.style.display = 'flex';
     CurseFx.reset();
-    if (els.btnJump) els.btnJump.style.display = 'flex'; if (els.btnSprint) { els.btnSprint.style.display = 'flex'; els.btnSprint.style.setProperty('--p', 1); els.btnSprint.classList.add('ready'); els.btnSprint.classList.remove('on', 'cool'); const cd = document.getElementById('sprint-cd'); if (cd) { cd.textContent = ''; cd.dataset.s = '0'; } } resetSlow(); for (const k in jnSeen) delete jnSeen[k]; for (const k in jaSeen) delete jaSeen[k]; for (const k in lnSeen) delete lnSeen[k]; for (const k in ldSeen) delete ldSeen[k];
+    if (els.btnJump) els.btnJump.style.display = 'flex'; if (els.btnSprint) { els.btnSprint.style.display = 'flex'; els.btnSprint.style.setProperty('--p', 1); els.btnSprint.classList.add('ready'); els.btnSprint.classList.remove('on', 'cool', 'buffed', 'buff-pop'); clearTimeout(buffTipT); const cd = document.getElementById('sprint-cd'); if (cd) { cd.textContent = ''; cd.dataset.s = '0'; } } resetSlow(); for (const k in jnSeen) delete jnSeen[k]; for (const k in jaSeen) delete jaSeen[k]; for (const k in lnSeen) delete lnSeen[k]; for (const k in ldSeen) delete ldSeen[k];
     for (const id in activeEmotes) delete activeEmotes[id];
     for (const id in lastEmoteById) delete lastEmoteById[id];
     lastMyEmote = -1e9;
@@ -1685,7 +1749,7 @@
     const touch = window.matchMedia && matchMedia('(pointer: coarse)').matches, j = document.getElementById('ctrl-hint-jump'), sp = document.getElementById('ctrl-hint-sprint'), tip = document.getElementById('sprint-tip');
     if (j) { j.dataset.i18n = touch ? 'race.hintTouch' : 'race.hint'; j.textContent = I18n.t(j.dataset.i18n); }
     if (sp) { sp.dataset.i18n = touch ? 'race.hintSprintTouch' : 'race.hintSprint'; sp.textContent = I18n.t(sp.dataset.i18n); }
-    if (tip && els.btnSprint) { tip.textContent = ''; const sp2 = document.createElement('span'); sp2.textContent = I18n.t('race.sprintTip'); sp2.dataset.i18n = 'race.sprintTip'; tip.appendChild(sp2); }
+    if (tip && els.btnSprint) { tip.classList.remove('buff-msg'); tip.textContent = ''; const sp2 = document.createElement('span'); sp2.textContent = I18n.t('race.sprintTip'); sp2.dataset.i18n = 'race.sprintTip'; tip.appendChild(sp2); }
     els.ctrlHint.style.display = 'block'; layoutOverlays(); els.ctrlHint.classList.remove('fade'); void els.ctrlHint.offsetWidth;
     ctrlHintT = setTimeout(() => { els.ctrlHint.classList.add('fade'); ctrlHintT = setTimeout(hideCtrlHint, 900); }, 7000);   // un po' più a lungo: ora spiega anche lo scatto
   }
@@ -1939,7 +2003,7 @@
       let sc = 1; const ar = arrAt[id];
       if (ar) { const tt = t0 - ar.t0; sc = tt < 130 ? 0.001 : Math.max(0.001, Math.min(1.15, easeOutBack(Math.min(1, (tt - 130) / 420)))); }
       if (sc !== 1) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(sc, sc); ctx2d.translate(-cx, -cy(r.y)); }
-      if (r.so) sprintFx(cx, cy(r.y), r.dir || 1, t0);
+      if (r.so) sprintFx(cx, cy(r.y), r.dir || 1, t0, RouteStamps.buff(r.stampMask || 0));
       if (r.im > 0) drawGlow(ctx2d, cx, cy(r.y), meta.color, r.im, t0);
       const gs = r.sc || 1, bigB = gs > 1.01;   // la bici cresce insieme alle ruote
       if (bigB) { ctx2d.save(); ctx2d.translate(cx, cy(r.y)); ctx2d.scale(gs, gs); ctx2d.translate(-cx, -cy(r.y)); }
@@ -2022,11 +2086,14 @@
   const CREAM = '#f8f4dc', SLATE = '#2d3e48', SUN = '#fb5f35', TAU2 = Math.PI * 2;
   const rrect = (c, x, y, w, h, r) => { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); };
   // sprint: righe di velocità dietro la bici
-  function sprintFx(x, y, dir, t) {
+  function sprintFx(x, y, dir, t, bf) {
     ctx2d.save(); ctx2d.lineCap = 'round';
+    // a timbri completi: alone del cielo del mondo e righe nei suoi colori (inchiostro + cielo), più spesse
+    const col = bf ? RouteStamps.colors(RouteStamps.worldKey()) : null;
+    if (col) { const g = ctx2d.createRadialGradient(x, y, 12, x, y, 120); g.addColorStop(0, hexA(col.sky, .75)); g.addColorStop(.6, hexA(col.ink, .22)); g.addColorStop(1, hexA(col.ink, 0)); ctx2d.fillStyle = g; ctx2d.beginPath(); ctx2d.arc(x, y, 120, 0, TAU2); ctx2d.fill(); }
     for (let k = 0; k < 7; k++) {
       const ph = ((t / 260 + k * 0.173) % 1), len = 34 + 46 * ((k * 37) % 5) / 4, yy = y - 46 + ((k * 53) % 9) * 11, xx = x - dir * (96 + ph * 120);
-      ctx2d.globalAlpha = (1 - ph) * 0.8; ctx2d.strokeStyle = k % 2 ? '#fff' : '#fbbf24'; ctx2d.lineWidth = 3.2;
+      ctx2d.globalAlpha = (1 - ph) * 0.8; ctx2d.strokeStyle = col ? (k % 2 ? col.sky : col.ink) : (k % 2 ? '#fff' : '#fbbf24'); ctx2d.lineWidth = col ? 4.6 : 3.2;
       ctx2d.beginPath(); ctx2d.moveTo(xx, yy); ctx2d.lineTo(xx - dir * len, yy); ctx2d.stroke();
     }
     ctx2d.restore();

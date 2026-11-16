@@ -36,6 +36,10 @@ const Sim = (() => {
   //  airDamp  : smorzamento del giro delle ruote in aria; slipMax : (0 = spento) tetto di giro rispetto all'avanzamento a terra —
   //  provato e scartato: anche a 2.0 rallenta troppo le partenze e le salite
   const TUNE = { downAcc: 0.40, airGap: 4, hold: 16, holdMin: 1.5, hopV: 12, antiHop: 0.8, airDamp: 1, slipMax: 0, slipVmin: 2.5, speed: 1, sprint: 1.55, pop: 3.0 };
+  // Scatto del mondo: a timbri completi r.buff (da RouteStamps.buff) sostituisce lo scatto base per il resto della gara. Parametri in stamps.js.
+  const BASE_SPRINT = { id: '', ms: SPRINT_MS, rc: SPRINT_RECHARGE_MS, mult: null };
+  const spProf = r => r.buff || BASE_SPRINT;
+  const spMult = r => r.spOn ? (spProf(r).mult || TUNE.sprint) : 1;
   const WHEEL_STATIC = 0.5;    // static friction (Matter takes the max of the two bodies)
   const GROUND_STATIC = 0.5;
   const AXLE_STIFFNESS = 1;
@@ -799,7 +803,7 @@ const Sim = (() => {
     const c = r.roll * (Array.isArray(r.cal) ? r.cal[r.secOf ? r.secOf(cx) : (SEC_OF_KEY[Terrain.zoneKeyAt ? Terrain.zoneKeyAt(cx) : ''] || 0)] : (r.cal || 1));
     // la presa sposta anche il tetto di velocità: sul terreno sbagliato la bici non arriva a V_CAP, su quello giusto sì (o poco oltre)
     const capK = Math.min(CAP_GRIP_MAX, (gf + gr) / 2);
-    const spm = r.spOn ? TUNE.sprint : 1;
+    const spm = spMult(r);
     const dir = r.dir || 1, gov = dir * r.chassis.velocity.x > V_CAP * spm * capK * Math.pow(r.sc || 1, 0.6);   // ruote giganti: tetto più alto (il motore non cambia, ma il giro è più lungo)
     // tetto di giro a terra: la ruota non gira più di SLIP_MAX volte quanto serve per l'avanzamento (partenza: velocità minima di riferimento)
     const lim = TUNE.slipMax > 0 && r.reff > 0 ? TUNE.slipMax * Math.max(r.chassis.velocity.x, TUNE.slipVmin) / (r.reff * (r.sc || 1)) : undefined;
@@ -1173,7 +1177,7 @@ const Sim = (() => {
     const lateRampTap = !grounded && r.airJ === 1 && r.rampLaunched &&
       !r.rampInputUsed && elapsed - (r.rampTakeoffAt ?? -1e9) <= RAMP_LATE_MS;
     if (lateRampTap) {
-      const speed = Math.max(0, r.chassis.velocity.x);
+      const speed = Math.max(0, (r.dir || 1) * r.chassis.velocity.x);
       const target = -Math.min(13.4, 9.5 + speed * .45);
       // A late, well-timed tap extends the actual ramp flight forward as
       // well as upward. The bonus is bounded and can only apply once.
@@ -1254,13 +1258,22 @@ const Sim = (() => {
     return 1;
   }
   function sprintStep(r) {
-    if (r.spOn) { r.spT -= TICK_MS; r.spCharge = Math.max(0, r.spT / SPRINT_MS) * 0.999; if (r.spT <= 0) { r.spOn = false; r.spCharge = r.ringCredit || 0; r.ringCredit = 0; } }
-    else if (r.spCharge < 1) r.spCharge = Math.min(1, r.spCharge + TICK_MS / SPRINT_RECHARGE_MS);
+    const P = spProf(r);
+    if (r.spOn) {
+      r.spT -= TICK_MS; r.spCharge = Math.max(0, r.spT / (r.spMs || SPRINT_MS)) * 0.999;
+      // Scatto di corrente (Atlantide): in aria la gravità pesa meno, quindi salti e planate più lunghi
+      if (P.lift && r.fw.gapNow > JUMP_GAP && r.rw.gapNow > JUMP_GAP) {
+        const g = engine.gravity.y * (engine.gravity.scale || 0.001) * P.lift;
+        for (const b of [r.chassis, r.fw, r.rw]) Matter.Body.applyForce(b, b.position, { x: 0, y: -b.mass * g });
+      }
+      if (r.spT <= 0) { r.spOn = false; r.spCharge = r.ringCredit || 0; r.ringCredit = 0; }
+    }
+    else if (r.spCharge < 1) r.spCharge = Math.min(1, r.spCharge + TICK_MS / P.rc);
   }
   function sprint(id) {
     const r = racers[id]; if (!r || !running || r.finished || r.righting || r.spOn || r.spCharge < 1) return false;
     if (performance.now() - startedAt < 400) return false;
-    r.spOn = true; r.spT = SPRINT_MS; return true;
+    r.spMs = spProf(r).ms; r.spOn = true; r.spT = r.spMs; return true;
   }
   function jump(id) {
     const r = racers[id]; if (!r || !running || r.finished || r.righting) return false;
@@ -1418,8 +1431,9 @@ const Sim = (() => {
       const dx = (pos.x - ring.x) / 45, dy = (pos.y - (GROUND_Y-ring.height)) / 49;
       if (dx*dx + dy*dy > 1) continue;
       r.ringMask |= ring.bit; r.ringHits++;
-      if (r.spOn) r.ringCredit = Math.min(1, r.ringCredit + .20);
-      else r.spCharge = Math.min(1, r.spCharge + .20);
+      const credit = spProf(r).ring || .20;   // scatto degli anelli (Bosco incantato): ogni anello ricarica di più
+      if (r.spOn) r.ringCredit = Math.min(1, r.ringCredit + credit);
+      else r.spCharge = Math.min(1, r.spCharge + credit);
     }
   }
   function worldEffectStep(r, elapsed, immersion) {
@@ -1551,6 +1565,7 @@ const Sim = (() => {
           r.curseHits[hitKey]=shotNo;
           caught=true;break;
         }
+        if(caught && r.spOn && spProf(r).id==='sand')caught=false;   // scatto di sabbia: durante lo scatto la maledizione non attecchisce
         if(!caught)continue;
         r.curseAt=clockMs;
         break;
@@ -1580,7 +1595,8 @@ const Sim = (() => {
     if (r.jBuf) { if (elapsed - r.jBuf > JUMP_BUF_MS) r.jBuf = 0; else if (jumpTry(r, elapsed)) r.jBuf = 0; }
     else if (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP) r.lastGroundAt = elapsed;
     if (r.airJ && elapsed - r.jumpAt > 150 && (r.fw.gapNow <= JUMP_GAP || r.rw.gapNow <= JUMP_GAP)) r.airJ = 0;   // atterrata: il doppio salto si ricarica
-    r.stampMask = RouteStamps.collect(r.stampMask, r.fw.position, r.rw.position, GROUND_Y);
+    { const before = r.stampMask; r.stampMask = RouteStamps.collect(before, r.fw.position, r.rw.position, GROUND_Y);
+      if (r.stampMask !== before) r.buff = RouteStamps.buff(r.stampMask); }   // a timbri completi: scatto del mondo
     checkPortals(r, elapsed);
     ravineStep(r, elapsed);
     rampStep(r, elapsed);

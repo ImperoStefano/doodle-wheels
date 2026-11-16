@@ -103,6 +103,17 @@ function bike(){const fw={position:{x:96},velocity:{x:6,y:-3},gapNow:60},rw={pos
  assert.equal(r.rampInputUsed,true);assert(r.fw.velocity.y>=-12.5);assert(r.fw.velocity.y<=-9);
  assert.equal(jumpTry(r,1090),0);assert.equal(r.timedLaunches,1); applied++;
 }
+// Late ramp assistance is symmetric after a mirror portal reverses travel.
+{
+ const right=bike(), left=bike();left.dir=-1;
+ for(const b of [left.chassis,left.fw,left.rw]) b.velocity.x=-Math.abs(b.velocity.x);
+ assert.equal(jumpTry(right,1080),1);assert.equal(jumpTry(left,1080),1);
+ for(const key of ['chassis','fw','rw']) {
+   assert.equal(left[key].velocity.x,-right[key].velocity.x);
+   assert.equal(left[key].velocity.y,right[key].velocity.y);
+ }
+ applied++;
+}
 // A genuine later double jump remains allowed if the player did not use the
 // late ramp correction.
 {

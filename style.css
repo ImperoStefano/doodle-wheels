@@ -536,7 +536,7 @@ input[type="text"]:focus { border-color: var(--teal); }
 .sprint-btn.on svg { fill: var(--sun); stroke: var(--sun); }
 .sprint-btn.cool { background: var(--cream-4); box-shadow: 0 6px 0 rgba(45, 62, 72, 0.22); }
 .sprint-btn.cool svg { fill: var(--cream-2); stroke: var(--cream-2); opacity: 0.85; }
-.sprint-btn:active { transform: translateY(5px) scale(0.97); box-shadow: 0 1px 0 var(--teal-d); }
+.sprint-btn.press, .sprint-btn:active { transform: translateY(5px) scale(0.97); box-shadow: 0 1px 0 var(--teal-d); }
 @keyframes sprintPulse { 0%, 100% { filter: none; } 50% { filter: drop-shadow(0 0 7px rgba(236, 189, 111, 0.95)); } }
 @media (max-width: 768px) and (pointer: coarse) { .sprint-btn { left: calc(31px + env(safe-area-inset-left, 0px)); bottom: calc(118px + env(safe-area-inset-bottom, 0px)); width: 58px; height: 58px; } }
 
@@ -921,3 +921,25 @@ body[data-screen="race"] .page {
 .card-preview .hint { margin:6px 0; }
 .card-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
 .card-actions .btn { font-size:.85rem; padding:6px 12px; }
+
+/* ---- Scatto del mondo (timbri completi): i colori del mondo diventano contorno (inchiostro) e glow (cielo) del pulsante ---- */
+.sprint-pips { position: absolute; left: 50%; top: -23px; transform: translateX(-50%); display: flex; gap: 5px; pointer-events: none; }
+.sprint-pips:empty { display: none; }
+.sprint-pips i { width: 10px; height: 10px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--bi, var(--teal-d)); background: rgba(255, 245, 220, 0.8); transition: background 0.15s ease; }
+.sprint-pips i.on { background: var(--bi, var(--teal-d)); }
+.sprint-pips i.pop { animation: pipPop 0.4s ease-out; }
+@keyframes pipPop { 0% { transform: scale(0.4); } 55% { transform: scale(1.7); } 100% { transform: scale(1); } }
+.sprint-btn.buffed { box-shadow: 0 6px 0 var(--teal-d), 0 0 0 3px #fff7e0, 0 0 0 7px var(--bi), 0 0 22px 9px var(--bs), 0 0 38px 15px var(--bg); }
+.sprint-btn.buffed::before { inset: -14px; }   /* la ghiera di ricarica si sposta fuori dal contorno */
+.sprint-btn.buffed.on { box-shadow: 0 2px 0 var(--ochre-d), 0 0 0 3px #fff7e0, 0 0 0 7px var(--bi), 0 0 30px 12px var(--bs), 0 0 50px 20px var(--bg); }
+.sprint-btn.buffed.cool { box-shadow: 0 6px 0 rgba(45, 62, 72, 0.22), 0 0 0 3px #fff7e0, 0 0 0 7px var(--bi); }   /* in ricarica resta solo il contorno */
+.sprint-btn.buffed.ready { animation: buffPulse 1.2s ease-in-out infinite; }
+@keyframes buffPulse { 0%, 100% { filter: none; } 50% { filter: drop-shadow(0 0 9px var(--bs)) drop-shadow(0 0 4px var(--bi)); } }
+.sprint-btn.buff-pop { animation: buffPop 0.6s ease-out; }
+@keyframes buffPop { 0% { transform: scale(1); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
+.sprint-tip.buff-msg { background: var(--bi, var(--teal)); box-shadow: 0 4px 0 rgba(0, 0, 0, 0.25); text-transform: none; letter-spacing: 0; font-size: 0.85rem; line-height: 1.25; white-space: normal; width: max-content; max-width: min(300px, calc(100vw - 190px)); border-radius: 16px; }
+.sprint-tip.buff-msg::before { border-right-color: var(--bi, var(--teal)); }
+@media (prefers-reduced-motion: reduce) { .sprint-btn.buffed.ready, .sprint-btn.buff-pop, .sprint-pips i.pop { animation: none !important; } }
+
+/* Keyboard focus stays visible over the race canvas. */
+.jump-btn:focus-visible, .sprint-btn:focus-visible { outline: 3px solid #fff; outline-offset: 5px; }

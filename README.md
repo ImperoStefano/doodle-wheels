@@ -2,6 +2,16 @@
 
 **Multiplayer 2D browser game** — disegna le ruote della tua bici, affronta rampe e ostacoli, gareggia con gli amici attraverso mondi diversi.
 
+## V48 - Comandi più affidabili
+
+Salto e scatto rispondono anche all'attivazione da tastiera dei pulsanti a schermo. Spazio sul pulsante Scatto attiva lo scatto senza provocare anche un salto. Le scorciatoie rispettano i campi di testo, i menu di selezione e le combinazioni con Ctrl, Alt o Meta.
+
+I pulsanti tengono il contatto del dito anche se scivola fuori dal cerchio. Due dita possono azionare salto e scatto insieme; annullamento del tocco, cambio scheda e perdita di focus rilasciano lo stato premuto. Il clic destro non attiva più i pulsanti. Il focus da tastiera è visibile.
+
+La correzione del salto appena dopo una rampa considera ora la velocità nel senso di marcia anche dopo un portale specchio.
+
+Verifica: `node tests/controls.cjs`, `node tests/regressions.cjs` (35 verifiche), `node tests/ghost.cjs` (10), `node tests/network.cjs` (4), `node tests/slope-audit.cjs 420`. Controllata la sintassi dei due script modificati. Queste verifiche automatiche non sostituiscono una partita su browser e smartphone; questa versione non è stata provata dal vivo su telefono.
+
 ## V47 - Bici predefinita e continuità di gara
 
 Il fantasma usa le ruote e il telaio della bici predefinita del gioco, con la sella vuota. Diventa più trasparente durante un sorpasso. I replay già registrati vengono visualizzati con questo disegno.
