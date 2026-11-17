@@ -1054,10 +1054,18 @@ const Sim = (() => {
     // Each rider crosses independently, in either direction. A skipped gate
     // stays skipped until that rider leaves the zone and crosses it again.
     if (echo) {
-      if (x < echo.start || x >= echo.end) r.stutter = false;
-      else if (lx < echo.start || lx >= echo.end) {
-        const edgeX = lx < echo.start ? echo.start : echo.end;
-        r.stutter = elapsed >= r.immuneUntil && elapsed >= (r.jumpGraceUntil || 0) && !overPortal(r, edgeX);
+      r.stutter = false;
+      if (x >= echo.start && x < echo.end && lx < echo.start && r.dir === 1 && !r.stutterDone) {
+        // Portale stutter: la prima volta che lo attraversi NON avanzi. La scena si ripete a schermo (lo stutter lo fa il client) e la bici
+        // viene riportata indietro di 600-800 px (a ~410 px/s sono 1,5-2 s di svantaggio). Una volta sola per pilota: la seconda volta passa.
+        if (elapsed >= r.immuneUntil && elapsed >= (r.jumpGraceUntil || 0) && !overPortal(r, echo.start)) {
+          let d = 600 + Math.random() * 200; while (d > 300 && !Terrain.landOk(x - d)) d -= 50;
+          if (Terrain.landOk(x - d)) {
+            r.stutterDone = true; teleport(r, -d); r.lx = r.chassis.position.x; r.immuneUntil = elapsed + IMMUNE_MS;
+            r.bestX = r.dir * r.chassis.position.x; r.hopBaseX = r.bestX; r.progressAt = elapsed; r.stallStreak = 0; portalEvent(r, 'z', -d, -1);
+            return;
+          }
+        }
       }
     }
     if (r.dir === -1) {   // rete di sicurezza: se la bici ha oltrepassato la SUA uscita senza "toccarla" (sblocco all'indietro), torna comunque normale
@@ -1076,7 +1084,6 @@ const Sim = (() => {
         let d = 150 + Math.random() * 250; if (Math.random() < 0.5) d = -d;
         if (!Terrain.landOk(x + d)) d = -d; if (!Terrain.landOk(x + d)) continue;
         portalUsed[q.id] = true; teleport(r, d); r.lx = r.chassis.position.x;
-        if (r.stutter && (r.lx < echo.start || r.lx >= echo.end)) r.stutter = false;
         r.immuneUntil = elapsed + IMMUNE_MS;
         r.bestX = r.dir * r.chassis.position.x; r.hopBaseX = r.bestX; r.progressAt = elapsed; portalEvent(r, 's', d, q.id);
       } else if (q.kind === 'mirror') {

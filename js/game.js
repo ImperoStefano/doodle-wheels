@@ -1260,7 +1260,7 @@
   function trailSample(r) {
     if (!trailOn()) return;
     let T = trails[r.id]; if (!T) T = trails[r.id] = { p: [], last: null, full: [], lastFull: null, n: 0, pe: r.pe || 0 };
-    const x = r.rwX, y = r.rwY, jump = (r.pe || 0) !== T.pe && r.pt === 's'; T.pe = r.pe || 0;
+    const x = r.rwX, y = r.rwY, jump = (r.pe || 0) !== T.pe && (r.pt === 's' || r.pt === 'z'); T.pe = r.pe || 0;
     const push = (px, py, br) => {
       T.p.push([px, py, br ? 1 : 0, T.n++]); if (T.p.length > TRAIL_PTS) T.p.shift();
       const lf = T.lastFull;
@@ -1672,10 +1672,12 @@
     if (!!pst.stutter === active) return;
     pst.stutter = active;
     StutterArt.clearPoses();
-    if (active && Terrain.STUTTER) {
+  }
+  function stutterFx() {   // evento 'z' dell'host: la bici è stata riportata indietro, la visuale ripete l'ultima scena prima del salto
+    if (Terrain.STUTTER) {
       // portale stutter: la musica ripete lo stesso ottavo n volte e la visuale ripete con lei (start() riceve l'istante in cui l'effetto si sente)
       const n = Terrain.STUTTER.repeats + 1, at = (typeof Sfx !== 'undefined' && Sfx.stutterBurst) ? Sfx.stutterBurst(n) : null;
-      ViewStutter.start(at != null ? at : performance.now() + 100, n);
+      ViewStutter.start(at != null ? at : performance.now() + 100, n, performance.now());
     }
   }
   function resetPortals() { setStutter(false); if (gzoom !== 1) applyZoom(1); shake = shX = shY = 0; for (const k in arrAt) delete arrAt[k]; for (const k in peSeen) delete peSeen[k]; pst.gone = {}; pst.mirrored = false; pst.big = false; pst.myExit = -1; pst.pe = 0; pst.ge = undefined; mirrorF = 1; mirT = 0; clearTimeout(noteTimer); els.portalNote.style.display = 'none'; setMirrorView(false); }
@@ -1731,9 +1733,10 @@
     if (me.pe !== pst.pe) {
       pst.pe = me.pe; if (me.pi >= 0) pst.gone[me.pi] = now;
       if (me.pt === 's') { els.portalFlash.classList.remove('go'); void els.portalFlash.offsetWidth; els.portalFlash.classList.add('go'); showNote(me.pd > 0 ? 'crazy.fwd' : 'crazy.back', 1800, (me.pd > 0 ? '+' : '−') + Math.round(Math.abs(me.pd))); }
+      else if (me.pt === 'z') { stutterFx(); showNote('crazy.stutter', 1800, '−' + Math.round(Math.abs(me.pd))); }
       else if (me.pt === 'm') { const mp = Terrain.PORTALS.find(p => p.id === me.pi); pst.myExit = mp ? mp.exit : -1; showNote('crazy.mirror', 0); }
       else if (me.pt === 'x') { clearTimeout(noteTimer); els.portalNote.style.display = 'none'; }
-      if (typeof Sfx !== 'undefined') { Sfx.portal(me.pt, me.pd); if (me.pt === 's') setTimeout(() => { try { Sfx.portalOut(me.pd); } catch (e) {} }, 330); }
+      if (typeof Sfx !== 'undefined' && me.pt !== 'z') { Sfx.portal(me.pt, me.pd); if (me.pt === 's') setTimeout(() => { try { Sfx.portalOut(me.pd); } catch (e) {} }, 330); }
     }
     if (me.ge !== pst.ge) {   // portale gigante: evento a parte, non si perde se arriva insieme a un teletrasporto
       const first = pst.ge === undefined; pst.ge = me.ge;
@@ -1948,7 +1951,7 @@
     const SC = Scenery.state;
 
     // Portale stutter: vicino al portale si registrano i fotogrammi; mentre l'effetto dura si ripete il frammento al posto del mondo vivo
-    if (Terrain.STUTTER && me) ViewStutter.arm(me.x > Terrain.STUTTER.start - 560 && me.x < Terrain.STUTTER.end + 40);
+    if (Terrain.STUTTER && me) ViewStutter.arm(me.x > Terrain.STUTTER.start - 1500 && me.x < Terrain.STUTTER.end + 40);
     if (ViewStutter.replay(ctx2d, els.raceCanvas, t0)) return;
     Scenery.update(camX, w, h, groundY, t0);
     dropsLeft = SC.still ? 0 : Scenery.quality === 0 ? 14 : Scenery.quality === 1 ? 6 : 2;

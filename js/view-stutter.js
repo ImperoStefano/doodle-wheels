@@ -26,15 +26,19 @@ const ViewStutter = (() => {
     s.g.drawImage(canvas, 0, 0, cw, ch); s.t = t;
   }
   // `at`: istante (performance.now) in cui l'effetto comincia a sentirsi; `n`: quante volte si ripete l'ottavo.
-  function start(at, n) { if (burst) return; pend = {at, n}; armed = true; }
+  function start(at, n, e) { if (burst) return; pend = {at, n, e: e || at}; armed = true; }
   // Prima di disegnare il mondo: se risponde true ha già disegnato il frammento e il fotogramma vivo va saltato.
   function replay(ctx, canvas, t) {
-    if (pend && t >= pend.at) {
-      const frames = ring.filter(s => s.c && s.t > pend.at - EIGHTH - 4 && s.t <= pend.at + 1).sort((a, b) => a.t - b.t);
-      burst = frames.length >= 3 ? {t0: pend.at, n: pend.n, frames} : null;   // troppo pochi fotogrammi: niente effetto
-      if (burst) { debug.bursts++; debug.idx.length = 0; }
-      pend = null;
+    if (pend && !pend.frames) {   // finestra = l'ottavo che precede l'evento (la scena prima del salto indietro), non quello dopo
+      pend.frames = ring.filter(s => s.c && s.t > pend.e - EIGHTH - 4 && s.t <= pend.e + 1).sort((a, b) => a.t - b.t);
+      if (pend.frames.length < 3) pend = null;   // troppo pochi fotogrammi: niente effetto
     }
+    if (pend && t < pend.at) {   // attesa dell'ottavo musicale: resta fermo sull'ultimo fotogramma prima del salto
+      const f = pend.frames[pend.frames.length - 1];
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(f.c, 0, 0, canvas.width, canvas.height); ctx.restore();
+      return true;
+    }
+    if (pend) { burst = {t0: pend.at, n: pend.n, frames: pend.frames}; debug.bursts++; debug.idx.length = 0; pend = null; }
     if (!burst) return false;
     const u = t - burst.t0, total = burst.n * EIGHTH;
     if (u >= total) { burst = null; armed = true; arm(false); return false; }   // fine: torna in diretta e libera l'anello
