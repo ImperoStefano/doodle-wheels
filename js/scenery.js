@@ -560,13 +560,13 @@ const Scenery = (() => {
   const todWarm = [255, 150, 90], todNight = [22, 30, 96];
   const tod = (c, wk, nk) => mix(mix(c, todWarm, S.warm * wk), todNight, S.night * nk);
 
-  function update(camX, w, h, gy, now, bgCamX) {
+  function update(camX, w, h, gy, now) {
     if (dirty || !atlas.trees) bakeAll();
     if (!Z.length) return;
     const dt = clamp((now - S.now) / 1000, 0.001, 0.1); S.now = now; S.dt = dt;
     const dCam = prevCam === null ? 0 : clamp(camX - prevCam, -200, 200); prevCam = camX;
     S.still = !!motionPreference?.matches;
-    S.camX = bgCamX === undefined ? camX : bgCamX; S.w = w; S.h = h; S.gy = gy;   // bgCamX: camera del solo sfondo (zona stutter) S.hs = clamp(gy / 720, 0.7, 1.45);
+    S.camX = camX; S.w = w; S.h = h; S.gy = gy; S.hs = clamp(gy / 720, 0.7, 1.45);
     if (S.segment) {
       // Il set-piece entra in scena quando raggiunge il campo visivo e svanisce quando lo lascia.
       // La sfumatura evita un cambio di fondale brusco ai bordi delle 2,5 zone speciali.

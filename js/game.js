@@ -1672,7 +1672,11 @@
     if (!!pst.stutter === active) return;
     pst.stutter = active;
     StutterArt.clearPoses();
-    if (typeof Sfx !== 'undefined' && Sfx.stutter) Sfx.stutter(active);
+    if (active && Terrain.STUTTER) {
+      // portale stutter: la musica ripete lo stesso ottavo n volte e la visuale ripete con lei (start() riceve l'istante in cui l'effetto si sente)
+      const n = Terrain.STUTTER.repeats + 1, at = (typeof Sfx !== 'undefined' && Sfx.stutterBurst) ? Sfx.stutterBurst(n) : null;
+      ViewStutter.start(at != null ? at : performance.now() + 100, n);
+    }
   }
   function resetPortals() { setStutter(false); if (gzoom !== 1) applyZoom(1); shake = shX = shY = 0; for (const k in arrAt) delete arrAt[k]; for (const k in peSeen) delete peSeen[k]; pst.gone = {}; pst.mirrored = false; pst.big = false; pst.myExit = -1; pst.pe = 0; pst.ge = undefined; mirrorF = 1; mirT = 0; clearTimeout(noteTimer); els.portalNote.style.display = 'none'; setMirrorView(false); }
   // anello d'arrivo: dove la bici riappare dopo un salto. Si apre veloce, resta un attimo e si dissolve in schizzi (come i portali usati).
@@ -1943,7 +1947,10 @@
     const groundY = h * 0.8 + cam.dy + shY, camX = smoothCamX + shX;
     const SC = Scenery.state;
 
-    Scenery.update(camX, w, h, groundY, t0, Terrain.STUTTER ? StutterArt.bgCam(camX, w, t0) : undefined);
+    // Portale stutter: vicino al portale si registrano i fotogrammi; mentre l'effetto dura si ripete il frammento al posto del mondo vivo
+    if (Terrain.STUTTER && me) ViewStutter.arm(me.x > Terrain.STUTTER.start - 560 && me.x < Terrain.STUTTER.end + 40);
+    if (ViewStutter.replay(ctx2d, els.raceCanvas, t0)) return;
+    Scenery.update(camX, w, h, groundY, t0);
     dropsLeft = SC.still ? 0 : Scenery.quality === 0 ? 14 : Scenery.quality === 1 ? 6 : 2;
     Flora.update(SC.dt, camX, w, latestRacers);
     // specchio (modalità "meno classica"): tutto il mondo si ribalta attorno al centro dello schermo
@@ -2120,6 +2127,7 @@
       });
       for (const a of placed) drawEmoteBubble(a.id, a.x / viewScale, a.y / viewScale, a.color, t0, a);
     }
+    ViewStutter.record(els.raceCanvas, t0);
     if (t0 - hudAt > 120) { hudAt = t0; updateHud(); updateLastCall(); drawMinimap(); }
     if (Perf.on) Perf.frame(ts, performance.now() - t0);
     qualityGuard(ts, performance.now() - t0);

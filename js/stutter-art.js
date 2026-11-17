@@ -4,7 +4,7 @@ const StutterArt = (() => {
   'use strict';
   const poses = Array.from({length: 5}, () => ({at: -Infinity, x: 0, y: 0, angle: 0, scale: 1}));
   const rings = Array.from({length: 4}, () => ({at: -Infinity, x: 0, y: 0}));
-  let ringNext = 0, lastIdx = -1, off = 0, offT = 0;   // off: di quanto lo sfondo è stato "riavvolto" rispetto alla camera
+  let ringNext = 0, lastIdx = -1;
   const motion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
   let ink = '#4d8567', road, gate, bike, terrain, surfaceY = 0, last = -Infinity, next = 0, lastEvent = 0;
 
@@ -20,7 +20,7 @@ const StutterArt = (() => {
   }
 
   function prepare(zone, wheel) {
-    clearPoses(); off = 0; offT = 0;
+    clearPoses();
     terrain = zone;
     road = gate = bike = null;
     if (!zone) return;
@@ -123,16 +123,5 @@ const StutterArt = (() => {
     ctx.restore();
     if (active) impressions(ctx, camX, w, gy, me, t);
   }
-  // Camera dello sfondo. Nella zona il panorama "riavvolge" di un periodo a ogni ripetizione (la scena si ripete), con uno scivolamento rapido
-  // invece di un salto. Fuori dalla zona torna alla camera vera. Con movimento ridotto non fa niente.
-  function bgCam(camX, w, t) {
-    const z = Terrain.STUTTER, reduced = motion && motion.matches;
-    let target = 0;
-    if (z && !reduced) { const mid = camX + w * .4; if (mid > z.start && mid < z.end) target = -Math.floor((mid - z.start) / z.period) * z.period; }
-    const dt = Math.min(.1, Math.max(0, (t - offT) / 1000)); offT = t;
-    off += (target - off) * (1 - Math.exp(-dt / .05));
-    if (Math.abs(off - target) < .3) off = target;
-    return camX + off;
-  }
-  return {prepare, draw, clearPoses, bgCam};
+  return {prepare, draw, clearPoses};
 })();
