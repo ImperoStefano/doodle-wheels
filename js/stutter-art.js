@@ -6,7 +6,7 @@ const StutterArt = (() => {
   const rings = Array.from({length: 4}, () => ({at: -Infinity, x: 0, y: 0}));
   let ringNext = 0, lastIdx = -1;
   const motion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
-  let ink = '#4d8567', road, gate, bike, terrain, surfaceY = 0, last = -Infinity, next = 0, lastEvent = 0;
+  let ink = '#4d8567', road, bike, terrain, surfaceY = 0, last = -Infinity, next = 0, lastEvent = 0;
 
   function clearPoses() {
     for (const pose of poses) pose.at = -Infinity;
@@ -22,7 +22,7 @@ const StutterArt = (() => {
   function prepare(zone, wheel) {
     clearPoses();
     terrain = zone;
-    road = gate = bike = null;
+    road = bike = null;
     if (!zone) return;
     const colours = RouteStamps.colors(RouteStamps.worldKey()), sky = colours.sky; ink = colours.ink;   // arco ed eco nei colori del mondo
     surfaceY = Terrain.height(zone.start);
@@ -47,18 +47,6 @@ const StutterArt = (() => {
     for (let u = left + 2; u < right; u += 2) c.lineTo(u, top(u));
     c.lineTo(right, top(right)); c.lineWidth = 2.4; c.stroke();
 
-    gate = canvas(119, 192);
-    const g = gate.getContext('2d');
-    g.lineCap = 'round';
-    for (let i = 0; i < 3; i++) {
-      g.beginPath(); g.moveTo(41 + i * 12, 182);
-      g.bezierCurveTo(6 + i * 10, 85, 26 + i * 12, 5, 53 + i * 12, 13);
-      g.bezierCurveTo(74 + i * 12, 16, 89 + i * 11, 140, 62 + i * 13, 177 - i * 4);
-      g.globalAlpha = i === 0 ? .9 : .35 / i;
-      g.strokeStyle = sky; g.lineWidth = 10 - 2 * i; g.stroke();
-      g.lineWidth = 4 - i; g.strokeStyle = ink; g.stroke();
-    }
-
     bike = canvas(285, 150);
     const b = bike.getContext('2d');
     b.translate(142, 92); b.lineWidth = 5; b.strokeStyle = ink;
@@ -74,6 +62,44 @@ const StutterArt = (() => {
     b.lineTo(-22, -53); b.lineTo(47, -44); b.lineTo(0, 0);
     b.moveTo(80, 0); b.lineTo(47, -44); b.lineTo(40, -67); b.lineTo(54, -75);
     b.moveTo(-22, -53); b.lineTo(-30, -72); b.lineTo(-45, -72); b.stroke();
+  }
+
+
+  // Il portale stutter si riconosce da lontano: è l'unico RETTANGOLARE (gli altri sono anelli ellittici), l'unico viola (gli altri sono verde acqua,
+  // ardesia e arancio), ha i fori di una pellicola sui due montanti, copie sfasate ciano/magenta che scattano a 8 fotogrammi al secondo e
+  // dietro di sé una scia di cornici sempre più sbiadite, "la scena che si ripete". Il simbolo è il riavvolgimento ◀◀.
+  const VIOLET = '#6a3df0', VDARK = '#2a1a6e', FILM = '#1c1538', CREAM = '#f8f4dc', CYAN = '#18c8e8', MAGENTA = '#ff3fa4';
+  const frame = (ctx, x, y, hw, H, lw) => {   // cornice aperta in basso: due montanti e l'architrave, con y = suolo
+    ctx.beginPath(); ctx.moveTo(x - hw, y); ctx.lineTo(x - hw, y - H); ctx.lineTo(x + hw, y - H); ctx.lineTo(x + hw, y); ctx.lineWidth = lw; ctx.stroke();
+  };
+  function gate(ctx, x, y, k, t, label, dim) {
+    const hw = 40 * k, H = 176 * k, lw = 12 * k, calm = (motion && motion.matches) || Scenery.quality >= 2, step = calm ? 0 : Math.floor(t / 125) % 4;
+    ctx.save(); ctx.globalAlpha *= dim; ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
+    if (!calm) {
+      // scia: cornici più sbiadite verso destra (verso la zona che si ripete), un passo avanti a ogni scatto
+      ctx.strokeStyle = VIOLET; for (let i = 3; i >= 1; i--) { ctx.globalAlpha = dim * .2 / i; frame(ctx, x + (i * 17 + step * 2) * k, y, hw - 4 * i * k, H - 9 * i * k, lw * .7); }
+      const j = (step === 1 ? 7 : step === 3 ? -5 : 2) * k;   // sfasamento cromatico a scatti
+      ctx.globalAlpha = dim * .85; ctx.strokeStyle = CYAN; frame(ctx, x - j, y, hw, H, lw); ctx.strokeStyle = MAGENTA; frame(ctx, x + j, y, hw, H, lw);
+    }
+    ctx.globalAlpha = dim * .13; ctx.fillStyle = VIOLET; ctx.fillRect(x - hw, y - H, hw * 2, H);   // velo viola: si vede la scena attraverso
+    ctx.globalAlpha = dim;
+    ctx.strokeStyle = CREAM; frame(ctx, x, y, hw, H, lw + 6 * k);   // bordino crema, come gli anelli
+    ctx.strokeStyle = FILM; frame(ctx, x, y, hw, H, lw);
+    ctx.fillStyle = CREAM;   // fori di pellicola
+    for (let i = 0; i < 7; i++) { const yy = y - H + (14 + i * 24.5) * k; for (const sx of [-hw, hw]) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x + sx - 3 * k, yy, 6 * k, 10 * k, 2 * k) : ctx.rect(x + sx - 3 * k, yy, 6 * k, 10 * k); ctx.fill(); } }
+    ctx.strokeStyle = VIOLET; ctx.lineWidth = 3.4 * k; ctx.beginPath(); ctx.moveTo(x - hw + 7 * k, y - H + 6 * k); ctx.lineTo(x + hw - 7 * k, y - H + 6 * k); ctx.stroke();
+    // simbolo ◀◀ + barra al centro
+    ctx.fillStyle = VDARK; ctx.save(); ctx.translate(x, y - H * .52); ctx.scale(k, k);
+    for (const o of [-7, 15]) { ctx.beginPath(); ctx.moveTo(o + 7, -15); ctx.lineTo(o - 14, 0); ctx.lineTo(o + 7, 15); ctx.closePath(); ctx.fill(); }
+    ctx.fillRect(-26, -16, 5, 32); ctx.restore();
+    if (label && k > .6) {   // pastiglia come negli altri portali
+      const name = I18n.t('portal.stutter'); ctx.font = '700 17px Kalam, "Comic Sans MS", cursive'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(name).width + 22, ph = 26, px = x - tw / 2, py = y - H - ph - 12;
+      ctx.fillStyle = 'rgba(45,62,72,0.2)'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(px, py + 3, tw, ph, ph / 2) : ctx.rect(px, py + 3, tw, ph); ctx.fill();
+      ctx.fillStyle = CREAM; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(px, py, tw, ph, ph / 2) : ctx.rect(px, py, tw, ph); ctx.fill();
+      ctx.fillStyle = VDARK; ctx.fillText(name, x, py + ph / 2 + 1);
+    }
+    ctx.restore();
   }
 
   function impressions(ctx, camX, w, gy, me, t) {
@@ -113,14 +139,11 @@ const StutterArt = (() => {
     for (let x = zone.start; x < zone.end; x += zone.period) {
       if (x + zone.period > camX && x < right) ctx.drawImage(road, x - camX, baseY - 30);
     }
-    if (zone.start + 65 > camX && zone.start - 65 < right) ctx.drawImage(gate, zone.start - camX - 57, baseY - 181);
-    if (zone.end + 65 > camX && zone.end - 65 < right) ctx.drawImage(gate, zone.end - camX - 57, baseY - 181);
-    // un arco più piccolo e sbiadito a ogni ripetizione, così si vede dove ricomincia la scena
-    ctx.save(); ctx.globalAlpha *= .5;
-    for (let x = zone.start + zone.period; x < zone.end; x += zone.period) {
-      if (x + 50 > camX && x - 50 < right) ctx.drawImage(gate, x - camX - 46, baseY - 146, 92, 148);
+    if (zone.start + 140 > camX && zone.start - 90 < right) gate(ctx, zone.start - camX, baseY, 1, t, true, 1);   // l'ingresso: quello che ti riporta indietro
+    if (zone.end + 90 > camX && zone.end - 90 < right) gate(ctx, zone.end - camX, baseY, .8, t, false, .5);       // l'uscita: più piccola e spenta, non fa niente
+    for (let x = zone.start + zone.period; x < zone.end; x += zone.period) {   // una cornice più piccola e sbiadita a ogni ripetizione
+      if (x + 50 > camX && x - 50 < right) gate(ctx, x - camX, baseY, .55, t, false, .3);
     }
-    ctx.restore();
     if (active) impressions(ctx, camX, w, gy, me, t);
   }
   return {prepare, draw, clearPoses};

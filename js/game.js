@@ -925,7 +925,7 @@
     // l'host tara in anticipo ogni ruota (a fette, durante l'intro): così su terreno normale vanno tutte alla pari
     if (Net.isHost) { Object.values(raceMeta).forEach(m => Sim.calibrate(m.vertices, () => {})); Sim.prepareAsync(); }   // mondo fisico costruito a fette durante l'intro
     hideLastCall(); lastCallSent = false;
-    Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X, Terrain.WORLD, Terrain.WORLD_SEGMENT); Flora.setTrack(); Scenery.setQuality(0); Flora.setQuality(0); qSlow = 0; qFast = 0; lastTs = 0; qHold = 0;
+    Scenery.setTrack(Terrain.ZONES, Terrain.FINISH_X, Terrain.WORLD, Terrain.WORLD_SEGMENT); Flora.setTrack(); Scenery.setQuality(0); Flora.setQuality(0); qSlow = 0; qFast = 0; lastTs = 0; qHold = performance.now() + 4500;   // i primi secondi (cache, atlanti, countdown) sono sempre lenti: non tagliare la scena per colpa loro
     minimapBaseDirty = true; lastHudOrder = '';
     Scenery.warmup();
     StutterArt.prepare(Terrain.STUTTER, wheels[Net.myId]);
@@ -2144,7 +2144,7 @@
     else { qSlow=Math.max(0,qSlow-.35); qFast=dt<19 && cost<8 ? qFast+1 : 0; }
     let q=Scenery.quality;
     if (qSlow>=24 && q<2) { q++; qHold=ts+1800; }
-    else if (qFast>=600 && q>0 && rScale>=.99) { q--; qHold=ts+9000; }
+    else if (qFast>=300 && q>0 && rScale>=.99) { q--; qHold=ts+4000; }
     else return;
     qSlow=0; qFast=0; Scenery.setQuality(q); Flora.setQuality(q);
   }
