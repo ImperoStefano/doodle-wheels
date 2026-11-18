@@ -66,7 +66,7 @@ const Terrain = (() => {
       if (!suitable(zone)) return;
     } else {
       const rnd = mulberry32(hashStr(keys.join(',') + '#stutter-1-' + world));
-      if (rnd() >= .16) return;
+      if (rnd() >= .55) return;
       const candidates = ZONES.filter(suitable);
       if (!candidates.length) return;
       zone = candidates[Math.floor(rnd() * candidates.length)];
