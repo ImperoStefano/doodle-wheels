@@ -901,8 +901,9 @@
     currentRaceStart = startTime;
     const entrants = Object.keys(wheels).length;
     RaceGhost.begin([courseKey(), entrants, dailyMode ? 'daily' : 'room'].join('|'), !returning, wheels[Net.myId]);
-    ghostControl.hidden = !RaceGhost.hasGhost();
-    ghostRun = true; ghostClock = null; ghostResultKey = '';
+    const inChamp = !!(champ && champ.n > 1);   // nei campionati da 3/5 gare non c'è la sfida col fantasma: niente replay, niente confronto, niente salvataggio
+    ghostControl.hidden = inChamp || !RaceGhost.hasGhost();
+    ghostRun = !inChamp; ghostClock = null; ghostResultKey = '';
     clearTimeout(launchFeedbackTimer);
     launchFeedback.textContent = '';
     ringMask = returning ? null : 0;

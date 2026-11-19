@@ -970,3 +970,13 @@ body[data-screen="race"] .page {
 @media (prefers-reduced-motion:reduce) {
   .screen--active > .card, .jump-btn, .sprint-btn, .ctrl-hint, .sprint-tip, .sprint-btn::after { animation:none!important; transition:none!important; }
 }
+
+/* risultati: un ritmo di spazi regolare. Prima i numeri (salti), poi il blocco cartolina (timbri + scarica), poi la classifica del campionato */
+#screen-results .ghost-result { margin: 8px auto 4px; }
+#screen-results .launch-summary { margin: 12px 0 4px; }
+#screen-results .stamp-recap { flex-direction: column; gap: 10px; margin: 12px 0 16px; }
+#screen-results .stamp-recap .stamp-result { margin: 0; }
+#screen-results .stamp-recap .btn { min-height: 44px; padding: 8px 22px; font-size: .95rem; }
+#screen-results .card-status { margin: 0 0 8px; }
+#screen-results .champ-box { margin-top: 14px; }
+@media (max-width: 600px) { #screen-results .card { margin-top: 76px; } }   /* su telefono i pulsanti suono e lingua restano liberi e non coprono più il bordo della scheda */

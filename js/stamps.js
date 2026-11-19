@@ -147,10 +147,15 @@ const RouteStamps = (() => {
     const {sky, ink} = colors(world);
     canvas.width = 1000; canvas.height = 520;
     const c = canvas.getContext('2d');
+    // ogni cartolina è diversa: il seme si sceglie a caso la prima volta e resta sul risultato, così anteprima e PNG scaricato sono identici
+    if (racer && !racer.cardSeed) racer.cardSeed = (Math.random() * 4294967296) >>> 0;
+    const plan = (typeof PostcardScenes !== 'undefined' && world !== 'neon') ? PostcardScenes.plan(world, racer ? racer.cardSeed : (Math.random() * 4294967296) >>> 0) : null;
+    const sun = plan ? plan.sun : {x: 787, y: 122, r: 63};
     c.fillStyle = '#fff5dc'; c.fillRect(0,0,1000,520);
     c.save(); c.beginPath(); c.rect(24,24,952,338); c.clip();
     c.fillStyle = sky; c.fillRect(24,24,952,338);
-    c.fillStyle = '#fff4c2'; c.beginPath(); c.arc(787,122,63,0,Math.PI*2); c.fill();
+    c.fillStyle = '#fff4c2'; c.beginPath(); c.arc(sun.x,sun.y,sun.r,0,Math.PI*2); c.fill();
+    if (plan) PostcardScenes.back(c, plan, world, sky, ink);   // anelli rotanti, archi, aloni: cambiano a ogni cartolina
     // Translucent, faceted ridges printed in the same two inks as the ride.
     for (let layer=0; layer<2; layer++) {
       const y=211+layer*38; c.fillStyle=ink; c.globalAlpha=.17+layer*.11;
@@ -159,7 +164,7 @@ const RouteStamps = (() => {
       c.lineTo(1000,362);c.closePath();c.fill();
     }
     c.globalAlpha=1;
-    if (typeof WorldArtV19 !== 'undefined') WorldArtV19.drawVisitor(c,world,190,59,150);
+    if (typeof WorldArtV19 !== 'undefined') WorldArtV19.drawVisitor(c,world,sun.x < 500 ? 780 : 190,59,150);
     if (world === 'neon') {
       for (let i=0; i<17; i++) {
         const x=20+60*i, y=145+Math.cos(i*2.3)*46;
@@ -170,6 +175,9 @@ const RouteStamps = (() => {
     }
     const samples = Array.from({length:480}, (_,i) => Terrain.height(Terrain.FINISH_X*i/479));
     const max = Math.max(...samples), min = Math.min(...samples);
+    // il paesaggio del mondo poggia sull'orizzonte della sagoma (non sul fondo): così resta visibile qualunque sia il tracciato
+    const tops = samples.map(v => 301-(v-min)*102/Math.max(1,max-min)).sort((x,y) => x-y);
+    if (plan) PostcardScenes.mid(c, plan, world, sky, ink, Math.max(262, Math.min(318, tops[Math.floor(tops.length*.3)] + 16)));
     c.fillStyle = ink; c.beginPath(); c.moveTo(24,362);
     samples.forEach((v,i) => c.lineTo(24+952*i/479,301-(v-min)*102/Math.max(1,max-min)));
     c.lineTo(976,362); c.closePath(); c.fill();
