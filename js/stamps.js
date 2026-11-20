@@ -149,16 +149,18 @@ const RouteStamps = (() => {
     const c = canvas.getContext('2d');
     // ogni cartolina è diversa: il seme si sceglie a caso la prima volta e resta sul risultato, così anteprima e PNG scaricato sono identici
     if (racer && !racer.cardSeed) racer.cardSeed = (Math.random() * 4294967296) >>> 0;
-    const plan = (typeof PostcardScenes !== 'undefined' && world !== 'neon') ? PostcardScenes.plan(world, racer ? racer.cardSeed : (Math.random() * 4294967296) >>> 0) : null;
+    const plan = (typeof PostcardScenes !== 'undefined' && world !== 'neon') ? PostcardScenes.plan(world, racer ? racer.cardSeed : (Math.random() * 4294967296) >>> 0, sky, ink) : null;
+    if (plan) plan.wheel = wheel;
+    const psky = plan ? plan.pal.sky : sky, pink = plan ? plan.pal.ink : ink;   // la luce cambia a ogni cartolina (giorno, tramonto, notte...), i testi sotto restano nei colori del mondo
     const sun = plan ? plan.sun : {x: 787, y: 122, r: 63};
     c.fillStyle = '#fff5dc'; c.fillRect(0,0,1000,520);
     c.save(); c.beginPath(); c.rect(24,24,952,338); c.clip();
-    c.fillStyle = sky; c.fillRect(24,24,952,338);
-    c.fillStyle = '#fff4c2'; c.beginPath(); c.arc(sun.x,sun.y,sun.r,0,Math.PI*2); c.fill();
-    if (plan) PostcardScenes.back(c, plan, world, sky, ink);   // anelli rotanti, archi, aloni: cambiano a ogni cartolina
+    c.fillStyle = psky; c.fillRect(24,24,952,338);
+    if (!plan || !plan.hideSun) { c.fillStyle = plan ? plan.pal.sun : '#fff4c2'; c.beginPath(); c.arc(sun.x,sun.y,sun.r,0,Math.PI*2); c.fill(); }
+    if (plan) PostcardScenes.back(c, plan, world, psky, pink);   // anelli rotanti, archi, aloni: cambiano a ogni cartolina
     // Translucent, faceted ridges printed in the same two inks as the ride.
     for (let layer=0; layer<2; layer++) {
-      const y=211+layer*38; c.fillStyle=ink; c.globalAlpha=.17+layer*.11;
+      const y=211+layer*38; c.fillStyle=pink; c.globalAlpha=.17+layer*.11;
       c.beginPath(); c.moveTo(23,362);
       for(let i=0;i<=13;i++) c.lineTo(23+i*80, y+Math.sin(i*2.37+layer*2)*26-Math.cos(i*1.4)*15);
       c.lineTo(1000,362);c.closePath();c.fill();
@@ -177,11 +179,16 @@ const RouteStamps = (() => {
     const max = Math.max(...samples), min = Math.min(...samples);
     // il paesaggio del mondo poggia sull'orizzonte della sagoma (non sul fondo): così resta visibile qualunque sia il tracciato
     const tops = samples.map(v => 301-(v-min)*102/Math.max(1,max-min)).sort((x,y) => x-y);
-    if (plan) PostcardScenes.mid(c, plan, world, sky, ink, Math.max(262, Math.min(318, tops[Math.floor(tops.length*.3)] + 16)));
-    c.fillStyle = ink; c.beginPath(); c.moveTo(24,362);
+    if (plan) PostcardScenes.mid(c, plan, world, psky, pink, Math.max(262, Math.min(318, tops[Math.floor(tops.length*.3)] + 16)));
+    c.fillStyle = pink; c.beginPath(); c.moveTo(24,362);
     samples.forEach((v,i) => c.lineTo(24+952*i/479,301-(v-min)*102/Math.max(1,max-min)));
     c.lineTo(976,362); c.closePath(); c.fill();
     c.fillStyle = '#fff5dc'; c.font = 'bold 39px system-ui'; c.fillText(title,51,342,875);
+    if (racer.finished) {   // il tempo grande dentro l'immagine: è la cosa che la gente vuole far vedere
+      const t = (racer.finishTime/1000).toFixed(2), tx = 950; c.textAlign = 'right'; c.lineJoin = 'round'; c.strokeStyle = pink; c.fillStyle = '#fff5dc';
+      c.font = 'bold 30px system-ui'; c.lineWidth = 7; c.strokeText('s', tx, 340); c.fillText('s', tx, 340);   // l'unità piccola a destra, il numero grande accanto
+      c.font = 'bold 78px system-ui'; c.lineWidth = 11; c.strokeText(t, tx - 24, 341); c.fillText(t, tx - 24, 341); c.textAlign = 'left';
+    }
     c.restore();
     c.fillStyle = ink; c.font = 'bold 20px system-ui'; c.fillText('DOODLE WHEELS',48,401);
     c.font = 'bold 43px system-ui'; c.fillText(racer.name,46,461,470);

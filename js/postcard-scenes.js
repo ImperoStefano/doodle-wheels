@@ -67,13 +67,24 @@ const PostcardScenes = (() => {
   const pickW = (r, list) => { let t = list.reduce((s, e) => s + e[1], 0) * r(); for (const e of list) if ((t -= e[1]) <= 0) return e; return list[0]; };
 
   // ---- il piano di una cartolina: tutte le scelte casuali ----------------------------------------------------------------------------------------
-  function plan(world, seed) {
+  // varianti di luce: stessi due colori del mondo, spostati verso alba, tramonto, notte o una tinta "caramella"
+  const LOOKS = [['day', 3], ['dusk', 2.5], ['night', 2], ['dawn', 1.5], ['candy', 1]], STYLES = [['skyline', 3], ['wheel', 3.4], ['kaleido', 2], ['sunset', 2], ['frame', 2]];
+  function palette(look, sky, ink) {
+    if (look === 'dusk') return {sky: mix(sky, '#ff8f6b', .55), ink: mix(ink, '#4a2a5e', .5), sun: '#ffe8b0'};
+    if (look === 'night') return {sky: mix(sky, '#27315f', .86), ink: mix(ink, '#0c1030', .72), sun: '#f1efff'};
+    if (look === 'dawn') return {sky: mix(sky, '#ffc2d6', .55), ink: mix(ink, '#6a4a8a', .45), sun: '#fff6d6'};
+    if (look === 'candy') return {sky: mix(sky, '#7ee8d6', .5), ink: mix(ink, '#1d3a6b', .55), sun: '#fff2c2'};
+    return {sky, ink, sun: '#fff4c2'};
+  }
+  function plan(world, seed, bsky, bink) {
     if (!POOL[world]) return null;
     const r = rng(seed >>> 0), pick = a => a[Math.floor(r() * a.length)];
     const sun = pick([{x: 787, y: 122}, {x: 213, y: 116}, {x: 500, y: 100}, {x: 650, y: 150}, {x: 350, y: 138}, {x: 860, y: 96}]); sun.r = 50 + Math.round(r() * 22);
-    const layers = r() < .5 ? 3 : 2;
+    const layers = r() < .5 ? 3 : 2, look = pickW(r, LOOKS)[0], style = pickW(r, STYLES)[0], pal = palette(look, bsky || '#ffe0b0', bink || '#4d8567');
+    if (style === 'wheel') sun.r = 92 + Math.round(r() * 26); if (style === 'frame') { sun.x = 500 + (r() < .5 ? -70 : 70); sun.y = 150; sun.r = 34; }
+    if (style === 'sunset') { sun.x = 500; sun.y = 232; sun.r = 150; }
     return {
-      seed, r, sun, flip: sun.x < 500,                              // flip: sole a sinistra, quindi le facce chiare sono quelle a sinistra
+      seed, r, sun, look, style, pal, night: look === 'night', hideSun: style !== 'skyline', flip: sun.x < 500 && style !== 'sunset',                              // flip: sole a sinistra, quindi le facce chiare sono quelle a sinistra
       mode: pick(['mirror', 'free', 'wave', 'rise']), layers,
       fan: r() < .38 ? .1 + r() * .22 : 0,                          // ventaglio: ogni elemento ruota attorno alla sua base
       rings: 2 + Math.floor(r() * 4), motif: pick(MOTIFS), spin: r() * TAU,
@@ -98,9 +109,9 @@ const PostcardScenes = (() => {
     }
     return items;
   }
-  function drawItem(c, it, x, b, dk, lt, sky, far, p) {
+  function drawItem(c, it, x, b, dk, lt, sky, far, p, direct) {
     const flip = p.flip, a = dk, d = lt; c.save(); c.translate(x, b);
-    if (p.fan) c.rotate((x - 500) / 500 * p.fan);
+    if (p.fan && !direct) c.rotate((x - 500) / 500 * p.fan);
     const D = flip ? d : a, L = flip ? a : d, k = it.k, h = it.h;
     if (k === 'mush') E.mush(c, h, D, L, mix(sky, '#ffffff', .6));
     else if (k === 'volc') E.volc(c, h, D, L, far ? null : mix(sky, '#ffffff', .45));
@@ -128,14 +139,51 @@ const PostcardScenes = (() => {
     else if (kind === 'ring') { c.arc(0, 0, s * .6, 0, TAU); c.stroke(); return; }
     c.closePath(); c.fill();
   }
+  function stars(c, p) { const r = rng(p.seed ^ 0x9e37); for (let i = 0; i < 70; i++) { const x = X0 + r() * W, y = Y0 + r() * 190; if (r() < .25) sparkle(c, x, y, 3 + r() * 5, '#fff', .5 + r() * .5); else disc(c, x, y, .8 + r() * 1.6, 'rgba(255,255,255,' + (.4 + r() * .5) + ')'); } }
+  function sparkle(c, x, y, r, col, a) { c.save(); c.globalAlpha = a; c.fillStyle = col; c.beginPath(); for (let i = 0; i < 8; i++) { const k = i % 2 ? r * .28 : r, an = i * Math.PI / 4 - Math.PI / 2; c.lineTo(x + Math.cos(an) * k, y + Math.sin(an) * k); } c.closePath(); c.fill(); c.restore(); }
+  function wheelSun(c, p, ink, sky) {   // la TUA ruota disegnata a mano come sole/luna della cartolina
+    const S = p.sun, w = p.wheel; c.save(); c.translate(S.x, S.y);
+    if (w && w.length >= 3) {
+      const R = Math.max(1, ...w.map(q => Math.hypot(q.x, q.y))), k = S.r / R, tr = (q, m) => [q.x * k * m, q.y * k * m];
+      c.beginPath(); w.forEach((q, i) => { const [x, y] = tr(q, 1); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.closePath(); c.fillStyle = p.pal.sun; c.fill(); c.lineWidth = 8; c.lineJoin = 'round'; c.strokeStyle = mix(ink, sky, .15); c.stroke();
+      c.beginPath(); w.forEach((q, i) => { const [x, y] = tr(q, .68); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.closePath(); c.lineWidth = 3.4; c.strokeStyle = mix(ink, sky, .45); c.stroke();
+      c.lineWidth = 3; c.beginPath(); for (let i = 0; i < w.length; i += Math.max(1, Math.floor(w.length / 7))) { const [x, y] = tr(w[i], 1); c.moveTo(0, 0); c.lineTo(x * .68, y * .68); } c.stroke();
+      disc(c, 0, 0, S.r * .09, mix(ink, sky, .2));
+    } else { disc(c, 0, 0, S.r, p.pal.sun); }
+    c.restore();
+  }
+  function kaleido(c, p, ink, sky, world) {
+    const r = rng(p.seed ^ 0x51ed), n = [6, 8, 10, 12][Math.floor(r() * 4)], cx = 500, cy = 185, pool = POOL[world], items = [];
+    for (let i = 0; i < 16; i++) { const e = pickW(r, pool), rad = 50 + r() * 290; items.push({k: e[0], h: (e[2] + (e[3] - e[2]) * r()) * (.45 + .35 * (1 - rad / 340)), rad, an: r() * Math.PI / n}); }
+    items.sort((a, b) => b.rad - a.rad);
+    for (let j = 0; j < n; j++) {
+      c.save(); c.translate(cx, cy); c.rotate(j * TAU / n); if (j % 2) c.scale(1, -1);
+      for (const it of items) { const t = .08 + .34 * it.rad / 340; c.save(); c.translate(Math.cos(it.an) * it.rad, Math.sin(it.an) * it.rad); c.rotate(it.an + Math.PI / 2); drawItem(c, it, 0, 0, mix(ink, sky, t), mix(ink, sky, t + .3), sky, it.rad > 200, {flip: false, fan: 0}, true); c.restore(); }
+      c.restore();
+    }
+    disc(c, cx, cy, 34, p.pal.sun); disc(c, cx, cy, 20, mix(ink, sky, .3));
+  }
+  function sunsetSun(c, p, ink, sky) {
+    const S = p.sun, g = c.createLinearGradient(0, S.y - S.r, 0, S.y + S.r); g.addColorStop(0, p.pal.sun); g.addColorStop(1, mix(p.pal.sun, '#ff6a8a', .6));
+    c.fillStyle = g; disc(c, S.x, S.y, S.r); c.fill(); c.fillStyle = sky; for (let i = 0; i < 8; i++) c.fillRect(S.x - S.r, S.y - 10 + i * 17, S.r * 2, 2 + i * 1.7);
+  }
   function back(c, ink, sky, world, p) {
+    if (p.night) stars(c, p);
+    if (p.style === 'frame') { c.fillStyle = mix(ink, sky, .14); c.fillRect(X0, Y0, W, H); }
+    if (p.style === 'kaleido') kaleido(c, p, ink, sky, world);
     const S = p.sun, hl = mix(sky, '#ffffff', .55), g = c.createRadialGradient(S.x, S.y, S.r, S.x, S.y, 270); g.addColorStop(0, hl + 'cc'); g.addColorStop(1, hl + '00'); c.fillStyle = g; c.fillRect(S.x - 270, S.y - 270, 540, 540);
     if (p.arcs) { c.save(); c.lineWidth = 14; for (let i = 0; i < 6; i++) { c.globalAlpha = .5; c.strokeStyle = mix(ink, sky, .22 + i * .1); c.beginPath(); c.arc(p.arcX, 430, 350 - i * 13.5, Math.PI * 1.1, Math.PI * 1.9); c.stroke(); } c.restore(); }
+    if (p.style === 'kaleido') return;
     const rings = [[S.r + 40, 12, 15, .34], [S.r + 88, 18, 20, .26], [S.r + 143, 24, 25, .18], [S.r + 203, 30, 30, .1], [S.r + 270, 36, 34, .06]].slice(0, p.rings);
     rings.forEach(([rad, n, sz, a], j) => { c.save(); c.globalAlpha = a; for (let i = 0; i < n; i++) { const an = (i + (j % 2) * .5) * TAU / n + p.spin * (j % 2 ? 1 : -1) * .1; c.save(); c.translate(S.x + Math.cos(an) * rad, S.y + Math.sin(an) * rad); c.rotate(an + Math.PI / 2); motif(c, p.motif, sz, mix(ink, sky, .35)); c.restore(); } c.restore(); });
+    if (p.style === 'wheel') wheelSun(c, p, ink, sky);
+    if (p.style === 'sunset') sunsetSun(c, p, ink, sky);
+    if (p.style === 'frame') { c.save(); c.strokeStyle = mix(ink, sky, .5); c.lineWidth = 5; disc(c, 500, 185, 172); c.fillStyle = sky; c.fill(); c.stroke(); c.lineWidth = 2; c.globalAlpha = .5; disc(c, 500, 185, 184); c.stroke(); c.restore(); disc(c, S.x, S.y, S.r, p.pal.sun); }
     c.save(); c.strokeStyle = mix(ink, sky, .5); c.lineWidth = 2; for (const [r, a] of [[S.r + 14, .5], [S.r + 30, .3]]) { c.globalAlpha = a; disc(c, S.x, S.y, r); c.stroke(); } c.restore();
   }
   function mid(c, ink, sky, world, base, p) {
+    if (p.style === 'kaleido') return;
+    if (p.style === 'frame') { c.beginPath(); c.arc(500, 185, 168, 0, TAU); c.clip(); }
     const b = base || 318, L = layerCanvas(), lc = L.getContext('2d'); lc.translate(-X0, -Y0);
     skyline(lc, p, ink, sky, b + 10);
     lc.globalCompositeOperation = 'destination-out';   // dissolvenza: le cime svaniscono nel cielo
