@@ -937,53 +937,288 @@ const Props = (() => {
     }
   }
 
-  function drawSupporters(c, x, y, side, time, cheering, position) {
-    const still = crowdMotion && crowdMotion.matches;
-    c.save(); c.translate(x,y);
-    c.strokeStyle = '#3c4b4c'; c.lineWidth = 3; c.lineJoin = 'round'; c.lineCap = 'round';
-    for (let j = 0; j < 5; j++) {
-      const fanX = (j - 2) * 23, style = (j + (side > 0 ? 2 : 0)) % 5;
-      const near = Math.max(0, 1 - Math.abs(position - fanX) / 260);
-      const wave = still ? 0 : Math.sin(time * (cheering ? 8 : 4) - j * .9);
-      const hands = near * (cheering ? 27 : 14) + wave * (cheering ? 5 : 2) * near;
-      c.save(); c.translate(fanX, -16 - ((j * 7) % 11));
-      c.fillStyle = spectatorCoats[style];
-      c.beginPath(); c.roundRect(-8,-24,16,27,6); c.fill(); c.stroke();
-      c.beginPath(); c.moveTo(-6,-17); c.lineTo(-13,-14-hands);
-      c.moveTo(6,-17); c.lineTo(14,-16-hands); c.stroke();
-      if ((j + side) % 3 === 0) {
-        // The scarf lifts with the arms when a rider sends an emote.
-        c.strokeStyle = '#fff1c6'; c.lineWidth = 5;
-        c.beginPath(); c.moveTo(-13,-16-hands); c.quadraticCurveTo(0,-8-hands,14,-18-hands); c.stroke();
-      }
-      c.fillStyle = spectatorSkin[style]; c.strokeStyle = '#3c4b4c'; c.lineWidth = 2.5;
-      c.beginPath(); c.ellipse(0,-29,7,8,0,0,TAU); c.fill(); c.stroke();
-      c.fillStyle = j % 2 ? '#58484a' : spectatorCoats[(style+2)%5];
-      c.beginPath(); c.arc(0,-30,7.7,Math.PI,TAU); c.fill();
-      if (j % 2 === 0) c.fillRect(-8,-31,18,3);
-      c.fillStyle = '#3c4b4c'; c.fillRect(1,-28,2.3,2.3);
-      c.restore();
+  // Pubblico V64: tifo contestuale, team colors e coreografie leggere vicino al traguardo.
+  // Il disegno resta sul canvas esistente, senza sprite, DOM o timer aggiuntivi.
+  const fanTee = ['#ed6151','#258b9b','#f3b83d','#8070cb','#4ba579','#e57a9e','#4986c6','#e98b45'];
+  const fanSkin = ['#f1c8a0','#d29570','#946749','#ad7859','#6e4a36','#e2ad83'];
+  const fanHair = ['#3b2a22','#caa05a','#a0482f','#2c2c34','#e6c47a','#5a3d8a'];
+  const INK = '#354452';
+  const fanRand = n => { const v = Math.sin(n * 127.1 + 78.233) * 43758.5453; return v - Math.floor(v); };
+
+  function fanFigure(c, k, sc, back, time, still, excitement, side, teamColor, cheerType) {
+    const tee = teamColor && k % 3 !== 0 ? teamColor : fanTee[(k * 3 + (side > 0 ? 1 : 0)) % fanTee.length];
+    const skin = fanSkin[(k * 5 + (side > 0 ? 2 : 0)) % fanSkin.length];
+    const hair = fanHair[(k * 2 + (side > 0 ? 1 : 0)) % fanHair.length];
+    const kind = k % 8, phase = k * 1.73 + side * .9;
+    const pulse = still ? .5 : Math.sin(time * (2.9 + (k % 4) * .27) + phase);
+    const jump = still ? 0 : cheerType === 3 ? Math.max(0, pulse) * (7 + 7 * excitement) : cheerType === 1 ? Math.max(0,pulse) * (2.5 + 3 * excitement) : Math.max(0,pulse) * (cheerType === 2 ? 2.5 : .35);
+    const wave = still ? 0 : Math.sin(time * (4.4 + (k % 3)) + phase);
+    const raised = cheerType === 3 ? 1.55 : cheerType === 1 ? (.55 + .52 * Math.sin(time * 5.8 - k * .4)) : cheerType === 2 ? .75 : (kind % 5 === 0 ? .25 : -.15);
+    const leftY = -14 - raised * 13 - wave * excitement * 5;
+    const rightY = cheerType === 3 ? -39 - wave * 5 : cheerType === 1 ? -24 - 9 * Math.sin(time * 5.8 - k * .4) : -14 - (kind === 2 || kind === 4 ? 11 : 2) - (cheerType === 2 ? excitement * 7 : 0);
+    c.save(); c.scale(sc, sc); c.translate(0, -jump);
+    c.lineCap = 'round'; c.lineJoin = 'round'; c.strokeStyle = INK;
+    c.lineWidth = 2.4;
+    // I tifosi sono rappresentati a mezzobusto: nessuna geometria delle gambe.
+    c.beginPath(); c.moveTo(-6, -21); c.lineTo(-12, leftY);
+    c.moveTo(6, -21); c.lineTo(12, rightY); c.stroke();
+    c.fillStyle = tee; c.beginPath(); c.roundRect(-8, -26, 16, 23, 4); c.fill(); c.stroke();
+    // Abiti diversi: righe, logo, sciarpe e maglie a due colori.
+    if (!back && kind % 4 === 0) { c.fillStyle = '#fff2d6'; c.fillRect(-7, -18, 14, 4); }
+    if (!back && kind % 4 === 1) { c.fillStyle = '#fff5da'; c.beginPath(); c.arc(0, -16, 3, 0, TAU); c.fill(); }
+    if (!back && kind % 4 === 2) { c.fillStyle = '#f5d6a8'; c.fillRect(-7, -25, 14, 3); }
+    c.fillStyle = skin; c.lineWidth = 1.5;
+    c.beginPath(); c.arc(-12, leftY, 3, 0, TAU); c.arc(12, rightY, 3, 0, TAU); c.fill(); c.stroke();
+    // Bandierina, sciarpa o piccolo cartello, a seconda del tifoso.
+    if (!back && kind === 2) {
+      const fy = rightY - 23;
+      c.strokeStyle = INK; c.lineWidth = 1.5; c.beginPath(); c.moveTo(12, rightY); c.lineTo(12, fy); c.stroke();
+      c.fillStyle = teamColor || '#ffdd69'; c.beginPath(); c.moveTo(12, fy); c.lineTo(29, fy + 4 + wave * 2); c.lineTo(12, fy + 12); c.fill();
+    } else if (!back && kind === 4) {
+      c.strokeStyle = '#ffdb8c'; c.lineWidth = 4; c.beginPath();
+      c.moveTo(-12, leftY - 1); c.lineTo(12, rightY - 1); c.stroke();
+      c.strokeStyle = '#f16859'; c.lineWidth = 1.7; c.beginPath(); c.moveTo(-10, leftY - 1); c.lineTo(10, rightY - 1); c.stroke();
+    } else if (!back && kind === 7) {
+      c.save(); c.translate(13, rightY - 14); c.rotate(still ? 0 : wave * .09);
+      c.fillStyle = '#fff6d9'; c.strokeStyle = INK; c.lineWidth = 1.5;
+      c.beginPath(); c.roundRect(-8, -9, 19, 15, 2); c.fill(); c.stroke();
+      c.fillStyle = tee; c.fillRect(-4, -5, 11, 3); c.restore();
     }
-    // A slatted rail separates the spectators from the riding surface.
-    c.fillStyle = '#6e5a50'; c.fillRect(-58,-12,6,9); c.fillRect(52,-12,6,9);
-    c.fillStyle = '#f2d5a2'; c.fillRect(-62,-16,124,6);
+    c.strokeStyle = INK; c.lineWidth = 2;
+    c.fillStyle = skin; c.beginPath(); c.ellipse(0, -33, 7.5, 8, 0, 0, TAU); c.fill(); c.stroke();
+    c.fillStyle = hair;
+    const hairstyle = (k + (side > 0 ? 2 : 0)) % 5;
+    if (hairstyle === 0) { c.beginPath(); c.arc(0, -34, 8, Math.PI * 1.03, Math.PI * 1.98); c.lineTo(-7, -32); c.fill(); }
+    else if (hairstyle === 1) { c.beginPath(); c.ellipse(0, -39, 8, 4, 0, Math.PI, TAU); c.fill(); c.fillRect(-8, -39, 4, 9); }
+    else if (hairstyle === 2) { c.beginPath(); c.arc(0, -39, 5.8, 0, TAU); c.fill(); c.beginPath(); c.arc(0, -45, 3.8, 0, TAU); c.fill(); }
+    else if (hairstyle === 3) { c.fillStyle = tee; c.beginPath(); c.arc(0, -36, 8, Math.PI, TAU); c.fill(); c.fillRect(0, -36, 11, 2.5); }
+    else { c.beginPath(); for (let q = -2; q <= 2; q++) { c.moveTo(q * 3 - 2, -38); c.lineTo(q * 3, -45 + Math.abs(q)); c.lineTo(q * 3 + 2, -38); } c.fill(); }
+    c.fillStyle = INK; c.fillRect(-3.5, -33, 1.5, 1.7); c.fillRect(3, -33, 1.5, 1.7);
+    if (cheerType === 1 || cheerType === 3 || (cheerType === 2 && excitement > .52)) { c.fillStyle = '#a94c4e'; c.beginPath(); c.ellipse(.5, -28.4, 2.2, 2 + excitement, 0, 0, TAU); c.fill(); }
+    else { c.strokeStyle = INK; c.lineWidth = 1.3; c.beginPath(); c.arc(.5, -30.4, 3.5, .15 * Math.PI, .85 * Math.PI); c.stroke(); }
     c.restore();
   }
 
-  function drawFinish(ctx, camX, w, gy, S, racers, emotes, now) {
-    const fx = Terrain.FINISH_X, x0 = fx - camX; if (x0 < -620 || x0 > w + 620) return;
-    const y = gy - Terrain.height(fx), t = performance.now() / 1000, H = 205;
-    for (const side of [-1,1]) {
-      const wx = fx + side * 182;
-      if (wx < camX - 66 || wx > camX + w + 66) continue;
-      let position = Infinity, cheering = false;
-      for (const id in racers) {
-        const dx = racers[id].x - wx;
-        if (Math.abs(dx) < Math.abs(position)) position = dx;
-        const emote = emotes && emotes[id];
-        if (emote && now - emote.at < 1700 && Math.abs(dx) < 280) cheering = true;
+  // V69: settore 5 fondato a terra, cartellonistica integrata e pubblico occultato dai parapetti.
+  const finishCelebrations = new Map();
+  let finishWinnerId = null, finishWinnerAt = -Infinity;
+  const fallbackTeamColors = ['#f27645','#3d9cb5','#e1b23d','#b178de','#5baa70'];
+  const safeTeamColor = value => (typeof value === 'string' && /^(#[0-9a-fA-F]{3,8}|rgba?\([\d\s.,%]+\))$/.test(value)) ? value : null;
+  function fanPlayerName(r, number) {
+    const raw = r && (r.name || r.playerName || r.nickname || r.nick || r.displayName || r.username);
+    const cleaned = typeof raw === 'string' ? raw.replace(/[\r\n\t]/g,' ').replace(/\s+/g,' ').trim().slice(0,14) : '';
+    return cleaned || ('GIOCATORE ' + number);
+  }
+  function drawVacantSector(c, number, t) {
+    c.save(); c.fillStyle='#6a7383';c.strokeStyle='#465567';c.lineWidth=2;
+    c.beginPath();c.roundRect(-73,-34,146,29,4);c.fill();c.stroke();
+    c.fillStyle='#566376';for(let i=0;i<5;i++){c.beginPath();c.roundRect(-59+i*27,-26,21,12,3);c.fill();}
+    c.fillStyle='#dacbae';c.font='700 9px sans-serif';c.textAlign='center';c.fillText('POSTO '+number+' • DESERTO',0,-42);
+    c.strokeStyle='rgba(223,229,225,.85)';c.lineWidth=1.2;
+    for(let side of [-1,1]){
+      c.save();c.translate(side*72,-38);c.beginPath();c.moveTo(0,0);c.lineTo(-side*34,1);c.lineTo(-side*20,28);c.closePath();c.stroke();
+      for(let i=1;i<=3;i++){c.beginPath();c.moveTo(0,0);c.lineTo(-side*(i*10),i*8);c.stroke();}
+      for(let i=1;i<=3;i++){c.beginPath();c.arc(0,0,i*10,side>0?1.55:0,side>0?3.14:1.55);c.stroke();}c.restore();
+    }
+    c.fillStyle='#8792a0';c.beginPath();c.ellipse(3,-9,10,4,0,0,TAU);c.fill();
+    c.restore();
+  }
+  // V69: gli spettatori sono DIETRO la fascia: niente piedi, nessun cartello volante.
+  // Le scritte fanno parte del frontalino strutturale di ogni settore.
+  function drawFanSector(c, entry, number, t, state, mobile) {
+    if (!entry) {drawVacantSector(c, number, t); return;}
+    const team = entry.color || fallbackTeamColors[(number - 1) % 5];
+    const still = !!(crowdMotion && crowdMotion.matches);
+    const count = mobile ? 4 : 7;
+    const intensity = state === 'win' ? 1 : state === 'duel' ? .84 : state === 'lose' ? .25 : state === 'near' ? .65 : .2;
+    const cheer = state === 'win' ? 3 : state === 'duel' ? 1 : state === 'near' ? 2 : 0;
+    c.save();
+    // Fondale e tribuna: il colore del giocatore vive tra magliette, scudi e bandiere.
+    c.fillStyle='#405669'; c.strokeStyle='#2d4054'; c.lineWidth=2;
+    c.beginPath(); c.roundRect(-79,-42,158,43,4); c.fill(); c.stroke();
+    c.fillStyle=team; c.globalAlpha=.29; c.fillRect(-76,-41,152,8); c.globalAlpha=1;
+    // Clip esplicito: un salto non può mai mostrare scarpe sotto il parapetto.
+    c.save(); c.beginPath(); c.rect(-77,-130,154,91); c.clip();
+    for (let i=0; i<count; i++) {
+      c.save(); c.translate((i-(count-1)/2)*(mobile?27:20), -33+(i%2)*3);
+      fanFigure(c,i+number*13,.76,false,t,still,intensity,number%2?1:-1,team,cheer);
+      c.restore();
+    }
+    c.restore();
+    // Ringhiera solida prima della targhetta.
+    c.fillStyle='#405367'; c.fillRect(-79,-39,158,37);
+    c.fillStyle='#a8bbc5'; c.fillRect(-79,-40,158,5);
+    c.fillStyle='#293d51'; c.fillRect(-78,-30,156,3);
+    // Targa incastonata nella facciata; non è uno striscione sospeso.
+    c.fillStyle=state==='win' ? '#f9dfa0' : '#f6eada';
+    c.strokeStyle='#263b50'; c.lineWidth=2;
+    c.beginPath(); c.roundRect(-76,-25,152,33,4); c.fill(); c.stroke();
+    c.fillStyle='rgba(255,255,255,.48)'; c.fillRect(-72,-22,144,2);
+    for(const at of [-64,64]){
+      // Piccolo scudo della tifoseria, non una striscia colorata sotto il nome.
+      c.fillStyle=team; c.strokeStyle='#304459'; c.lineWidth=1;
+      c.beginPath(); c.moveTo(at-5,-18); c.lineTo(at+5,-18);
+      c.lineTo(at+5,-6); c.lineTo(at,-2); c.lineTo(at-5,-6); c.closePath(); c.fill(); c.stroke();
+    }
+    const playerName=String(entry.name || ('GIOCATORE ' + number)).toUpperCase();
+    c.fillStyle='#283e53'; c.textAlign='center'; c.textBaseline='middle';
+    c.font='800 11px system-ui, sans-serif'; c.fillText(playerName,0,-14,104);
+    let chant='';
+    if(state==='duel') chant='FORZA!';
+    else if(state==='win') chant='VINCE!';
+    else if(state==='lose') chant='UFF...';
+    else if(state==='near') chant='DAI!';
+    if(chant){
+      c.fillStyle=state==='win' ? '#784c31' : state==='lose' ? '#718091' : '#37586c';
+      c.font='800 9px system-ui, sans-serif'; c.fillText(chant,0,0,100);
+    } else {
+      c.fillStyle='#8e9aaa'; c.beginPath(); c.arc(-7,0,1.2,0,TAU); c.arc(0,0,1.2,0,TAU); c.arc(7,0,1.2,0,TAU); c.fill();
+    }
+    // Tifo V65: bandiere e coriandoli, ma senza insegne nel vuoto.
+    if(state==='win' && !still){
+      for(let i=0;i<(mobile?10:21);i++){
+        const drift=(t*(27+i%4*6)+i*19)%130;
+        c.fillStyle=['#ffcf60','#ee7058','#6ec6c0','#9c7ee4','#f8f4dd'][i%5];
+        c.save(); c.translate(-76+fanRand(i*7.1+number*13)*152+Math.sin(t*2+i)*8,-154+drift);
+        c.rotate(t*2+i); c.fillRect(-2,-2,4,6); c.restore();
       }
-      drawSupporters(ctx, wx - camX, gy - Terrain.height(wx), side, t, cheering, position);
+    }
+    if(state==='lose'){
+      c.strokeStyle='#6d7680'; c.lineWidth=2; c.beginPath(); c.moveTo(65,-44); c.lineTo(67,-23); c.stroke();
+      c.fillStyle=team; c.beginPath(); c.moveTo(65,-44); c.lineTo(80,-37); c.lineTo(65,-34); c.fill();
+    }else{
+      const flutter=still?0:Math.sin(t*5+number)*(state==='win'?7:state==='duel'?5:2);
+      c.strokeStyle='#43596b';c.lineWidth=2;c.beginPath();c.moveTo(71,-44);c.lineTo(71,-87);c.stroke();
+      c.fillStyle=team;c.beginPath();c.moveTo(71,-86);c.lineTo(93,-80+flutter);c.lineTo(71,-68);c.fill();
+    }
+    c.restore();
+  }
+  function drawFanTower(c, worldX, camX, groundY, tiers, t, states, mobile, side) {
+    const x=worldX-camX;
+    c.save();c.translate(x,groundY);
+    c.fillStyle='#475769';c.strokeStyle='#2e4053';c.lineWidth=3;
+    // Palchi sospesi, colonne, scale e corrimano. La struttura non ha collider.
+    const tall=tiers.length>1;
+    const top=tall?-163:-67;
+    for(const sx of [-70,70]){c.fillRect(sx-5,top+5,10,-top+8);}
+    if(tall){
+      c.strokeStyle='#536477';c.lineWidth=4;c.beginPath();c.moveTo(90,-6);c.lineTo(90,-160);c.stroke();
+      c.strokeStyle='#e8d8b9';c.lineWidth=1.8;
+      for(let i=0;i<8;i++){c.beginPath();c.moveTo(88,-16-i*17);c.lineTo(104,-16-i*17);c.stroke();}
+      c.strokeStyle='#8898a7';c.lineWidth=2;c.beginPath();c.moveTo(84,-8);c.lineTo(84,-160);c.moveTo(109,-8);c.lineTo(109,-160);c.stroke();
+    }
+    const tierY=tall?[-12,-122]:[-12];
+    for(let i=0;i<tiers.length;i++){
+      c.save();c.translate(0,tierY[i]);
+      c.fillStyle='#76899e';c.strokeStyle='#31475b';c.lineWidth=2;
+      c.beginPath();c.roundRect(-88,-10,176,11,3);c.fill();c.stroke();
+      drawFanSector(c,tiers[i],side<0?i+1:i+3,t,states[i],mobile);
+      c.restore();
+    }
+    c.restore();
+  }
+  // V69: quinta tribuna come LOGGIA CENTRALE CON FONDAZIONI.
+  // Niente podio volante: colonne fino al terreno e due passaggi collegati al piano alto.
+  function drawSkyRing(c, xLeft, groundLeft, xRight, groundRight, t, fifth, state, mobile, groundAtCenter) {
+    const midX=(xLeft+xRight)*.5;
+    const midGround=Number.isFinite(groundAtCenter) ? groundAtCenter : (groundLeft+groundRight)*.5;
+    const centerY=midGround-122;
+    const lx=xLeft+79, rx=xRight-79;
+    if(rx-lx<245) return; // Se lo schermo è troppo stretto, non forzare incastri.
+    c.save(); c.lineJoin='round'; c.lineCap='round';
+    // Plinti e piloni della quinta tribuna: continui fino al terreno (non mensole a sbalzo).
+    for (const dx of [-77,77]) {
+      const x=midX+dx;
+      c.fillStyle='#334e64';c.strokeStyle='#233a50';c.lineWidth=2;
+      c.beginPath();c.roundRect(x-12,centerY-4,24,midGround-centerY+13,3);c.fill();c.stroke();
+      c.fillStyle='#839aab';c.fillRect(x-9,centerY+2,4,midGround-centerY+5);
+      c.fillStyle='#324a61';c.fillRect(x-20,midGround+3,40,10);
+      c.fillStyle='#ddb77b';c.fillRect(x-16,midGround+1,32,3);
+      // Saette di controvento: il ponte poggia sul pilone, non sul cielo.
+      c.strokeStyle='#587187';c.lineWidth=6;c.beginPath();
+      c.moveTo(x,centerY+56);c.lineTo(x-dx*.35,centerY+8);
+      c.moveTo(x,centerY+56);c.lineTo(x+dx*.23,centerY+8);c.stroke();
+      c.strokeStyle='#d0d8d5';c.lineWidth=2;c.beginPath();c.moveTo(x-8,midGround-13);c.lineTo(x+8,midGround-13);c.stroke();
+    }
+    // La loggia ha una facciata continua sostenuta da entrambe le colonne.
+    c.fillStyle='#506d83';c.strokeStyle='#2c4054';c.lineWidth=2.5;
+    c.beginPath();c.roundRect(midX-104,centerY-5,208,19,4);c.fill();c.stroke();
+    c.fillStyle='#b5c4c8';c.fillRect(midX-101,centerY-5,202,4);
+    for (const side of [-1,1]) {
+      const ax=side<0?lx:midX+83;
+      const bx=side<0?midX-83:rx;
+      const ay=side<0?groundLeft-122:centerY;
+      const by=side<0?centerY:groundRight-122;
+      const slope=u=>ay+(by-ay)*u;
+      const length=bx-ax;
+      if(length<=0)continue;
+      // Corridoio pedonale livellato con le gradinate superiori.
+      c.fillStyle='#748a9d';c.strokeStyle='#30485e';c.lineWidth=2;
+      c.beginPath();c.moveTo(ax,ay-8);c.lineTo(bx,by-8);c.lineTo(bx,by+9);c.lineTo(ax,ay+9);c.closePath();c.fill();c.stroke();
+      c.strokeStyle='#f2d9ac';c.lineWidth=3;c.beginPath();c.moveTo(ax,ay-8);c.lineTo(bx,by-8);c.stroke();
+      const panels=mobile?4:7;
+      for(let i=0;i<panels;i++){
+        const x0=ax+length*i/panels,x1=ax+length*(i+1)/panels;
+        const y0=slope(i/panels),y1=slope((i+1)/panels);
+        c.strokeStyle='#425d70';c.lineWidth=2.3;
+        c.beginPath();c.moveTo(x0,y0+9);c.lineTo(x1,y1+27);
+        c.moveTo(x0,y0+27);c.lineTo(x1,y1+9);c.stroke();
+      }
+      c.strokeStyle='#334c60';c.lineWidth=4;c.beginPath();c.moveTo(ax,ay+27);c.lineTo(bx,by+27);c.stroke();
+      c.strokeStyle='#d3ded9';c.lineWidth=2;
+      for(let i=0;i<=panels;i++){
+        const u=i/panels,x=ax+length*u,y=slope(u);
+        c.beginPath();c.moveTo(x,y-8);c.lineTo(x,y-34);c.stroke();
+      }
+      c.beginPath();c.moveTo(ax,ay-34);c.lineTo(bx,by-34);c.stroke();
+    }
+    // Una loggia addossata al ponte e ai pilastri, alla STESSA quota delle gradinate alte.
+    c.save();c.translate(midX,centerY);
+    drawFanSector(c,fifth,5,t,state,mobile);
+    c.restore();
+    c.restore();
+  }
+  function drawFinish(ctx, camX, w, gy, S, racers, emotes, now) {
+    const fx=Terrain.FINISH_X, x0=fx-camX;
+    if(x0 < -700 || x0 > w+700) return;
+    const y=gy-Terrain.height(fx),t=performance.now()/1000,H=205;
+    const mobileCrowd=w<700;
+    const roster=[];
+    if(racers) for(const id in racers){
+      const r=racers[id];if(!r || !Number.isFinite(r.x)) continue;
+      roster.push({id,x:r.x,color:safeTeamColor(r.color||r.wheelColor||r.colour),raw:r});
+    }
+    roster.sort((a,b)=>String(a.id).localeCompare(String(b.id)));
+    // Ordine fisso degli spalti, indipendente dai sorpassi.
+    const players=roster.slice(0,5);
+    players.forEach((p,i)=>{p.name=fanPlayerName(p.raw,i+1);p.color=p.color||fallbackTeamColors[i];});
+    // Nessun nuovo messaggio di rete: il vincitore e' ricavato dal primo attraversamento osservato.
+    for(const p of roster){
+      const old=finishCelebrations.get(p.id);
+      if(old){if(p.x>=fx && old.lastX<fx && !finishWinnerId){finishWinnerId=p.id;finishWinnerAt=now;}old.lastX=p.x;}
+      else finishCelebrations.set(p.id,{lastX:p.x,at:now});
+    }
+    if(finishWinnerId && now-finishWinnerAt>5200){finishWinnerId=null;finishWinnerAt=-Infinity;}
+    if(finishCelebrations.size>12 || (roster.length && roster.every(p=>p.x<fx-600))){
+      for(const [id,v] of finishCelebrations){if(!roster.some(p=>p.id===id))finishCelebrations.delete(id);}
+      if(roster.length && roster.every(p=>p.x<fx-600)){finishWinnerId=null;finishWinnerAt=-Infinity;finishCelebrations.clear();}
+    }
+    const close=roster.filter(p=>p.x>fx-550 && p.x<fx+150).sort((a,b)=>b.x-a.x);
+    const duel=close.length>1 && close[0].x-close[1].x<140 && !finishWinnerId;
+    const states=players.map(p=>finishWinnerId ? (p.id===finishWinnerId?'win':'lose') : duel && close.slice(0,2).some(q=>q.id===p.id)?'duel':p.x>fx-420?'near':'normal');
+    const n=players.length;
+    const leftX=fx-225,rightX=fx+225;
+    const leftY=gy-Terrain.height(leftX),rightY=gy-Terrain.height(rightX);
+    // Un partecipante => una tribuna. Due => due tribune. Tre/quattro => doppio piano
+    // con quarto settore volutamente abbandonato in 3. Cinque => anello e quinta tribuna.
+    if(n<=2){
+      drawFanTower(ctx,leftX,camX,leftY,[players[0]],t,[states[0]||'normal'],mobileCrowd,-1);
+      if(n===2)drawFanTower(ctx,rightX,camX,rightY,[players[1]],t,[states[1]],mobileCrowd,1);
+    }else{
+      // Disegnare prima il ponte: gli innesti rimangono dietro i montanti delle torri.
+      if(n===5)drawSkyRing(ctx,leftX-camX,leftY,rightX-camX,rightY,t,players[4],states[4],mobileCrowd,y);
+      drawFanTower(ctx,leftX,camX,leftY,[players[0],players[1]],t,[states[0],states[1]],mobileCrowd,-1);
+      drawFanTower(ctx,rightX,camX,rightY,[players[2],players[3]||null],t,[states[2],states[3]||'empty'],mobileCrowd,1);
     }
     // festoni di bandierine, in entrambe le direzioni
     const cols = ['#ef4444', '#3b82f6', '#facc15', '#22c55e', '#ec4899', '#f97316'];

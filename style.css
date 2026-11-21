@@ -980,3 +980,22 @@ body[data-screen="race"] .page {
 #screen-results .card-status { margin: 0 0 8px; }
 #screen-results .champ-box { margin-top: 14px; }
 @media (max-width: 600px) { #screen-results .card { margin-top: 76px; } }   /* su telefono i pulsanti suono e lingua restano liberi e non coprono più il bordo della scheda */
+
+/* QR di invito */
+.qr-btn { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(266px + env(safe-area-inset-right, 0px)); z-index: 2500; isolation: isolate; border: 0; background: transparent; box-shadow: none; padding: 0; width: 30px; height: 30px; cursor: pointer; display: none; align-items: center; justify-content: center; color: #fff; }
+.qr-btn::before { content: ''; position: absolute; inset: -5px -5px -4px -4px; z-index: -1; background: var(--slate, #0c0c12); border-radius: 50%; pointer-events: none; }
+.qr-btn:active { transform: translateY(1px); }
+body[data-screen="menu"] .qr-btn, body[data-screen="lobby"] .qr-btn { display: flex; }
+@media (max-width: 420px) { .qr-btn { right: calc(224px + env(safe-area-inset-right, 0px)); } }
+@media (min-width: 701px) { .qr-btn { right: calc(176px + env(safe-area-inset-right, 0px)); } }
+body.has-fs .qr-btn { right: calc(318px + env(safe-area-inset-right, 0px)); }
+@media (max-width: 420px) { body.has-fs .qr-btn { right: calc(262px + env(safe-area-inset-right, 0px)); } }
+.qr-code:empty { display: none; }
+.qr-card canvas { display: block; margin: 0 auto; }
+.qr-modal { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; background: rgba(20,24,30,.62); padding: 16px; }
+.qr-modal[hidden] { display: none; }
+.qr-card { background: #fff7e3; border-radius: 22px; padding: 20px 22px 18px; width: min(92vw, 330px); text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.35); }
+.qr-card h2 { margin: 0 0 12px; font-size: 1.25rem; }
+.qr-card canvas { width: min(70vw, 240px); height: min(70vw, 240px); border-radius: 12px; background: #fff; image-rendering: pixelated; }
+.qr-code { margin: 10px 0 2px; font-weight: 800; font-size: 1.5rem; letter-spacing: .18em; min-height: 1.2em; }
+.qr-hint { margin: 4px 0 14px; font-size: .9rem; opacity: .8; }

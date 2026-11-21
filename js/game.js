@@ -244,6 +244,24 @@
   els.btnShare = document.getElementById('btn-share');
   // dal menu: link del gioco; in lobby: invito con il codice della gara
   if (els.btnShare) els.btnShare.addEventListener('click', () => shareLink(els.lobby.classList.contains('screen--active') ? els.roomCode.textContent.trim() : ''));
+  // ---- QR di invito: in lobby porta direttamente nella stanza, dal menu apre il gioco ----
+  (function () {
+    const btn = document.getElementById('btn-qr'), modal = document.getElementById('qr-modal'), cv = document.getElementById('qr-canvas'), cd = document.getElementById('qr-code');
+    if (!btn || !modal || !cv || typeof qrcode !== 'function') { if (btn) btn.style.display = 'none'; return; }
+    function close() { modal.hidden = true; btn.focus(); }
+    function open() {
+      const code = els.lobby.classList.contains('screen--active') ? els.roomCode.textContent.trim() : '', ok = /^[A-Z0-9]{4}$/.test(code), url = gameUrl(ok ? code : '');
+      let q; try { q = qrcode(0, 'M'); q.addData(url); q.make(); } catch (e) { shareToast('share.toastGame'); return; }
+      const n = q.getModuleCount(), quiet = 3, cell = Math.floor(cv.width / (n + quiet * 2)), size = cell * (n + quiet * 2), c2 = cv.getContext('2d');
+      cv.width = cv.height = size; c2.fillStyle = '#fff'; c2.fillRect(0, 0, size, size); c2.fillStyle = '#1f2a2e';
+      for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) c2.fillRect((k + quiet) * cell, (r + quiet) * cell, cell, cell);
+      cd.textContent = ok ? code : ''; modal.hidden = false; document.getElementById('qr-close').focus();
+    }
+    btn.addEventListener('click', open);
+    document.getElementById('qr-close').addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) close(); });
+  })();
   // riga "link da copiare" (desktop): mostra il link vero e lo copia con un clic
   function refreshInvite() {
     const m = document.getElementById('invite-url-menu'), l = document.getElementById('invite-url-lobby');
